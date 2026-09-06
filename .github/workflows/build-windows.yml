@@ -31,7 +31,7 @@ jobs:
       - name: Stamp build version
         shell: pwsh
         run: |
-          $version = "3.5.${{ github.run_number }}"
+          $version = "3.6.${{ github.run_number }}"
           (Get-Content 'studio/__init__.py' -Raw) -replace "__version__='[^']+'", "__version__='$version'" | Set-Content 'studio/__init__.py' -Encoding utf8
           (Get-Content 'installer.iss' -Raw) -replace '#define MyAppVersion "[^"]+"', "#define MyAppVersion `"$version`"" | Set-Content 'installer.iss' -Encoding utf8
           Write-Host "Stamped version $version"
@@ -40,7 +40,7 @@ jobs:
         shell: pwsh
         run: |
           python -m compileall -q app.py studio tests
-          python -c "import app; import studio.ui_v35; import studio.ui_v34; import studio.ui_v33; import studio.ui_v32; import studio.ui_v31; import studio.ai_router; import studio.review_autopilot; import studio.wb_ad_manager; import studio.sku_analytics; import studio.local_ai_manager; import studio.local_ai_setup; import studio.local_image; import studio.hardware_probe; import studio.connectors; import studio.services; import studio.safety_control; import studio.openai_billing; import studio.ai_errors; import studio.diagnostics; import studio.updater; import studio.ozon_center; print('smoke ok')"
+          python -c "import app; import studio.ui_v36; import studio.ui_v35; import studio.ui_v34; import studio.ui_v33; import studio.ui_v32; import studio.ui_v31; import studio.ai_router; import studio.review_autopilot; import studio.wb_ad_manager; import studio.sku_analytics; import studio.local_ai_manager; import studio.local_ai_setup; import studio.local_image; import studio.hardware_probe; import studio.connectors; import studio.services; import studio.safety_control; import studio.openai_billing; import studio.ai_errors; import studio.diagnostics; import studio.updater; import studio.ozon_center; print('smoke ok')"
 
       - name: Run core functional contract tests
         shell: pwsh
@@ -81,16 +81,18 @@ jobs:
       - name: Publish GitHub Release
         uses: ncipollo/release-action@v1
         with:
-          tag: v3.5.${{ github.run_number }}
-          name: Marketplace AI Studio PRO Mega Edition 3.5 build ${{ github.run_number }}
+          tag: v3.6.${{ github.run_number }}
+          name: Marketplace AI Studio PRO Mega Edition 3.6 build ${{ github.run_number }}
           body: |
-            Windows-сборка Marketplace AI Studio PRO Mega Edition 3.5 REPUTATION + PROFIT CORE.
+            Windows-сборка Marketplace AI Studio PRO Mega Edition 3.6 PROFIT CENTER.
 
-            Добавлено: точная рекламная атрибуция по WB nmID из вложенной fullstats, Profit Engine использует фактический рекламный расход по SKU вместо пропорционального распределения, центральный WB rate/cache coordinator защищает от 429, а новый Reputation Center реализует полный сценарий «загрузить → выбрать → AI-черновик → редактировать → подтвердить → отправить».
+            Добавлен новый Profit Center по каждому WB SKU: продажи, возвраты, оборот, выплата WB, точный рекламный расход SKU, ДРР, себестоимость единицы и проданных единиц, прибыль, маржа, остаток и статус. По умолчанию самые убыточные товары находятся сверху.
 
-            Для рискованных отзывов сохраняется ручное подтверждение, write-действия проходят дневные guardrails и audit. Dashboard health-check локального AI ускорен и не должен задерживать запуск при недоступных localhost-сервисах.
+            Себестоимость редактируется прямо в Profit Center и хранится локально. Формула прибыли использует нормализованную выплату WB, COGS по фактически проданным единицам и рекламный расход SKU из WB fullstats; расходы не вычитаются повторно из payout.
 
-            Тестирование: compile/import smoke checks, deterministic contract tests для Local AI/WB/reviews/ads/profit/safety и headless UI construction tests текущей версии 3.5.
+            Сохранены Reputation Center 3.5, FREE-FIRST Local AI, guardrails, audit, точная рекламная атрибуция и защита WB API от 429.
+
+            Тестирование: compile/import smoke, contract tests экономики SKU и headless UI construction включая Profit Center.
 
             Скачать Marketplace_AI_Studio_PRO_Setup.exe ниже в Assets.
           artifacts: installer-output/Marketplace_AI_Studio_PRO_Setup.exe

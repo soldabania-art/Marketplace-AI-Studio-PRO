@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     password_reset_minutes: int = 30
     frontend_url: str = "http://localhost:3000"
     admin_emails: str = ""
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    vapid_subject: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="MARKETPLACE_", extra="ignore")
 

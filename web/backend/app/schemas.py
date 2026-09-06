@@ -28,3 +28,4 @@ class AccountResponse(BaseModel):
     role: str
     plan_code: str
     subscription_status: str
+    is_platform_admin: bool = False

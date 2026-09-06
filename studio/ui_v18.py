@@ -4,6 +4,7 @@ from .ui_v17 import Main as BaseMain
 from .core import products, save_project, generated_dir
 from .seo_batch import optimization_payload
 from .workers import Worker
+from .ai_errors import friendly_ai_error, OpenAIQuotaError
 import json, os
 
 
@@ -38,6 +39,14 @@ class Main(BaseMain):
         else:self.live_status.setPlaceholderText('Обновите WB данные или откройте AI Фабрику.')
         v.addWidget(self.live_status); v.addStretch(); self.showp(w)
 
+    def _show_ai_error(self,title,error):
+        msg=friendly_ai_error(error)
+        if hasattr(self,'seo_status'):
+            self.seo_status.setText(msg)
+        if hasattr(self,'factory_status'):
+            self.factory_status.setText(msg)
+        QMessageBox.warning(self,title,msg)
+
     def factory(self):
         w,v=self.page('AI Фабрика 1.8 — ONE CLICK','Фото + факты → AI сам создаёт тексты, SEO, характеристики, визуальную систему и готовые изображения инфографики')
         self.photo_label=QLabel(self.photo or 'Фото товара не выбрано'); v.addWidget(self.photo_label)
@@ -58,7 +67,7 @@ class Main(BaseMain):
         self.active_worker=worker; self.factory_progress.setValue(0); self.factory_status.setText('AI запущен...')
         worker.signals.progress.connect(lambda p,t:(self.factory_progress.setValue(p),self.factory_status.setText(t)))
         worker.signals.result.connect(self.full_pack_ready)
-        worker.signals.error.connect(lambda e:QMessageBox.critical(self,'AI Фабрика',e))
+        worker.signals.error.connect(lambda e:self._show_ai_error('AI Фабрика',e))
         worker.signals.finished.connect(self.worker_finished)
         self.pool.start(worker)
 
@@ -74,7 +83,9 @@ class Main(BaseMain):
 
     def cancel_active(self):
         if self.active_worker:
-            self.active_worker.cancel(); self.factory_status.setText('Остановка после текущего запроса...')
+            self.active_worker.cancel()
+            if hasattr(self,'factory_status'):self.factory_status.setText('Остановка после текущего запроса...')
+            if hasattr(self,'seo_status'):self.seo_status.setText('Остановка после текущего запроса...')
 
     def worker_finished(self):
         self.active_worker=None
@@ -84,27 +95,36 @@ class Main(BaseMain):
         top=QHBoxLayout(); top.addWidget(self.primary('1. Просканировать каталог',self.run_seo_scan)); top.addWidget(self.primary('2. Автоматически переделать слабые AI',self.start_seo_autopilot)); top.addWidget(self.primary('Отменить',self.cancel_active)); top.addStretch(); v.addLayout(top)
         self.seo_table=QTableWidget(); self.seo_table.setColumnCount(7); self.seo_table.setHorizontalHeaderLabels(['MP','ID','SKU','Название','Score','Класс','Проблемы']); self.seo_table.horizontalHeader().setSectionResizeMode(3,QHeaderView.Stretch); self.seo_table.horizontalHeader().setSectionResizeMode(6,QHeaderView.Stretch); v.addWidget(self.seo_table,2)
         self.seo_progress=QProgressBar(); v.addWidget(self.seo_progress)
-        self.seo_status=QLabel(''); v.addWidget(self.seo_status)
+        self.seo_status=QLabel(''); self.seo_status.setWordWrap(True); v.addWidget(self.seo_status)
         self.seo_output=QTextEdit(); self.seo_output.setPlaceholderText('AI-переработанные варианты карточек появятся здесь.'); v.addWidget(self.seo_output,1)
         self.run_seo_scan(silent=True); self.showp(w)
 
     def start_seo_autopilot(self):
-        weak=[x for x in self.seo_rows if x['score']<70][:20]
-        if not weak:return QMessageBox.information(self,'SEO','Нет слабых карточек для обработки.')
+        all_weak=[x for x in self.seo_rows if x['score']<70]
+        if not all_weak:return QMessageBox.information(self,'SEO','Нет слабых карточек для обработки.')
         if self.active_worker:return QMessageBox.information(self,'SEO','Другая AI-задача уже выполняется.')
+        maximum=min(len(all_weak),20)
+        count,ok=QInputDialog.getInt(self,'SEO Автопилот','Сколько слабых карточек обработать сейчас?\nКаждая карточка = отдельный платный OpenAI API запрос.',min(5,maximum),1,maximum,1)
+        if not ok:return
+        answer=QMessageBox.question(self,'SEO Автопилот',f'Запустить {count} платных AI-запросов?\n\nПри отсутствии API-баланса пакет остановится после первой ошибки и покажет понятное сообщение.',QMessageBox.Yes|QMessageBox.No,QMessageBox.No)
+        if answer!=QMessageBox.Yes:return
+        weak=all_weak[:count]
         def job(progress,is_cancelled):
             out={}; total=len(weak)
             for i,row in enumerate(weak,1):
                 if is_cancelled():break
                 progress(int((i-1)/total*100),f'AI переделывает карточку {i}/{total}: {row["name"]}')
                 payload=json.dumps(optimization_payload(row),ensure_ascii=False,default=str)
-                out[row['nm']]=self.ai().seo_rebuild(payload)
+                try:
+                    out[row['nm']]=self.ai().seo_rebuild(payload)
+                except OpenAIQuotaError:
+                    raise
             progress(100,'Пакетная AI-оптимизация завершена')
             return out
-        worker=Worker(job); self.active_worker=worker; self.seo_progress.setValue(0)
+        worker=Worker(job); self.active_worker=worker; self.seo_progress.setValue(0); self.seo_status.setText(f'Запущено: {count} карточек')
         worker.signals.progress.connect(lambda p,t:(self.seo_progress.setValue(p),self.seo_status.setText(t)))
         worker.signals.result.connect(self.seo_autopilot_ready)
-        worker.signals.error.connect(lambda e:QMessageBox.critical(self,'SEO Автопилот',e))
+        worker.signals.error.connect(lambda e:self._show_ai_error('SEO Автопилот',e))
         worker.signals.finished.connect(self.worker_finished); self.pool.start(worker)
 
     def seo_autopilot_ready(self,result):

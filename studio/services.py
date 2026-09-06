@@ -1,11 +1,11 @@
 import base64, json, mimetypes, requests, time
-from pathlib import Path
 from openpyxl import Workbook
 from .core import DATA, generated_dir, save_asset
 
+
 class AIService:
     def __init__(self,key,model):
-        self.key=key.strip(); self.model=model.strip() or 'gpt-5.6-sol'
+        self.key=(key or '').strip(); self.model=(model or '').strip() or 'gpt-5.6-sol'
 
     def _headers(self):
         if not self.key: raise RuntimeError('Не указан OpenAI API key')
@@ -16,48 +16,83 @@ class AIService:
         if not r.ok: raise RuntimeError(f'OpenAI {r.status_code}: {r.text[:700]}')
         return ''.join(c.get('text','') for i in r.json().get('output',[]) for c in i.get('content',[]) if c.get('type')=='output_text').strip()
 
-    def product_card(self,photo,info):
-        content=[{'type':'input_text','text':f'''Ты senior e-commerce strategist для Wildberries и Ozon. Создай коммерчески сильную полную карточку товара. Не выдумывай факты: неизвестное помечай как ТРЕБУЕТ УТОЧНЕНИЯ. Данные пользователя: {info}. Верни только JSON с полями: product_type, category, title_variants(5), description, benefits, seo(primary_keywords, secondary_keywords, search_phrases, negative_keywords), attributes, faq, infographic_plan(минимум 6 слайдов: slide, headline, visual, copy), missing_facts, risks, ready_percent.'''}]
-        if photo:
-            mime=mimetypes.guess_type(photo)[0] or 'image/jpeg'
-            b64=base64.b64encode(open(photo,'rb').read()).decode()
-            content.append({'type':'input_image','image_url':f'data:{mime};base64,{b64}'})
-        text=self._call([{'role':'user','content':content}])
+    @staticmethod
+    def _json(text):
+        text=(text or '').strip()
         if text.startswith('```'):
             text=text.strip('`')
             if text.lower().startswith('json'): text=text[4:].strip()
         try:return json.loads(text)
         except:return {'raw_text':text}
 
-    def generate_infographics(self,card,project_name='product',count=6):
+    def product_card(self,photo,info):
+        content=[{'type':'input_text','text':f'''Ты senior e-commerce strategist и арт-директор для Wildberries и Ozon. На основе фото и подтверждённых фактов создай полностью готовое коммерческое наполнение карточки товара. Не выдумывай характеристики, сертификаты, состав, размеры или обещания: неизвестное помечай ТРЕБУЕТ УТОЧНЕНИЯ. Данные пользователя: {info}.
+Верни только JSON с полями:
+product_type, category,
+title_variants(5), selected_title,
+description, short_description,
+benefits,
+seo(primary_keywords, secondary_keywords, search_phrases, negative_keywords),
+attributes,
+faq,
+visual_concept(style, background, lighting, composition, palette_notes, do_not_use),
+infographic_plan(минимум 6 слайдов: slide, goal, headline, visual, copy),
+marketplace_texts(wb_title, wb_description, ozon_title, ozon_description),
+missing_facts, risks, ready_percent.
+Тексты должны быть на русском, коммерчески сильные, читаемые, без переспама и без ложных фактов.'''}]
+        if photo:
+            mime=mimetypes.guess_type(photo)[0] or 'image/jpeg'
+            b64=base64.b64encode(open(photo,'rb').read()).decode()
+            content.append({'type':'input_image','image_url':f'data:{mime};base64,{b64}'})
+        return self._json(self._call([{'role':'user','content':content}]))
+
+    def generate_infographics(self,card,project_name='product',count=6,progress=None,is_cancelled=None):
         if not isinstance(card,dict): raise RuntimeError('Сначала создайте структурированную AI-карточку.')
         plan=card.get('infographic_plan') or []
         if not plan: raise RuntimeError('В карточке нет плана инфографики.')
-        out=[]; folder=generated_dir()/f"{int(time.time())}_{safe_name(project_name)}"; folder.mkdir(parents=True,exist_ok=True)
-        for i,slide in enumerate(plan[:max(1,min(count,10))],start=1):
+        count=max(1,min(int(count),10)); out=[]
+        folder=generated_dir()/f"{int(time.time())}_{safe_name(project_name)}"; folder.mkdir(parents=True,exist_ok=True)
+        concept=card.get('visual_concept') or {}
+        for i,slide in enumerate(plan[:count],start=1):
+            if is_cancelled and is_cancelled(): break
+            if progress: progress(int((i-1)/count*100),f'AI создаёт визуал {i}/{count}')
             headline=slide.get('headline','') if isinstance(slide,dict) else str(slide)
             visual=slide.get('visual','') if isinstance(slide,dict) else ''
             copy=slide.get('copy','') if isinstance(slide,dict) else ''
-            prompt=(f"Commercial marketplace product infographic, premium ecommerce style. Product type: {card.get('product_type','product')}. "
-                    f"Slide {i}. Headline concept: {headline}. Visual direction: {visual}. Supporting message: {copy}. "
-                    "Clean composition, strong hierarchy, product-first, realistic studio lighting, no logos, no fake certifications, no fabricated specifications. "
-                    "Leave safe readable space for Russian text overlays; do not render long paragraphs inside the image.")
+            goal=slide.get('goal','') if isinstance(slide,dict) else ''
+            prompt=(f"Premium marketplace product infographic for Wildberries/Ozon. Product: {card.get('product_type','product')}. "
+                    f"Art direction: {json.dumps(concept,ensure_ascii=False)}. Slide {i}. Goal: {goal}. Headline idea: {headline}. "
+                    f"Visual direction: {visual}. Supporting message: {copy}. Product-first composition, realistic commercial studio lighting, clean premium e-commerce design, high conversion focus. "
+                    "Do not invent product features, logos, certificates, awards or technical claims. Leave safe readable areas for Russian text overlays; avoid rendering long paragraphs inside the image.")
             r=requests.post('https://api.openai.com/v1/images/generations',headers=self._headers(),json={
                 'model':'gpt-image-2','prompt':prompt,'size':'1024x1536','quality':'medium','n':1
-            },timeout=180)
+            },timeout=240)
             if not r.ok: raise RuntimeError(f'Image API {r.status_code}: {r.text[:700]}')
             data=r.json().get('data',[])
             if not data: raise RuntimeError('Image API не вернул изображение.')
-            item=data[0]; raw=item.get('b64_json')
-            path=folder/f'slide_{i:02d}.png'
-            if raw:
-                path.write_bytes(base64.b64decode(raw))
+            item=data[0]; raw=item.get('b64_json'); path=folder/f'slide_{i:02d}.png'
+            if raw: path.write_bytes(base64.b64decode(raw))
             elif item.get('url'):
                 img=requests.get(item['url'],timeout=120); img.raise_for_status(); path.write_bytes(img.content)
-            else:
-                raise RuntimeError('Не удалось получить байты изображения.')
+            else: raise RuntimeError('Не удалось получить байты изображения.')
             save_asset(project_name,'infographic',path); out.append(path)
+        if progress: progress(100,f'Визуалы готовы: {len(out)}')
         return out
+
+    def full_product_pack(self,photo,info,count=6,progress=None,is_cancelled=None):
+        """One-click AI pipeline: analyze product -> create all texts -> create visual system -> generate images."""
+        if progress: progress(5,'AI анализирует товар и строит карточку')
+        if is_cancelled and is_cancelled(): return {'cancelled':True}
+        card=self.product_card(photo,info)
+        if not isinstance(card,dict) or 'raw_text' in card:
+            raise RuntimeError('AI не вернул структурированную карточку. Повторите генерацию.')
+        if progress: progress(25,'Тексты, SEO и структура карточки готовы')
+        if is_cancelled and is_cancelled(): return {'cancelled':True,'card':card}
+        name=card.get('product_type') or 'product'
+        paths=self.generate_infographics(card,name,count,
+            progress=(lambda p,t: progress(25+int(p*0.75),t)) if progress else None,
+            is_cancelled=is_cancelled)
+        return {'card':card,'images':[str(p) for p in paths],'cancelled':bool(is_cancelled and is_cancelled())}
 
     def review_reply(self,text,rating):
         return self._call(f'Напиши профессиональный ответ продавца на отзыв. Оценка {rating}/5. Отзыв: {text}. Коротко, вежливо, без выдумок.',90)
@@ -68,14 +103,20 @@ class AIService:
     def seo_audit(self,text):
         return self._call('Проведи SEO-аудит карточки для Wildberries/Ozon: оцени заголовок, структуру, ключевые слова, переспам, пользу, недостающие запросы и дай конкретные правки. Текст: '+text,90)
 
+    def seo_rebuild(self,text):
+        return self._call('''Полностью перепиши слабую карточку маркетплейса. Верни только JSON: title_variants(5), selected_title, description, short_description, seo_keywords, benefits, attributes_to_fill, infographic_plan(6 слайдов: headline, visual, copy), risks. Не выдумывай неподтверждённые характеристики. Исходные данные: '''+text,120)
+
     def director_plan(self,text):
         return self._call('Ты AI-директор marketplace бизнеса. По данным сформируй приоритетный план: критические проблемы, быстрые победы, реклама, SEO, карточки, отзывы, запасы, финансы и задачи на 7 дней. Данные: '+text,90)
+
 
 def safe_name(value):
     s=''.join(ch if ch.isalnum() or ch in ('-','_') else '_' for ch in str(value))
     return s[:60] or 'product'
 
+
 def calc_profit(revenue,commission,logistics,ads,cogs): return revenue-commission-logistics-ads-cogs
+
 
 def export_xlsx(rows,name='export.xlsx'):
     out=DATA/'exports'; out.mkdir(exist_ok=True); p=out/name

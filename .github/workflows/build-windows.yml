@@ -30,7 +30,7 @@ jobs:
       - name: Stamp build version
         shell: pwsh
         run: |
-          $version = "2.7.${{ github.run_number }}"
+          $version = "2.8.${{ github.run_number }}"
           (Get-Content 'studio/__init__.py' -Raw) -replace "__version__='[^']+'", "__version__='$version'" | Set-Content 'studio/__init__.py' -Encoding utf8
           (Get-Content 'installer.iss' -Raw) -replace '#define MyAppVersion "[^"]+"', "#define MyAppVersion `"$version`"" | Set-Content 'installer.iss' -Encoding utf8
           Write-Host "Stamped version $version"
@@ -39,7 +39,7 @@ jobs:
         shell: pwsh
         run: |
           python -m compileall -q app.py studio
-          python -c "import app; import studio.ui_v27; import studio.connectors; import studio.services; import studio.ai_errors; import studio.diagnostics; import studio.updater; import studio.ozon_center; print('smoke ok')"
+          python -c "import app; import studio.ui_v28; import studio.ui_v27; import studio.connectors; import studio.services; import studio.openai_billing; import studio.ai_errors; import studio.diagnostics; import studio.updater; import studio.ozon_center; print('smoke ok')"
 
       - name: Build application EXE
         shell: pwsh
@@ -68,12 +68,12 @@ jobs:
       - name: Publish GitHub Release
         uses: ncipollo/release-action@v1
         with:
-          tag: v2.7.${{ github.run_number }}
-          name: Marketplace AI Studio PRO Mega Edition 2.7 build ${{ github.run_number }}
+          tag: v2.8.${{ github.run_number }}
+          name: Marketplace AI Studio PRO Mega Edition 2.8 build ${{ github.run_number }}
           body: |
-            Windows-сборка Marketplace AI Studio PRO Mega Edition 2.7 FUNCTIONAL UI.
+            Windows-сборка Marketplace AI Studio PRO Mega Edition 2.8 AI PREVIEW.
 
-            Добавлено: реальные обработчики основных кнопок, фоновая синхронизация полного каталога WB, фоновые реклама и отзывы, единый статус выполнения и логирование ошибок. WB API теперь координирует частоту запросов между модулями и автоматически повторяет 429 по X-RateLimit-Retry/Retry-After. Восстановлена полная совместимость коннектора Ozon и существующих вызовов hydrate/reviews.
+            Добавлено: интерактивный предпросмотр AI-карточки перед публикацией, просмотр каждого изображения отдельно, ручная проверка JSON-текстов и SEO, перегенерация только выбранного AI-слайда одним отдельным Image API запросом без повторной генерации всей карточки. Принятие комплекта ставит публикацию WB в очередь; отклонение ничего не отправляет в маркетплейс. Также сохранены фоновые WB/Ozon операции, контроль расходов OpenAI API и защита от WB rate limit.
 
             Скачать Marketplace_AI_Studio_PRO_Setup.exe ниже в Assets.
           artifacts: installer-output/Marketplace_AI_Studio_PRO_Setup.exe

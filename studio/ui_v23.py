@@ -41,7 +41,7 @@ class Main(BaseMain):
         run=QPushButton('Найти слабую карточку и пересобрать AI сейчас'); run.setObjectName('primary'); run.clicked.connect(self.run_card_growth_cycle); form.addRow(run)
         history=QPushButton('История AI-пересборок'); history.clicked.connect(self.growth_history_page); form.addRow(history)
         status=QLabel('Последний цикл: '+str(self.growth_status)); status.setWordWrap(True); form.addRow(status)
-        note=QLabel('AI использует текущее фото WB как исходник, берёт только синхронизированные подтверждённые характеристики, создаёт новую версию текстов и полный визуальный комплект. За один цикл обрабатывается максимум одна карточка. Автоматическая публикация выполняется только когда одновременно включены режим AUTOPILOT и отдельное разрешение «Автопубликация WB».'); note.setWordWrap(True); form.addRow(note)
+        note=QLabel('AI использует текущее фото WB как исходник, берёт только синхронизированные подтверждённые характеристики, создаёт новую версию текстов и полный визуальный комплект. Перед пересборкой сохраняется базовый снимок бизнес-метрик. За один цикл обрабатывается максимум одна карточка. Автоматическая публикация выполняется только когда одновременно включены режим AUTOPILOT и отдельное разрешение «Автопубликация WB».'); note.setWordWrap(True); form.addRow(note)
         layout.addWidget(group)
 
     def set_growth_enabled(self,value):
@@ -52,6 +52,12 @@ class Main(BaseMain):
 
     def set_growth_minutes(self,value):
         self.cfg['autopilot_card_growth_minutes']=int(value); save_settings(self.cfg); self._apply_growth_timer()
+
+    def _baseline_metrics(self,nm):
+        row=next((x for x in self.sku_live if str(x.get('nm'))==str(nm)),None)
+        if not row:return {}
+        gross=float(row.get('gross') or 0); ad=float(row.get('ad_share') or 0)
+        return {'gross':gross,'payout':float(row.get('payout') or 0),'units':float(row.get('units') or 0),'returns':float(row.get('returns') or 0),'profit':float(row.get('profit') or 0),'stock':float(row.get('stock') or 0),'ad_spend':ad,'drr':(ad/gross*100.0) if gross>0 else 0.0}
 
     def run_card_growth_cycle(self):
         if self.growth_worker or self.active_worker:
@@ -65,6 +71,7 @@ class Main(BaseMain):
         candidate=engine.choose_candidate(self.seo_rows,int(self.cfg.get('autopilot_card_score_threshold',70) or 70))
         if not candidate:
             self.growth_status='Подходящих слабых карточек нет или они уже стоят в очереди'; return
+        candidate=dict(candidate); candidate['baseline_metrics']=self._baseline_metrics(candidate.get('nm'))
         worker=Worker(lambda progress,is_cancelled:engine.regenerate(candidate,7,progress,is_cancelled))
         self.growth_worker=worker; self.active_worker=worker
         worker.signals.progress.connect(lambda p,t:self._growth_progress(p,t))

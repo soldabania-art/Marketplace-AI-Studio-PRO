@@ -2,8 +2,8 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, update
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from .config import get_settings
@@ -13,9 +13,11 @@ from .models import (
     AccountTokenPurpose,
     Membership,
     MembershipRole,
+    SecurityEvent,
     Subscription,
     SubscriptionStatus,
     User,
+    UserSession,
     Workspace,
 )
 from .schemas import (
@@ -27,38 +29,21 @@ from .schemas import (
     TokenActionRequest,
     TokenResponse,
 )
-from .security import create_access_token, get_current_user, hash_password, is_platform_admin, verify_password
+from .security import (
+    create_access_token,
+    get_current_session,
+    get_current_user,
+    hash_password,
+    is_platform_admin,
+    verify_password,
+)
 
 router = APIRouter()
 
 PLANS = [
-    {
-        "code": "trial",
-        "name": "Trial",
-        "price_monthly_rub": 0,
-        "stores": 1,
-        "users": 1,
-        "ai_generation": "limited",
-        "autopilot": "recommendations",
-    },
-    {
-        "code": "pro",
-        "name": "PRO",
-        "price_monthly_rub": 4990,
-        "stores": 3,
-        "users": 3,
-        "ai_generation": "extended",
-        "autopilot": "assisted",
-    },
-    {
-        "code": "business",
-        "name": "Business",
-        "price_monthly_rub": 12990,
-        "stores": 10,
-        "users": 10,
-        "ai_generation": "priority",
-        "autopilot": "advanced",
-    },
+    {"code": "trial", "name": "Trial", "price_monthly_rub": 0, "stores": 1, "users": 1, "ai_generation": "limited", "autopilot": "recommendations"},
+    {"code": "pro", "name": "PRO", "price_monthly_rub": 4990, "stores": 3, "users": 3, "ai_generation": "extended", "autopilot": "assisted"},
+    {"code": "business", "name": "Business", "price_monthly_rub": 12990, "stores": 10, "users": 10, "ai_generation": "priority", "autopilot": "advanced"},
 ]
 
 
@@ -66,49 +51,87 @@ def _token_hash(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
 
+def _privacy_hash(value: str) -> str:
+    settings = get_settings()
+    return hashlib.sha256(f"{settings.jwt_secret}:{value}".encode("utf-8")).hexdigest()
+
+
+def _request_fingerprint(request: Request) -> tuple[str, str]:
+    forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    host = forwarded or (request.client.host if request.client else "")
+    user_agent = request.headers.get("user-agent", "")[:320]
+    return _privacy_hash(host) if host else "", user_agent
+
+
+def _record_security_event(db: Session, request: Request, event_type: str, success: bool, user: User | None = None, subject: str = "") -> None:
+    ip_hash, user_agent = _request_fingerprint(request)
+    db.add(SecurityEvent(
+        user_id=user.id if user else None,
+        event_type=event_type,
+        success=success,
+        subject_hash=_privacy_hash(subject.lower().strip()) if subject else "",
+        ip_hash=ip_hash,
+        user_agent=user_agent,
+    ))
+
+
+def _create_session(db: Session, request: Request, user: User) -> str:
+    settings = get_settings()
+    ip_hash, user_agent = _request_fingerprint(request)
+    now = datetime.now(timezone.utc)
+    session = UserSession(
+        user_id=user.id,
+        user_agent=user_agent,
+        ip_hash=ip_hash,
+        last_seen_at=now,
+        expires_at=now + timedelta(days=settings.session_days),
+    )
+    db.add(session)
+    _record_security_event(db, request, "session_created", True, user=user)
+    db.commit()
+    return create_access_token(user.id, session.id)
+
+
+def _login_is_limited(db: Session, email: str) -> bool:
+    settings = get_settings()
+    since = datetime.now(timezone.utc) - timedelta(minutes=settings.login_attempt_window_minutes)
+    failures = db.scalar(
+        select(func.count(SecurityEvent.id)).where(
+            SecurityEvent.event_type == "login",
+            SecurityEvent.success.is_(False),
+            SecurityEvent.subject_hash == _privacy_hash(email),
+            SecurityEvent.created_at >= since,
+        )
+    ) or 0
+    return failures >= settings.login_attempt_max_failures
+
+
 def _create_account_token(db: Session, user: User, purpose: AccountTokenPurpose, lifetime: timedelta) -> str:
     now = datetime.now(timezone.utc)
     db.execute(
         update(AccountActionToken)
-        .where(
-            AccountActionToken.user_id == user.id,
-            AccountActionToken.purpose == purpose,
-            AccountActionToken.used_at.is_(None),
-        )
+        .where(AccountActionToken.user_id == user.id, AccountActionToken.purpose == purpose, AccountActionToken.used_at.is_(None))
         .values(used_at=now)
     )
     raw_token = secrets.token_urlsafe(48)
-    db.add(
-        AccountActionToken(
-            user_id=user.id,
-            purpose=purpose,
-            token_hash=_token_hash(raw_token),
-            expires_at=now + lifetime,
-        )
-    )
+    db.add(AccountActionToken(user_id=user.id, purpose=purpose, token_hash=_token_hash(raw_token), expires_at=now + lifetime))
     db.commit()
     return raw_token
 
 
 def _consume_account_token(db: Session, raw_token: str, purpose: AccountTokenPurpose) -> tuple[AccountActionToken, User]:
-    token = db.scalar(
-        select(AccountActionToken).where(
-            AccountActionToken.token_hash == _token_hash(raw_token),
-            AccountActionToken.purpose == purpose,
-            AccountActionToken.used_at.is_(None),
-        )
-    )
+    token = db.scalar(select(AccountActionToken).where(
+        AccountActionToken.token_hash == _token_hash(raw_token),
+        AccountActionToken.purpose == purpose,
+        AccountActionToken.used_at.is_(None),
+    ))
     if token is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or already used token")
-
-    expires_at = token.expires_at
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    expires_at = token.expires_at if token.expires_at.tzinfo else token.expires_at.replace(tzinfo=timezone.utc)
     if expires_at <= datetime.now(timezone.utc):
         token.used_at = datetime.now(timezone.utc)
         db.commit()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Token has expired")
-
     user = db.get(User, token.user_id)
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Account is unavailable")
@@ -117,12 +140,7 @@ def _consume_account_token(db: Session, raw_token: str, purpose: AccountTokenPur
 
 def _delivery_response(raw_token: str, purpose: str) -> dict:
     settings = get_settings()
-    result = {
-        "ok": True,
-        "message": "If the account exists, instructions will be sent to its email address.",
-        "delivery": "email_provider_not_configured",
-    }
-    # Development-only escape hatch for local/CI testing. Production never exposes raw action tokens.
+    result = {"ok": True, "message": "If the account exists, instructions will be sent to its email address.", "delivery": "email_provider_not_configured"}
     if settings.environment.lower() in {"development", "test", "testing"}:
         result["development_token"] = raw_token
         result["purpose"] = purpose
@@ -135,28 +153,74 @@ def plans():
 
 
 @router.post("/auth/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+def register(payload: RegisterRequest, request: Request, db: Session = Depends(get_db)):
     email = payload.email.lower().strip()
     if db.scalar(select(User.id).where(User.email == email)) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already registered")
-
     user = User(email=email, password_hash=hash_password(payload.password), full_name=payload.full_name.strip())
     workspace = Workspace(name=payload.workspace_name.strip())
     db.add_all([user, workspace])
     db.flush()
     db.add(Membership(user_id=user.id, workspace_id=workspace.id, role=MembershipRole.owner))
     db.add(Subscription(workspace_id=workspace.id, plan_code="trial", status=SubscriptionStatus.trial))
+    _record_security_event(db, request, "registration", True, user=user, subject=email)
     db.commit()
-    return TokenResponse(access_token=create_access_token(user.id))
+    return TokenResponse(access_token=_create_session(db, request, user))
 
 
 @router.post("/auth/login", response_model=TokenResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)):
+def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
     email = payload.email.lower().strip()
+    if _login_is_limited(db, email):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many failed login attempts. Try again later.")
     user = db.scalar(select(User).where(User.email == email, User.is_active.is_(True)))
     if user is None or not verify_password(payload.password, user.password_hash):
+        _record_security_event(db, request, "login", False, user=user, subject=email)
+        db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
-    return TokenResponse(access_token=create_access_token(user.id))
+    _record_security_event(db, request, "login", True, user=user, subject=email)
+    db.commit()
+    return TokenResponse(access_token=_create_session(db, request, user))
+
+
+@router.get("/auth/sessions")
+def sessions(current_user: User = Depends(get_current_user), current_session: UserSession = Depends(get_current_session), db: Session = Depends(get_db)):
+    rows = db.scalars(select(UserSession).where(UserSession.user_id == current_user.id).order_by(UserSession.created_at.desc())).all()
+    return {"sessions": [{
+        "id": row.id,
+        "current": row.id == current_session.id,
+        "user_agent": row.user_agent,
+        "created_at": row.created_at,
+        "last_seen_at": row.last_seen_at,
+        "expires_at": row.expires_at,
+        "revoked": row.revoked_at is not None,
+    } for row in rows]}
+
+
+@router.delete("/auth/sessions/{session_id}")
+def revoke_session(session_id: str, request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    target = db.scalar(select(UserSession).where(UserSession.id == session_id, UserSession.user_id == current_user.id))
+    if target is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if target.revoked_at is None:
+        target.revoked_at = datetime.now(timezone.utc)
+        _record_security_event(db, request, "session_revoked", True, user=current_user)
+        db.commit()
+    return {"ok": True}
+
+
+@router.post("/auth/logout")
+def logout(request: Request, current_user: User = Depends(get_current_user), current_session: UserSession = Depends(get_current_session), db: Session = Depends(get_db)):
+    current_session.revoked_at = datetime.now(timezone.utc)
+    _record_security_event(db, request, "logout", True, user=current_user)
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/auth/security-events")
+def security_events(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    rows = db.scalars(select(SecurityEvent).where(SecurityEvent.user_id == current_user.id).order_by(SecurityEvent.created_at.desc()).limit(100)).all()
+    return {"events": [{"event_type": row.event_type, "success": row.success, "created_at": row.created_at, "user_agent": row.user_agent} for row in rows]}
 
 
 @router.post("/auth/email-verification/request")
@@ -164,12 +228,7 @@ def request_email_verification(current_user: User = Depends(get_current_user), d
     if current_user.email_verified:
         return {"ok": True, "message": "Email is already verified", "delivery": "not_required"}
     settings = get_settings()
-    raw_token = _create_account_token(
-        db,
-        current_user,
-        AccountTokenPurpose.verify_email,
-        timedelta(hours=settings.email_verification_hours),
-    )
+    raw_token = _create_account_token(db, current_user, AccountTokenPurpose.verify_email, timedelta(hours=settings.email_verification_hours))
     return _delivery_response(raw_token, AccountTokenPurpose.verify_email.value)
 
 
@@ -187,34 +246,20 @@ def request_password_reset(payload: EmailRequest, db: Session = Depends(get_db))
     email = payload.email.lower().strip()
     user = db.scalar(select(User).where(User.email == email, User.is_active.is_(True)))
     if user is None:
-        return {
-            "ok": True,
-            "message": "If the account exists, instructions will be sent to its email address.",
-            "delivery": "not_disclosed",
-        }
+        return {"ok": True, "message": "If the account exists, instructions will be sent to its email address.", "delivery": "not_disclosed"}
     settings = get_settings()
-    raw_token = _create_account_token(
-        db,
-        user,
-        AccountTokenPurpose.reset_password,
-        timedelta(minutes=settings.password_reset_minutes),
-    )
+    raw_token = _create_account_token(db, user, AccountTokenPurpose.reset_password, timedelta(minutes=settings.password_reset_minutes))
     return _delivery_response(raw_token, AccountTokenPurpose.reset_password.value)
 
 
 @router.post("/auth/password-reset/confirm")
 def confirm_password_reset(payload: PasswordResetConfirmRequest, db: Session = Depends(get_db)):
     token, user = _consume_account_token(db, payload.token, AccountTokenPurpose.reset_password)
+    now = datetime.now(timezone.utc)
     user.password_hash = hash_password(payload.new_password)
-    token.used_at = datetime.now(timezone.utc)
-    db.execute(
-        update(AccountActionToken)
-        .where(
-            AccountActionToken.user_id == user.id,
-            AccountActionToken.used_at.is_(None),
-        )
-        .values(used_at=datetime.now(timezone.utc))
-    )
+    token.used_at = now
+    db.execute(update(AccountActionToken).where(AccountActionToken.user_id == user.id, AccountActionToken.used_at.is_(None)).values(used_at=now))
+    db.execute(update(UserSession).where(UserSession.user_id == user.id, UserSession.revoked_at.is_(None)).values(revoked_at=now))
     db.commit()
     return {"ok": True, "message": "Password has been updated"}
 
@@ -225,11 +270,7 @@ def me(current_user: User = Depends(get_current_user), db: Session = Depends(get
     if membership is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Workspace membership is missing")
     workspace = db.get(Workspace, membership.workspace_id)
-    subscription = db.scalar(
-        select(Subscription)
-        .where(Subscription.workspace_id == membership.workspace_id)
-        .order_by(Subscription.created_at.desc())
-    )
+    subscription = db.scalar(select(Subscription).where(Subscription.workspace_id == membership.workspace_id).order_by(Subscription.created_at.desc()))
     return AccountResponse(
         id=current_user.id,
         email=current_user.email,

@@ -38,8 +38,12 @@ jobs:
       - name: Smoke test Python sources
         shell: pwsh
         run: |
-          python -m compileall -q app.py studio
-          python -c "import app; import studio.ui_v33; import studio.ui_v32; import studio.ui_v31; import studio.ai_router; import studio.local_ai_manager; import studio.local_ai_setup; import studio.local_image; import studio.hardware_probe; import studio.connectors; import studio.services; import studio.openai_billing; import studio.ai_errors; import studio.diagnostics; import studio.updater; import studio.ozon_center; print('smoke ok')"
+          python -m compileall -q app.py studio tests
+          python -c "import app; import studio.ui_v33; import studio.ui_v32; import studio.ui_v31; import studio.ai_router; import studio.review_autopilot; import studio.wb_ad_manager; import studio.local_ai_manager; import studio.local_ai_setup; import studio.local_image; import studio.hardware_probe; import studio.connectors; import studio.services; import studio.safety_control; import studio.openai_billing; import studio.ai_errors; import studio.diagnostics; import studio.updater; import studio.ozon_center; print('smoke ok')"
+
+      - name: Run functional contract tests
+        shell: pwsh
+        run: python -m unittest discover -s tests -v
 
       - name: Build application EXE
         shell: pwsh
@@ -74,6 +78,8 @@ jobs:
             Windows-сборка Marketplace AI Studio PRO Mega Edition 3.3 LOCAL AI MANAGER.
 
             Добавлено: Local AI Manager с контролем текущей RAM и NVIDIA VRAM, просмотром установленных и загруженных Ollama-моделей, оценкой давления памяти и безопасным автоматическим переключением на уже установленную более лёгкую модель при высокой нагрузке. Автозащита ничего не скачивает, не устанавливает и не включает платный OpenAI. Интервал проверки настраивается в интерфейсе; ручная оптимизация доступна с подтверждением пользователя.
+
+            Тестирование: перед сборкой запускаются compile/import smoke checks и функциональные contract-тесты Local AI routing, review automation, WB parsing/hydration, advertising guardrails, model memory manager и safety limits.
 
             Сохранены ONE-CLICK FREE AI, локальные Text/Image AI, AI Preview, WB/Ozon, публикация, реклама, отзывы, финансы и контроль расходов.
 

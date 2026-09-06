@@ -31,7 +31,7 @@ jobs:
       - name: Stamp build version
         shell: pwsh
         run: |
-          $version = "3.4.${{ github.run_number }}"
+          $version = "3.5.${{ github.run_number }}"
           (Get-Content 'studio/__init__.py' -Raw) -replace "__version__='[^']+'", "__version__='$version'" | Set-Content 'studio/__init__.py' -Encoding utf8
           (Get-Content 'installer.iss' -Raw) -replace '#define MyAppVersion "[^"]+"', "#define MyAppVersion `"$version`"" | Set-Content 'installer.iss' -Encoding utf8
           Write-Host "Stamped version $version"
@@ -40,7 +40,7 @@ jobs:
         shell: pwsh
         run: |
           python -m compileall -q app.py studio tests
-          python -c "import app; import studio.ui_v34; import studio.ui_v33; import studio.ui_v32; import studio.ui_v31; import studio.ai_router; import studio.review_autopilot; import studio.wb_ad_manager; import studio.local_ai_manager; import studio.local_ai_setup; import studio.local_image; import studio.hardware_probe; import studio.connectors; import studio.services; import studio.safety_control; import studio.openai_billing; import studio.ai_errors; import studio.diagnostics; import studio.updater; import studio.ozon_center; print('smoke ok')"
+          python -c "import app; import studio.ui_v35; import studio.ui_v34; import studio.ui_v33; import studio.ui_v32; import studio.ui_v31; import studio.ai_router; import studio.review_autopilot; import studio.wb_ad_manager; import studio.sku_analytics; import studio.local_ai_manager; import studio.local_ai_setup; import studio.local_image; import studio.hardware_probe; import studio.connectors; import studio.services; import studio.safety_control; import studio.openai_billing; import studio.ai_errors; import studio.diagnostics; import studio.updater; import studio.ozon_center; print('smoke ok')"
 
       - name: Run core functional contract tests
         shell: pwsh
@@ -81,16 +81,16 @@ jobs:
       - name: Publish GitHub Release
         uses: ncipollo/release-action@v1
         with:
-          tag: v3.4.${{ github.run_number }}
-          name: Marketplace AI Studio PRO Mega Edition 3.4 build ${{ github.run_number }}
+          tag: v3.5.${{ github.run_number }}
+          name: Marketplace AI Studio PRO Mega Edition 3.5 build ${{ github.run_number }}
           body: |
-            Windows-сборка Marketplace AI Studio PRO Mega Edition 3.4 STABILITY AUDIT.
+            Windows-сборка Marketplace AI Studio PRO Mega Edition 3.5 REPUTATION + PROFIT CORE.
 
-            Исправлено после полного аудита: корректный выбор более лёгкой Ollama-модели без ошибок 14B/32B, review classifier теперь работает через FREE-FIRST AI Router, OpenAI расходы обновляют видимый статус, WB sync/ads/reviews/business jobs поддерживают отмену и не сохраняют частичный результат после остановки, AI-ошибки показываются пользователю в нормальном виде.
+            Добавлено: точная рекламная атрибуция по WB nmID из вложенной fullstats, Profit Engine использует фактический рекламный расход по SKU вместо пропорционального распределения, центральный WB rate/cache coordinator защищает от 429, а новый Reputation Center реализует полный сценарий «загрузить → выбрать → AI-черновик → редактировать → подтвердить → отправить».
 
-            Тестирование: compile/import smoke checks, отдельный deterministic contract gate для Local AI routing/reviews/WB/рекламы/safety и отдельный headless UI construction gate. Сборка ограничена по времени, чтобы зависший тест не блокировал релизы бесконечно.
+            Для рискованных отзывов сохраняется ручное подтверждение, write-действия проходят дневные guardrails и audit. Dashboard health-check локального AI ускорен и не должен задерживать запуск при недоступных localhost-сервисах.
 
-            Сохранены ONE-CLICK FREE AI, Local AI Manager, локальные Text/Image AI, AI Preview, WB/Ozon, публикация, реклама, отзывы, финансы и контроль расходов.
+            Тестирование: compile/import smoke checks, deterministic contract tests для Local AI/WB/reviews/ads/profit/safety и headless UI construction tests текущей версии 3.5.
 
             Скачать Marketplace_AI_Studio_PRO_Setup.exe ниже в Assets.
           artifacts: installer-output/Marketplace_AI_Studio_PRO_Setup.exe

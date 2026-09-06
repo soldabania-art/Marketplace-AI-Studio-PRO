@@ -30,7 +30,7 @@ jobs:
       - name: Stamp build version
         shell: pwsh
         run: |
-          $version = "3.3.${{ github.run_number }}"
+          $version = "3.4.${{ github.run_number }}"
           (Get-Content 'studio/__init__.py' -Raw) -replace "__version__='[^']+'", "__version__='$version'" | Set-Content 'studio/__init__.py' -Encoding utf8
           (Get-Content 'installer.iss' -Raw) -replace '#define MyAppVersion "[^"]+"', "#define MyAppVersion `"$version`"" | Set-Content 'installer.iss' -Encoding utf8
           Write-Host "Stamped version $version"
@@ -39,10 +39,12 @@ jobs:
         shell: pwsh
         run: |
           python -m compileall -q app.py studio tests
-          python -c "import app; import studio.ui_v33; import studio.ui_v32; import studio.ui_v31; import studio.ai_router; import studio.review_autopilot; import studio.wb_ad_manager; import studio.local_ai_manager; import studio.local_ai_setup; import studio.local_image; import studio.hardware_probe; import studio.connectors; import studio.services; import studio.safety_control; import studio.openai_billing; import studio.ai_errors; import studio.diagnostics; import studio.updater; import studio.ozon_center; print('smoke ok')"
+          python -c "import app; import studio.ui_v34; import studio.ui_v33; import studio.ui_v32; import studio.ui_v31; import studio.ai_router; import studio.review_autopilot; import studio.wb_ad_manager; import studio.local_ai_manager; import studio.local_ai_setup; import studio.local_image; import studio.hardware_probe; import studio.connectors; import studio.services; import studio.safety_control; import studio.openai_billing; import studio.ai_errors; import studio.diagnostics; import studio.updater; import studio.ozon_center; print('smoke ok')"
 
       - name: Run functional contract tests
         shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: python -m unittest discover -s tests -v
 
       - name: Build application EXE
@@ -72,16 +74,16 @@ jobs:
       - name: Publish GitHub Release
         uses: ncipollo/release-action@v1
         with:
-          tag: v3.3.${{ github.run_number }}
-          name: Marketplace AI Studio PRO Mega Edition 3.3 build ${{ github.run_number }}
+          tag: v3.4.${{ github.run_number }}
+          name: Marketplace AI Studio PRO Mega Edition 3.4 build ${{ github.run_number }}
           body: |
-            Windows-сборка Marketplace AI Studio PRO Mega Edition 3.3 LOCAL AI MANAGER.
+            Windows-сборка Marketplace AI Studio PRO Mega Edition 3.4 STABILITY AUDIT.
 
-            Добавлено: Local AI Manager с контролем текущей RAM и NVIDIA VRAM, просмотром установленных и загруженных Ollama-моделей, оценкой давления памяти и безопасным автоматическим переключением на уже установленную более лёгкую модель при высокой нагрузке. Автозащита ничего не скачивает, не устанавливает и не включает платный OpenAI. Интервал проверки настраивается в интерфейсе; ручная оптимизация доступна с подтверждением пользователя.
+            Исправлено после полного аудита: корректный выбор более лёгкой Ollama-модели без ошибок 14B/32B, review classifier теперь работает через FREE-FIRST AI Router, OpenAI расходы обновляют видимый статус, WB sync/ads/reviews/business jobs поддерживают отмену и не сохраняют частичный результат после остановки, AI-ошибки показываются пользователю в нормальном виде.
 
-            Тестирование: перед сборкой запускаются compile/import smoke checks и функциональные contract-тесты Local AI routing, review automation, WB parsing/hydration, advertising guardrails, model memory manager и safety limits.
+            Тестирование: compile/import smoke checks, функциональные contract-тесты Local AI routing, review automation, WB parsing/hydration, advertising guardrails, safety limits, model memory manager и headless UI construction test.
 
-            Сохранены ONE-CLICK FREE AI, локальные Text/Image AI, AI Preview, WB/Ozon, публикация, реклама, отзывы, финансы и контроль расходов.
+            Сохранены ONE-CLICK FREE AI, Local AI Manager, локальные Text/Image AI, AI Preview, WB/Ozon, публикация, реклама, отзывы, финансы и контроль расходов.
 
             Скачать Marketplace_AI_Studio_PRO_Setup.exe ниже в Assets.
           artifacts: installer-output/Marketplace_AI_Studio_PRO_Setup.exe

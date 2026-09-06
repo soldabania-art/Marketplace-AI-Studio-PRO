@@ -1,4 +1,5 @@
 import './globals.css'
+import './workspace.css'
 import CookieConsent from './components/CookieConsent'
 
 export const metadata = {

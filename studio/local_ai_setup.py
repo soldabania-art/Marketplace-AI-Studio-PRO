@@ -1,5 +1,6 @@
 import os, shutil, subprocess, time
 from pathlib import Path
+import requests
 
 
 def _which(name):
@@ -21,6 +22,25 @@ def ollama_path():
 
 def winget_path():
     return _which('winget') if os.name=='nt' else None
+
+
+def free_space_gb(path=None):
+    try:
+        target=Path(path or os.environ.get('LOCALAPPDATA') or Path.home())
+        target=target if target.exists() else Path.home()
+        return round(shutil.disk_usage(str(target)).free/(1024**3),1)
+    except Exception:
+        return None
+
+
+def recommended_text_model(hardware=None):
+    """Conservative local text model choice aimed at marketplace tasks and broad Windows compatibility."""
+    hardware=hardware or {}
+    ram=float(hardware.get('ram_gb') or 0)
+    gpu=hardware.get('gpu') or {}; vram=float(gpu.get('vram_gb') or 0)
+    if ram>=32 or vram>=10:return {'model':'qwen2.5:7b','estimated_gb':5.5,'tier':'quality'}
+    if ram>=16 or vram>=6:return {'model':'qwen2.5:3b','estimated_gb':2.8,'tier':'balanced'}
+    return {'model':'qwen2.5:1.5b','estimated_gb':1.6,'tier':'light'}
 
 
 def install_ollama(progress=None):
@@ -46,13 +66,22 @@ def install_ollama(progress=None):
     return {'ok':True,'already_installed':False,'path':path}
 
 
+def ollama_running(url='http://127.0.0.1:11434'):
+    try:return requests.get(url.rstrip('/')+'/api/tags',timeout=2).ok
+    except Exception:return False
+
+
 def ensure_ollama_running():
     path=ollama_path()
     if not path:raise RuntimeError('Ollama не установлен.')
+    if ollama_running():return path
     try:
         subprocess.Popen([path,'serve'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
     except Exception:
         pass
+    for _ in range(12):
+        if ollama_running():break
+        time.sleep(.5)
     return path
 
 
@@ -67,16 +96,10 @@ def pull_ollama_model(model='qwen2.5:3b',progress=None):
 
 
 def find_image_launchers():
-    """Find existing Forge/A1111 launchers without downloading third-party software."""
-    roots=[]
-    for env in ('USERPROFILE','LOCALAPPDATA'):
-        base=os.environ.get(env)
-        if base:roots.append(Path(base))
+    """Find existing Forge/A1111 launchers without silently downloading third-party software."""
     names=('webui-user.bat','run.bat','webui.bat')
-    out=[]
-    common=[]
-    home=Path.home()
-    common += [home/'stable-diffusion-webui',home/'stable-diffusion-webui-forge',home/'Forge',home/'Downloads'/'stable-diffusion-webui-forge']
+    out=[]; home=Path.home()
+    common=[home/'stable-diffusion-webui',home/'stable-diffusion-webui-forge',home/'Forge',home/'Downloads'/'stable-diffusion-webui-forge']
     for root in common:
         for n in names:
             p=root/n
@@ -84,22 +107,53 @@ def find_image_launchers():
     return list(dict.fromkeys(out))
 
 
+def local_image_running(base_url='http://127.0.0.1:7860'):
+    try:return requests.get(base_url.rstrip('/')+'/sdapi/v1/sd-models',timeout=2).ok
+    except Exception:return False
+
+
 def launch_image_server(launcher,extra_args='--api'):
     p=Path(str(launcher or ''))
     if not p.exists():raise RuntimeError('Файл запуска Local Image AI не найден.')
-    args=[str(p)]
+    if local_image_running():return {'ok':True,'launcher':str(p),'already_running':True,'args':[]}
     extra=[x for x in str(extra_args or '--api').split() if x]
-    if p.suffix.lower()=='.bat':
+    if p.suffix.lower() in ('.bat','.cmd'):
         cmd=['cmd.exe','/c',str(p)]+extra
     else:
-        cmd=args+extra
+        cmd=[str(p)]+extra
     subprocess.Popen(cmd,cwd=str(p.parent),creationflags=getattr(subprocess,'CREATE_NEW_CONSOLE',0))
-    return {'ok':True,'launcher':str(p),'args':extra}
+    return {'ok':True,'launcher':str(p),'already_running':False,'args':extra}
 
 
-def setup_status():
+def autostart_local_services(cfg):
+    """Best-effort startup. Never installs or downloads anything and never enables paid AI."""
+    cfg=cfg or {}; result={'text':None,'image':None}
+    if cfg.get('local_text_autostart',True):
+        try:
+            if ollama_path():
+                ensure_ollama_running(); result['text']={'ok':True,'running':ollama_running()}
+            else:result['text']={'ok':False,'reason':'ollama_missing'}
+        except Exception as e:result['text']={'ok':False,'error':str(e)}
+    if cfg.get('local_image_autostart',False):
+        launcher=str(cfg.get('local_image_launcher') or '')
+        try:
+            if local_image_running(str(cfg.get('local_image_url') or 'http://127.0.0.1:7860')):
+                result['image']={'ok':True,'already_running':True}
+            elif launcher and Path(launcher).exists():
+                result['image']=launch_image_server(launcher,'--api')
+            else:result['image']={'ok':False,'reason':'launcher_missing'}
+        except Exception as e:result['image']={'ok':False,'error':str(e)}
+    return result
+
+
+def setup_status(hardware=None):
+    rec=recommended_text_model(hardware or {})
     return {
         'ollama':ollama_path(),
+        'ollama_running':ollama_running(),
         'winget':winget_path(),
         'image_launchers':find_image_launchers(),
+        'image_running':local_image_running(),
+        'free_space_gb':free_space_gb(),
+        'recommended_model':rec,
     }

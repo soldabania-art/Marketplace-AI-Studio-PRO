@@ -22,6 +22,11 @@ class SubscriptionStatus(str, enum.Enum):
     canceled = "canceled"
 
 
+class AccountTokenPurpose(str, enum.Enum):
+    verify_email = "verify_email"
+    reset_password = "reset_password"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -35,6 +40,7 @@ class User(Base):
 
     memberships: Mapped[list["Membership"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     legal_consents: Mapped[list["LegalConsent"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    account_tokens: Mapped[list["AccountActionToken"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class Workspace(Base):
@@ -91,3 +97,17 @@ class LegalConsent(Base):
     accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped[User] = relationship(back_populates="legal_consents")
+
+
+class AccountActionToken(Base):
+    __tablename__ = "account_action_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    purpose: Mapped[AccountTokenPurpose] = mapped_column(Enum(AccountTokenPurpose), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    user: Mapped[User] = relationship(back_populates="account_tokens")

@@ -6,7 +6,7 @@ on:
     branches: [ main ]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -43,10 +43,24 @@ jobs:
           & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' installer.iss
           if (!(Test-Path 'installer-output/Marketplace_AI_Studio_PRO_Setup.exe')) { throw 'Installer was not created' }
 
-      - name: Upload ready installer
+      - name: Upload ready installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: Marketplace_AI_Studio_PRO_Setup
           path: installer-output/Marketplace_AI_Studio_PRO_Setup.exe
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: v1.0.${{ github.run_number }}
+          name: Marketplace AI Studio PRO v1.0.${{ github.run_number }}
+          body: |
+            Готовый Windows-установщик Marketplace AI Studio PRO.
+
+            Скачать файл Marketplace_AI_Studio_PRO_Setup.exe ниже в разделе Assets.
+          artifacts: installer-output/Marketplace_AI_Studio_PRO_Setup.exe
+          artifactErrorsFailBuild: true
+          makeLatest: true
+          generateReleaseNotes: false

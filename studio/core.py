@@ -16,6 +16,8 @@ PUBLIC_DEFAULTS={
     'local_ai_url':'http://127.0.0.1:8080/v1',
     'local_ai_model':'local-model',
     'local_text_autostart':True,
+    'local_ai_auto_memory':True,
+    'local_ai_memory_interval_sec':30,
     'local_images_enabled':True,
     'local_image_url':'http://127.0.0.1:7860',
     'local_image_model':'',

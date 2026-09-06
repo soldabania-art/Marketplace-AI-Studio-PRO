@@ -36,6 +36,10 @@ def create_access_token(user_id: str) -> str:
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
+def is_platform_admin(user: User) -> bool:
+    return user.email.lower().strip() in get_settings().admin_email_set
+
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
     db: Session = Depends(get_db),
@@ -55,3 +59,9 @@ def get_current_user(
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return user
+
+
+def require_platform_admin(current_user: User = Depends(get_current_user)) -> User:
+    if not is_platform_admin(current_user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform administrator access required")
+    return current_user

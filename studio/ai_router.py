@@ -1,6 +1,7 @@
 import base64, json, mimetypes, requests
 from pathlib import Path
 from .services import AIService
+from .local_image import LocalImageEngine
 
 
 class LocalTextAI:
@@ -51,16 +52,23 @@ class LocalTextAI:
 
 
 class AIRouter:
-    """Free-first AI router. Text can run locally; paid OpenAI is explicit and optional."""
+    """Free-first AI router. Local text and local image engines are preferred; paid OpenAI is explicit."""
     MODES=('free','economy','premium')
     def __init__(self,cfg):
-        self.cfg=cfg or {}; self.mode=str(self.cfg.get('ai_mode','economy') or 'economy').lower()
-        if self.mode not in self.MODES:self.mode='economy'
+        self.cfg=cfg or {}; self.mode=str(self.cfg.get('ai_mode','free') or 'free').lower()
+        if self.mode not in self.MODES:self.mode='free'
         self.local=LocalTextAI(self.cfg.get('local_ai_url','http://127.0.0.1:8080/v1'),self.cfg.get('local_ai_model','local-model'))
+        self.local_images=LocalImageEngine(self.cfg.get('local_image_url','http://127.0.0.1:7860'),self.cfg.get('local_image_model',''))
         self.premium=AIService(self.cfg.get('openai_api_key',''),self.cfg.get('openai_model','gpt-5.6-sol'))
 
     def status(self):
-        h=self.local.health(); return {'mode':self.mode,'local':h,'paid_allowed':self.mode=='premium' or bool(self.cfg.get('ai_allow_paid_fallback',False))}
+        return {
+            'mode':self.mode,
+            'local':self.local.health(),
+            'local_images':self.local_images.health() if self.cfg.get('local_images_enabled',True) else {'ok':False,'disabled':True},
+            'paid_allowed':self.mode=='premium' or bool(self.cfg.get('ai_allow_paid_fallback',False)),
+            'paid_images_allowed':self.mode=='premium' or bool(self.cfg.get('ai_allow_paid_images',False)),
+        }
 
     def _text(self,method,*args):
         if self.mode=='premium':return getattr(self.premium,method)(*args)
@@ -80,8 +88,12 @@ class AIRouter:
         return self.mode=='premium' or bool(self.cfg.get('ai_allow_paid_images',False))
 
     def generate_infographics(self,*args,**kwargs):
+        if self.mode!='premium' and self.cfg.get('local_images_enabled',True):
+            try:return self.local_images.generate_infographics(*args,**kwargs)
+            except Exception:
+                if not self._paid_images_allowed():raise
         if not self._paid_images_allowed():
-            raise RuntimeError('Режим 0 ₽: платная генерация изображений OpenAI отключена. Включите «Разрешить платные изображения» или Premium. Локальный image engine будет подключён отдельным модулем.')
+            raise RuntimeError('Локальный Image AI недоступен, а платная генерация OpenAI отключена. Запустите локальный Stable Diffusion WebUI/Forge API или вручную разрешите Premium изображения.')
         return self.premium.generate_infographics(*args,**kwargs)
 
     def full_product_pack(self,photo,info,count=6,progress=None,is_cancelled=None):
@@ -89,10 +101,7 @@ class AIRouter:
         card=self.product_card(photo,info)
         if not isinstance(card,dict) or 'raw_text' in card:raise RuntimeError('AI не вернул структурированную карточку.')
         if is_cancelled and is_cancelled():return {'cancelled':True,'card':card,'images':[]}
-        if not self._paid_images_allowed():
-            if progress:progress(100,'Тексты готовы бесплатно; платные изображения отключены')
-            return {'card':card,'images':[],'cancelled':False,'free_mode_images_skipped':True}
         if progress:progress(25,'Тексты готовы; создаю визуалы')
         name=card.get('product_type') or 'product'
-        paths=self.premium.generate_infographics(card,name,count,progress=(lambda p,t:progress(25+int(p*.75),t)) if progress else None,is_cancelled=is_cancelled,source_photo=photo)
-        return {'card':card,'images':[str(p) for p in paths],'cancelled':bool(is_cancelled and is_cancelled())}
+        paths=self.generate_infographics(card,name,count,progress=(lambda p,t:progress(25+int(p*.75),t)) if progress else None,is_cancelled=is_cancelled,source_photo=photo)
+        return {'card':card,'images':[str(p) for p in paths],'cancelled':bool(is_cancelled and is_cancelled()),'image_provider':'local-first'}

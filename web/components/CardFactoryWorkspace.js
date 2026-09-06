@@ -1,0 +1,19 @@
+'use client'
+
+import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
+import { useMemo, useState } from 'react'
+import { ArrowLeft, ImagePlus, Sparkles } from 'lucide-react'
+
+function makeCopy(name,facts){const clean=facts.trim();return {wbTitle:`${name} — практичный товар для дома`,ozTitle:`${name}: удобное решение для повседневного использования`,description:clean?`Подтверждённые свойства товара: ${clean}. Текст подготовлен только на основе введённых фактов, без выдуманных характеристик.`:'Добавьте подтверждённые факты о товаре — AI не будет придумывать свойства.',seo:clean?clean.split(/[,.;\n]/).map(x=>x.trim().toLowerCase()).filter(Boolean).slice(0,8):[]}}
+
+export default function CardFactoryWorkspace(){
+ const params=useSearchParams(); const [name,setName]=useState(params.get('name')||''); const [sku,setSku]=useState(params.get('sku')||''); const [facts,setFacts]=useState(''); const [imageName,setImageName]=useState(''); const [generated,setGenerated]=useState(null); const [tab,setTab]=useState('WB'); const [notice,setNotice]=useState('')
+ const ready=useMemo(()=>name.trim()&&facts.trim(),[name,facts])
+ function generate(){setGenerated(makeCopy(name.trim(),facts));setNotice('Черновик создан локально из подтверждённых фактов. Публикация в маркетплейс не выполнялась.')}
+ return <main className="workPage"><div className="workHead"><Link href="/products" className="ghostBtn"><ArrowLeft size={16}/> К товарам</Link><Link href="/account" className="ghostBtn">Подключения</Link></div>
+ <section className="workHero"><span className="eyebrow">AI КОНТЕНТ</span><h1>AI Card Factory</h1><p>Фото и подтверждённые факты превращаются в отдельные черновики для WB и Ozon. Факты не выдумываются.</p></section>
+ <div className="factoryGrid"><section className="workPanel formPanel"><h2>Исходные данные</h2><label>Название товара<input value={name} onChange={e=>setName(e.target.value)} placeholder="Например: органайзер для хранения"/></label><label>SKU / артикул<input value={sku} onChange={e=>setSku(e.target.value)} placeholder="Необязательно"/></label><label>Фото товара<div className="uploadBox"><ImagePlus size={22}/><input type="file" accept="image/*" onChange={e=>setImageName(e.target.files?.[0]?.name||'')}/><span>{imageName||'Выберите изображение'}</span></div></label><label>Подтверждённые факты<textarea value={facts} onChange={e=>setFacts(e.target.value)} placeholder="Материал, размеры, комплектность, назначение и другие факты, которые точно известны." rows={7}/></label><button className="primaryBtn" disabled={!ready} onClick={generate}><Sparkles size={17}/> Сгенерировать карточку</button></section>
+ <section className="workPanel previewPanel"><div className="previewTabs"><button className={tab==='WB'?'active':''} onClick={()=>setTab('WB')}>Wildberries</button><button className={tab==='Ozon'?'active':''} onClick={()=>setTab('Ozon')}>Ozon</button></div>{generated?<div className="previewContent"><span className="eyebrow">ЗАГОЛОВОК</span><h2>{tab==='WB'?generated.wbTitle:generated.ozTitle}</h2><span className="eyebrow">ОПИСАНИЕ</span><p>{generated.description}</p><span className="eyebrow">SEO ФРАЗЫ</span><div className="chips">{generated.seo.length?generated.seo.map(x=><span key={x}>{x}</span>):<small>Нет фраз</small>}</div><span className="eyebrow">ВИЗУАЛ</span><div className="visualPlan">Главный кадр: товар крупно, чистый фон. Следующие слайды: преимущества и характеристики только из подтверждённых фактов.</div><button className="primaryBtn" onClick={()=>setNotice('Черновик отмечен готовым к проверке. Для публикации потребуется подключённый магазин и явное подтверждение пользователя.')}>Подготовить к публикации</button></div>:<div className="emptyPreview">Заполните название и факты, затем нажмите «Сгенерировать карточку».</div>}</section></div>
+ {notice&&<div className="sectionNotice">{notice}</div>}</main>
+}

@@ -1,0 +1,2 @@
+import StudioSection from '../../components/StudioSection'
+export default function Page(){return <StudioSection eyebrow="РЕКЛАМА" title="Рекламный центр" description="Расходы, ДРР, кампании и рекомендации с финансовым эффектом." primary="Проверить рекламу" cards={[{title:'Убыточные кампании',text:'Поиск рекламы, которая съедает маржу.',action:'Найти потери'},{title:'Ставки',text:'Рекомендации по ставкам с защитными лимитами.',action:'Рассчитать ставки'},{title:'Рост',text:'Поиск товаров, которые можно безопасно масштабировать.',action:'Найти рост'}]}/>} 

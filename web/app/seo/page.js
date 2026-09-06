@@ -1,0 +1,2 @@
+import StudioSection from '../../components/StudioSection'
+export default function Page(){return <StudioSection eyebrow="ПОИСК" title="SEO и запросы" description="Поисковые кластеры, качество семантики и рекомендации для карточек." primary="Запустить SEO-аудит" cards={[{title:'Кластеры',text:'Группировка запросов по намерению покупателя.',action:'Собрать кластеры'},{title:'Карточки',text:'Поиск недостающей семантики без спама.',action:'Найти проблемы'},{title:'Рекомендации AI',text:'Безопасные предложения заголовков и описаний.',action:'Подготовить SEO'}]}/>} 

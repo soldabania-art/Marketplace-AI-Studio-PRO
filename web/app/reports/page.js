@@ -1,0 +1,2 @@
+import StudioSection from '../../components/StudioSection'
+export default function Page(){return <StudioSection eyebrow="АНАЛИТИКА" title="Отчёты" description="Управленческие отчёты, динамика бизнеса и экспорт данных." primary="Сформировать отчёт" cards={[{title:'P&L',text:'Выручка, комиссии, логистика, реклама, себестоимость и прибыль.',action:'Сформировать P&L'},{title:'Товары',text:'Результаты по SKU и проблемные позиции.',action:'Отчёт по товарам'},{title:'Экспорт',text:'Подготовка данных для дальнейшей работы.',action:'Подготовить экспорт'}]}/>} 

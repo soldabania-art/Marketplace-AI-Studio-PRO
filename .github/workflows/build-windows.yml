@@ -11,6 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,11 +42,17 @@ jobs:
           python -m compileall -q app.py studio tests
           python -c "import app; import studio.ui_v34; import studio.ui_v33; import studio.ui_v32; import studio.ui_v31; import studio.ai_router; import studio.review_autopilot; import studio.wb_ad_manager; import studio.local_ai_manager; import studio.local_ai_setup; import studio.local_image; import studio.hardware_probe; import studio.connectors; import studio.services; import studio.safety_control; import studio.openai_billing; import studio.ai_errors; import studio.diagnostics; import studio.updater; import studio.ozon_center; print('smoke ok')"
 
-      - name: Run functional contract tests
+      - name: Run core functional contract tests
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python -m unittest discover -s tests -v
+        run: python -m unittest discover -s tests -p "test_contracts.py" -v
+
+      - name: Run headless UI construction tests
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m unittest discover -s tests -p "test_ui_smoke.py" -v
 
       - name: Build application EXE
         shell: pwsh
@@ -81,7 +88,7 @@ jobs:
 
             Исправлено после полного аудита: корректный выбор более лёгкой Ollama-модели без ошибок 14B/32B, review classifier теперь работает через FREE-FIRST AI Router, OpenAI расходы обновляют видимый статус, WB sync/ads/reviews/business jobs поддерживают отмену и не сохраняют частичный результат после остановки, AI-ошибки показываются пользователю в нормальном виде.
 
-            Тестирование: compile/import smoke checks, функциональные contract-тесты Local AI routing, review automation, WB parsing/hydration, advertising guardrails, safety limits, model memory manager и headless UI construction test.
+            Тестирование: compile/import smoke checks, отдельный deterministic contract gate для Local AI routing/reviews/WB/рекламы/safety и отдельный headless UI construction gate. Сборка ограничена по времени, чтобы зависший тест не блокировал релизы бесконечно.
 
             Сохранены ONE-CLICK FREE AI, Local AI Manager, локальные Text/Image AI, AI Preview, WB/Ozon, публикация, реклама, отзывы, финансы и контроль расходов.
 

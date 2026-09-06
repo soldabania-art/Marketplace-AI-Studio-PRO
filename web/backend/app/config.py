@@ -11,8 +11,13 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 60 * 24 * 7
     frontend_url: str = "http://localhost:3000"
+    admin_emails: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="MARKETPLACE_", extra="ignore")
+
+    @property
+    def admin_email_set(self) -> set[str]:
+        return {email.strip().lower() for email in self.admin_emails.split(",") if email.strip()}
 
 
 @lru_cache

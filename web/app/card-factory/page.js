@@ -1,2 +1,6 @@
-import StudioSection from '../../components/StudioSection'
-export default function Page(){return <StudioSection eyebrow="AI КОНТЕНТ" title="AI Card Factory" description="Фото + подтверждённые факты → тексты, SEO, преимущества и визуальная концепция без выдуманных характеристик." primary="Создать карточку" cards={[{title:'Исходные данные',text:'Фото товара и факты, которые AI имеет право использовать.',action:'Добавить товар'},{title:'Тексты и SEO',text:'Отдельные варианты для Wildberries и Ozon.',action:'Сгенерировать'},{title:'Визуал',text:'Концепция инфографики и изображения карточки.',action:'Создать визуал'}]}/>} 
+import { Suspense } from 'react'
+import CardFactoryWorkspace from '../../components/CardFactoryWorkspace'
+
+export default function Page(){
+  return <Suspense fallback={<main className="workPage"><div className="workPanel">Загружаем AI Card Factory…</div></main>}><CardFactoryWorkspace/></Suspense>
+}

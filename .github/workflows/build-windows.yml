@@ -54,12 +54,14 @@ jobs:
       - name: Publish GitHub Release
         uses: ncipollo/release-action@v1
         with:
-          tag: v1.0.${{ github.run_number }}
-          name: Marketplace AI Studio PRO v1.0.${{ github.run_number }}
+          tag: v1.7.${{ github.run_number }}
+          name: Marketplace AI Studio PRO Mega Edition 1.7 build ${{ github.run_number }}
           body: |
-            Готовый Windows-установщик Marketplace AI Studio PRO.
+            Windows-сборка Marketplace AI Studio PRO Mega Edition 1.7.
 
-            Скачать файл Marketplace_AI_Studio_PRO_Setup.exe ниже в разделе Assets.
+            В этой версии: массовый SEO-анализ каталога, пакетные AI-рекомендации, прибыль по SKU, риски и задачи, Telegram и мастер первичной настройки.
+
+            Скачать Marketplace_AI_Studio_PRO_Setup.exe ниже в Assets.
           artifacts: installer-output/Marketplace_AI_Studio_PRO_Setup.exe
           artifactErrorsFailBuild: true
           makeLatest: true

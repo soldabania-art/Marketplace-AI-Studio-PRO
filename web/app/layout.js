@@ -1,4 +1,5 @@
 import './globals.css'
+import CookieConsent from './components/CookieConsent'
 
 export const metadata = {
   title: 'Marketplace AI Studio Cloud',
@@ -8,7 +9,7 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="ru">
-      <body>{children}</body>
+      <body>{children}<CookieConsent /></body>
     </html>
   )
 }

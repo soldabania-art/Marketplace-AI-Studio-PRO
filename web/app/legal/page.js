@@ -1,0 +1,12 @@
+import Link from 'next/link'
+
+const docs = [
+  ['privacy','Политика обработки персональных данных','Как сервис собирает, использует, хранит и защищает персональные данные.'],
+  ['consent','Согласие на обработку персональных данных','Отдельное согласие пользователя на обработку персональных данных.'],
+  ['terms','Условия использования и оферта','Правила использования SaaS, тарифов, подписки и ответственности сторон.'],
+  ['cookies','Политика cookie','Обязательные, аналитические и маркетинговые cookie и управление согласием.'],
+  ['payments','Оплата, подписка и возвраты','Порядок оплаты, автопродления, отмены подписки и возвратов.'],
+  ['data-rights','Управление данными','Запрос доступа, исправления, удаления аккаунта и отзыва согласий.'],
+]
+
+export default function LegalCenter(){return <main className="legalShell"><div className="legalWrap"><Link href="/" className="authBack">← Marketplace AI Studio Cloud</Link><span className="eyebrow">LEGAL & COMPLIANCE</span><h1>Правовая информация</h1><p className="legalLead">Публичный центр документов Marketplace AI Studio Cloud. Перед коммерческим запуском реквизиты оператора, платежная схема и финальные редакции документов проходят юридическую проверку.</p><div className="legalGrid">{docs.map(([slug,title,text])=><Link className="legalCard" href={`/legal/${slug}`} key={slug}><h2>{title}</h2><p>{text}</p><span>Открыть →</span></Link>)}</div><div className="legalNote">Основная юрисдикция продукта: Российская Федерация. Поддержка других стран СНГ включается после отдельной проверки требований конкретной страны.</div></div></main>}

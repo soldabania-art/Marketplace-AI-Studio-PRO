@@ -30,7 +30,7 @@ jobs:
       - name: Stamp build version
         shell: pwsh
         run: |
-          $version = "2.6.${{ github.run_number }}"
+          $version = "2.7.${{ github.run_number }}"
           (Get-Content 'studio/__init__.py' -Raw) -replace "__version__='[^']+'", "__version__='$version'" | Set-Content 'studio/__init__.py' -Encoding utf8
           (Get-Content 'installer.iss' -Raw) -replace '#define MyAppVersion "[^"]+"', "#define MyAppVersion `"$version`"" | Set-Content 'installer.iss' -Encoding utf8
           Write-Host "Stamped version $version"
@@ -39,7 +39,7 @@ jobs:
         shell: pwsh
         run: |
           python -m compileall -q app.py studio
-          python -c "import app; import studio.ui_v26; import studio.services; import studio.ai_errors; import studio.diagnostics; import studio.updater; import studio.ozon_center; print('smoke ok')"
+          python -c "import app; import studio.ui_v27; import studio.connectors; import studio.services; import studio.ai_errors; import studio.diagnostics; import studio.updater; import studio.ozon_center; print('smoke ok')"
 
       - name: Build application EXE
         shell: pwsh
@@ -68,12 +68,12 @@ jobs:
       - name: Publish GitHub Release
         uses: ncipollo/release-action@v1
         with:
-          tag: v2.6.${{ github.run_number }}
-          name: Marketplace AI Studio PRO Mega Edition 2.6 build ${{ github.run_number }}
+          tag: v2.7.${{ github.run_number }}
+          name: Marketplace AI Studio PRO Mega Edition 2.7 build ${{ github.run_number }}
           body: |
-            Windows-сборка Marketplace AI Studio PRO Mega Edition 2.6 PRODUCTION OPS.
+            Windows-сборка Marketplace AI Studio PRO Mega Edition 2.7 FUNCTIONAL UI.
 
-            Добавлено: GPT-Image-2 использует исходное фото товара, а точный русский текст инфографики наносится локально через Pillow; rotating crash/application logs; экран открытия логов; проверка GitHub Release из приложения; расширенная read-only синхронизация каталога Ozon. SEO AUTOPILOT теперь безопасно обрабатывает исчерпанный OpenAI API-баланс: вместо технического traceback показывает понятное сообщение, останавливает пакет после первой quota-ошибки и перед массовой обработкой спрашивает количество карточек и подтверждение платных API-запросов.
+            Добавлено: реальные обработчики основных кнопок, фоновая синхронизация полного каталога WB, фоновые реклама и отзывы, единый статус выполнения и логирование ошибок. WB API теперь координирует частоту запросов между модулями и автоматически повторяет 429 по X-RateLimit-Retry/Retry-After. Восстановлена полная совместимость коннектора Ozon и существующих вызовов hydrate/reviews.
 
             Скачать Marketplace_AI_Studio_PRO_Setup.exe ниже в Assets.
           artifacts: installer-output/Marketplace_AI_Studio_PRO_Setup.exe

@@ -30,7 +30,7 @@ jobs:
       - name: Stamp build version
         shell: pwsh
         run: |
-          $version = "2.9.${{ github.run_number }}"
+          $version = "3.0.${{ github.run_number }}"
           (Get-Content 'studio/__init__.py' -Raw) -replace "__version__='[^']+'", "__version__='$version'" | Set-Content 'studio/__init__.py' -Encoding utf8
           (Get-Content 'installer.iss' -Raw) -replace '#define MyAppVersion "[^"]+"', "#define MyAppVersion `"$version`"" | Set-Content 'installer.iss' -Encoding utf8
           Write-Host "Stamped version $version"
@@ -39,7 +39,7 @@ jobs:
         shell: pwsh
         run: |
           python -m compileall -q app.py studio
-          python -c "import app; import studio.ui_v29; import studio.ui_v28; import studio.ai_router; import studio.connectors; import studio.services; import studio.openai_billing; import studio.ai_errors; import studio.diagnostics; import studio.updater; import studio.ozon_center; print('smoke ok')"
+          python -c "import app; import studio.ui_v30; import studio.ui_v29; import studio.ui_v28; import studio.ai_router; import studio.local_image; import studio.hardware_probe; import studio.connectors; import studio.services; import studio.openai_billing; import studio.ai_errors; import studio.diagnostics; import studio.updater; import studio.ozon_center; print('smoke ok')"
 
       - name: Build application EXE
         shell: pwsh
@@ -68,12 +68,12 @@ jobs:
       - name: Publish GitHub Release
         uses: ncipollo/release-action@v1
         with:
-          tag: v2.9.${{ github.run_number }}
-          name: Marketplace AI Studio PRO Mega Edition 2.9 build ${{ github.run_number }}
+          tag: v3.0.${{ github.run_number }}
+          name: Marketplace AI Studio PRO Mega Edition 3.0 build ${{ github.run_number }}
           body: |
-            Windows-сборка Marketplace AI Studio PRO Mega Edition 2.9 FREE-FIRST AI.
+            Windows-сборка Marketplace AI Studio PRO Mega Edition 3.0 ZERO-COST AI.
 
-            Добавлено: AI Router с режимом 0 ₽, локальный OpenAI-совместимый текстовый AI, отдельные режимы Free/Economy/Premium, явные запреты платного fallback и платных изображений, проверка Local AI из интерфейса и сохранение локального URL/модели. В режиме 0 ₽ платные OpenAI-запросы не включаются автоматически. Сохранены AI Preview 2.8, WB/Ozon, публикация, реклама, отзывы, финансы, контроль расходов и защита API.
+            Добавлено: бесплатная локальная генерация изображений через AUTOMATIC1111/Forge-совместимый API, local-first маршрутизация визуалов с запретом автоматического платного fallback, автоматическая проверка RAM/NVIDIA GPU/VRAM и рекомендация режима для компьютера. Local Text AI + Local Image AI позволяют выполнять полный AI-конвейер карточки без оплаты OpenAI API, если локальные серверы запущены. Premium OpenAI остаётся опциональным и включается только пользователем.
 
             Скачать Marketplace_AI_Studio_PRO_Setup.exe ниже в Assets.
           artifacts: installer-output/Marketplace_AI_Studio_PRO_Setup.exe

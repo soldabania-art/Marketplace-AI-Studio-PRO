@@ -1,4 +1,4 @@
-import ctypes, os, shutil, subprocess
+import ctypes, os, re, shutil, subprocess
 import requests
 
 from .local_ai_setup import ollama_path, ollama_running, recommended_text_model
@@ -64,10 +64,14 @@ def ollama_running_models(base_url=OLLAMA_BASE):
 
 
 def _rank_model(name):
+    """Rank model parameter count without substring collisions (e.g. 14b must not match 4b)."""
     n=str(name or '').lower()
-    for marker,rank in [('0.5b',1),('1b',2),('1.5b',3),('2b',4),('3b',5),('4b',6),('7b',7),('8b',8),('14b',9),('32b',10),('70b',11)]:
-        if marker in n:return rank
-    return 99
+    matches=re.findall(r'(?<![\d.])(\d+(?:\.\d+)?)\s*b(?![a-z])',n)
+    if not matches:return 99
+    try:
+        params=float(matches[-1])
+    except Exception:return 99
+    return params
 
 
 def lighter_installed_model(current, installed):

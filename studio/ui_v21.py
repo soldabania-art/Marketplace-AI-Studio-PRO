@@ -88,7 +88,7 @@ class Main(BaseMain):
             except:p={}
             bid=f"{p.get('current_bid') or '—'} → {p.get('proposed_bid') or '—'}"
             vals=[r['id'],r['status'],p.get('nm_id'),p.get('advert_id'),f"{float(p.get('drr') or 0):.1f}%",f"{float(p.get('spend') or 0):.0f}",f"{float(p.get('sales') or 0):.0f}",bid,r.get('reason')]
-            for j,x in enumerate(vals):t.setItem(i,j,QTableWidgetItem(str(x or ''))
+            for j,x in enumerate(vals):t.setItem(i,j,QTableWidgetItem(str(x or '')))
         t.horizontalHeader().setSectionResizeMode(8,QHeaderView.Stretch); v.addWidget(t,1)
         def exec_selected():
             sel=t.selectionModel().selectedRows()
@@ -114,7 +114,7 @@ class Main(BaseMain):
             try:p=json.loads(r.get('payload') or '{}')
             except:p={}
             vals=[r['id'],r['status'],p.get('id'),p.get('rating'),p.get('risk'),'да' if p.get('safe_auto') else 'нет',p.get('text'),p.get('reply')]
-            for j,x in enumerate(vals):self.review_table.setItem(i,j,QTableWidgetItem(str(x or ''))
+            for j,x in enumerate(vals):self.review_table.setItem(i,j,QTableWidgetItem(str(x or '')))
         self.review_table.horizontalHeader().setSectionResizeMode(6,QHeaderView.Stretch); self.review_table.horizontalHeader().setSectionResizeMode(7,QHeaderView.Stretch); v.addWidget(self.review_table,1)
         v.addWidget(self.primary('Отправить выбранный AI-ответ',self.send_selected_review)); self.showp(w)
 
@@ -180,7 +180,7 @@ class Main(BaseMain):
             try:m=json.loads(r.get('metrics_json') or '{}')
             except:m={}
             vals=[r['id'],r['created'],r['entity_id'],r['version'],f"{float(m.get('gross') or 0):.0f}",f"{float(m.get('profit') or 0):.0f}",f"{float(m.get('drr') or 0):.1f}%"]
-            for j,x in enumerate(vals):t.setItem(i,j,QTableWidgetItem(str(x or ''))
+            for j,x in enumerate(vals):t.setItem(i,j,QTableWidgetItem(str(x or '')))
         t.horizontalHeader().setSectionResizeMode(1,QHeaderView.Stretch); v.addWidget(t,1)
         detail=QTextEdit(); detail.setReadOnly(True); v.addWidget(detail,1)
         def analyze_selected():

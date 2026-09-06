@@ -3,6 +3,7 @@ from pathlib import Path
 from openpyxl import Workbook
 from PIL import Image, ImageDraw, ImageFont
 from .core import DATA, generated_dir, save_asset
+from .ai_errors import raise_openai_error
 
 
 class AIService:
@@ -19,7 +20,7 @@ class AIService:
 
     def _call(self,input_data,timeout=120):
         r=requests.post('https://api.openai.com/v1/responses',headers=self._headers(),json={'model':self.model,'input':input_data},timeout=timeout)
-        if not r.ok: raise RuntimeError(f'OpenAI {r.status_code}: {r.text[:700]}')
+        raise_openai_error(r,'OpenAI')
         return ''.join(c.get('text','') for i in r.json().get('output',[]) for c in i.get('content',[]) if c.get('type')=='output_text').strip()
 
     @staticmethod
@@ -68,7 +69,7 @@ missing_facts, risks, ready_percent.
             r=requests.post('https://api.openai.com/v1/images/generations',headers=self._headers(),json={
                 'model':'gpt-image-2','prompt':prompt,'size':'1024x1536','quality':'medium','n':1
             },timeout=240)
-        if not r.ok: raise RuntimeError(f'Image API {r.status_code}: {r.text[:700]}')
+        raise_openai_error(r,'Image API')
         return r.json()
 
     @staticmethod

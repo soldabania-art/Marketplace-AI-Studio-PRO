@@ -30,7 +30,7 @@ jobs:
       - name: Stamp build version
         shell: pwsh
         run: |
-          $version = "3.1.${{ github.run_number }}"
+          $version = "3.2.${{ github.run_number }}"
           (Get-Content 'studio/__init__.py' -Raw) -replace "__version__='[^']+'", "__version__='$version'" | Set-Content 'studio/__init__.py' -Encoding utf8
           (Get-Content 'installer.iss' -Raw) -replace '#define MyAppVersion "[^"]+"', "#define MyAppVersion `"$version`"" | Set-Content 'installer.iss' -Encoding utf8
           Write-Host "Stamped version $version"
@@ -39,7 +39,7 @@ jobs:
         shell: pwsh
         run: |
           python -m compileall -q app.py studio
-          python -c "import app; import studio.ui_v31; import studio.ui_v30; import studio.ui_v29; import studio.ai_router; import studio.local_ai_setup; import studio.local_image; import studio.hardware_probe; import studio.connectors; import studio.services; import studio.openai_billing; import studio.ai_errors; import studio.diagnostics; import studio.updater; import studio.ozon_center; print('smoke ok')"
+          python -c "import app; import studio.ui_v32; import studio.ui_v31; import studio.ui_v30; import studio.ui_v29; import studio.ai_router; import studio.local_ai_setup; import studio.local_image; import studio.hardware_probe; import studio.connectors; import studio.services; import studio.openai_billing; import studio.ai_errors; import studio.diagnostics; import studio.updater; import studio.ozon_center; print('smoke ok')"
 
       - name: Build application EXE
         shell: pwsh
@@ -68,12 +68,12 @@ jobs:
       - name: Publish GitHub Release
         uses: ncipollo/release-action@v1
         with:
-          tag: v3.1.${{ github.run_number }}
-          name: Marketplace AI Studio PRO Mega Edition 3.1 build ${{ github.run_number }}
+          tag: v3.2.${{ github.run_number }}
+          name: Marketplace AI Studio PRO Mega Edition 3.2 build ${{ github.run_number }}
           body: |
-            Windows-сборка Marketplace AI Studio PRO Mega Edition 3.1 LOCAL AI SETUP.
+            Windows-сборка Marketplace AI Studio PRO Mega Edition 3.2 ONE-CLICK FREE AI.
 
-            Добавлено: мастер установки бесплатного Local Text AI. На Windows программа по подтверждению пользователя устанавливает Ollama через winget, запускает локальный сервер, загружает выбранную модель и автоматически переключает приложение в режим 0 ₽ с отключённым платным fallback. Для Local Image AI мастер ищет существующие Forge/AUTOMATIC1111 launchers, позволяет выбрать launcher вручную и запускает его с --api. Сохранены ZERO-COST AI 3.0, AI Preview, WB/Ozon, публикация, реклама, отзывы, финансы и контроль расходов.
+            Добавлено: автоматический выбор Local Text модели по RAM/VRAM, проверка свободного места до загрузки, кнопка «Установить всё бесплатное», безопасная установка/запуск Ollama, автоматическое сохранение режима 0 ₽ и запрета платных fallback/image запросов. Local Text AI может автоматически запускаться вместе с программой. Local Image AI также может автозапускаться, если пользователь ранее сохранил Forge/A1111 launcher. Автозапуск никогда ничего не устанавливает и не включает платные API.
 
             Скачать Marketplace_AI_Studio_PRO_Setup.exe ниже в Assets.
           artifacts: installer-output/Marketplace_AI_Studio_PRO_Setup.exe

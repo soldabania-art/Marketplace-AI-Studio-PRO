@@ -1,4 +1,4 @@
-import json
+import json, logging
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import *
 from .ui_v26 import Main as BaseMain
@@ -7,8 +7,9 @@ from .workers import Worker
 from .ui_v15 import load_cogs
 from .sku_analytics import sales_by_nm, sku_profitability
 from .automation_center import build_alerts
-from .diagnostics import logger
 from . import __version__
+
+logger = logging.getLogger('ui.functional')
 
 
 class Main(BaseMain):

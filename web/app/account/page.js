@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { Building2, CreditCard, LogOut, ShieldCheck, Sparkles, UserRound } from 'lucide-react'
+import styles from './page.module.css'
 
 export default function AccountPage() {
   const router = useRouter()
@@ -35,22 +36,22 @@ export default function AccountPage() {
   }
 
   return (
-    <main className="accountShell">
-      <header className="accountTopbar">
-        <Link href="/" className="brand accountBrand"><div className="brandMark"><Sparkles size={20}/></div><div><strong>Marketplace AI</strong><span>Studio Cloud</span></div></Link>
-        <button className="accountLogout" onClick={logout}><LogOut size={17}/> Выйти</button>
+    <main className={styles.shell}>
+      <header className={styles.topbar}>
+        <Link href="/" className={`brand ${styles.brand}`}><div className="brandMark"><Sparkles size={20}/></div><div><strong>Marketplace AI</strong><span>Studio Cloud</span></div></Link>
+        <button className={styles.logout} onClick={logout}><LogOut size={17}/> Выйти</button>
       </header>
 
-      <section className="accountContent">
-        <div className="accountHeading"><span className="eyebrow">ЛИЧНЫЙ КАБИНЕТ</span><h1>Аккаунт и подписка</h1><p>Управление рабочим пространством, тарифом и безопасностью.</p></div>
-        {loading && <div className="accountNotice">Загружаем данные аккаунта…</div>}
-        {error && !loading && <div className="accountNotice error">{error}</div>}
+      <section className={styles.content}>
+        <div className={styles.heading}><span className="eyebrow">ЛИЧНЫЙ КАБИНЕТ</span><h1>Аккаунт и подписка</h1><p>Управление рабочим пространством, тарифом и безопасностью.</p></div>
+        {loading && <div className={styles.notice}>Загружаем данные аккаунта…</div>}
+        {error && !loading && <div className={`${styles.notice} ${styles.error}`}>{error}</div>}
         {account && (
-          <div className="accountGrid">
-            <article className="accountCard"><div className="accountIcon"><UserRound size={20}/></div><span className="eyebrow">ПРОФИЛЬ</span><h3>{account.full_name}</h3><p>{account.email}</p><small>{account.email_verified ? 'Email подтверждён' : 'Email ожидает подтверждения'}</small></article>
-            <article className="accountCard"><div className="accountIcon"><Building2 size={20}/></div><span className="eyebrow">РАБОЧЕЕ ПРОСТРАНСТВО</span><h3>{account.workspace_name}</h3><p>Роль: {account.role}</p><small>WB/Ozon подключаются отдельным безопасным шагом</small></article>
-            <article className="accountCard planCard"><div className="accountIcon"><CreditCard size={20}/></div><span className="eyebrow">ТАРИФ</span><h3>{String(account.plan_code).toUpperCase()}</h3><p>Статус: {account.subscription_status}</p><Link href="/pricing" className="accountAction">Управлять тарифом</Link></article>
-            <article className="accountCard"><div className="accountIcon"><ShieldCheck size={20}/></div><span className="eyebrow">БЕЗОПАСНОСТЬ</span><h3>Серверная сессия</h3><p>Токен входа хранится в HttpOnly cookie и недоступен JavaScript в браузере.</p><small>Следующий этап — подтверждение email и управление устройствами</small></article>
+          <div className={styles.grid}>
+            <article className={styles.card}><div className={styles.icon}><UserRound size={20}/></div><span className="eyebrow">ПРОФИЛЬ</span><h3>{account.full_name}</h3><p>{account.email}</p><small>{account.email_verified ? 'Email подтверждён' : 'Email ожидает подтверждения'}</small></article>
+            <article className={styles.card}><div className={styles.icon}><Building2 size={20}/></div><span className="eyebrow">РАБОЧЕЕ ПРОСТРАНСТВО</span><h3>{account.workspace_name}</h3><p>Роль: {account.role}</p><small>WB/Ozon подключаются отдельным безопасным шагом</small></article>
+            <article className={`${styles.card} ${styles.plan}`}><div className={styles.icon}><CreditCard size={20}/></div><span className="eyebrow">ТАРИФ</span><h3>{String(account.plan_code).toUpperCase()}</h3><p>Статус: {account.subscription_status}</p><Link href="/pricing" className={styles.action}>Управлять тарифом</Link></article>
+            <article className={styles.card}><div className={styles.icon}><ShieldCheck size={20}/></div><span className="eyebrow">БЕЗОПАСНОСТЬ</span><h3>Серверная сессия</h3><p>Токен входа хранится в HttpOnly cookie и недоступен JavaScript в браузере.</p><small>Следующий этап — подтверждение email и управление устройствами</small></article>
           </div>
         )}
       </section>

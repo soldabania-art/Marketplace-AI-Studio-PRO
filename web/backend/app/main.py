@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
 settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
-    version="0.4.0",
+    version="0.5.0",
     description="Backend for Marketplace AI Studio Cloud",
     lifespan=lifespan,
 )
@@ -41,7 +41,7 @@ app.add_middleware(
 
 @app.get("/health", tags=["system"])
 def health():
-    return {"status": "ok", "service": "marketplace-ai-studio-api", "version": "0.4.0"}
+    return {"status": "ok", "service": "marketplace-ai-studio-api", "version": "0.5.0"}
 
 
 app.include_router(account_router, prefix="/api/v1", tags=["account"])

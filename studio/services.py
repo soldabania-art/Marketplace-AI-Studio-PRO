@@ -1,6 +1,7 @@
-import base64, json, mimetypes, requests, time
+import base64, json, mimetypes, requests, time, textwrap
 from pathlib import Path
 from openpyxl import Workbook
+from PIL import Image, ImageDraw, ImageFont
 from .core import DATA, generated_dir, save_asset
 
 
@@ -70,6 +71,67 @@ missing_facts, risks, ready_percent.
         if not r.ok: raise RuntimeError(f'Image API {r.status_code}: {r.text[:700]}')
         return r.json()
 
+    @staticmethod
+    def _font(size,bold=False):
+        candidates=[]
+        if bold:
+            candidates += [Path('C:/Windows/Fonts/seguisb.ttf'),Path('C:/Windows/Fonts/arialbd.ttf')]
+        candidates += [Path('C:/Windows/Fonts/segoeui.ttf'),Path('C:/Windows/Fonts/arial.ttf'),Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')]
+        for p in candidates:
+            if p.exists():
+                try:return ImageFont.truetype(str(p),size=size)
+                except Exception:pass
+        return ImageFont.load_default()
+
+    @staticmethod
+    def _wrap_text(draw,text,font,max_width,max_lines):
+        words=str(text or '').strip().split()
+        if not words:return []
+        lines=[]; current=''
+        for word in words:
+            test=(current+' '+word).strip()
+            if draw.textbbox((0,0),test,font=font)[2] <= max_width:
+                current=test
+            else:
+                if current:lines.append(current)
+                current=word
+                if len(lines)>=max_lines:break
+        if current and len(lines)<max_lines:lines.append(current)
+        consumed=' '.join(lines)
+        original=' '.join(words)
+        if consumed!=original and lines:
+            while lines[-1] and draw.textbbox((0,0),lines[-1]+'…',font=font)[2] > max_width:
+                lines[-1]=lines[-1][:-1]
+            lines[-1]=lines[-1].rstrip()+'…'
+        return lines
+
+    def _overlay_exact_text(self,path,headline,copy):
+        """Render exact Russian text locally so marketplace slides do not depend on image-model typography."""
+        image=Image.open(path).convert('RGBA')
+        w,h=image.size; draw=ImageDraw.Draw(image,'RGBA')
+        headline=str(headline or '').strip(); copy=str(copy or '').strip()
+        if not headline and not copy:
+            image.convert('RGB').save(path,quality=95); return
+        margin=max(36,int(w*0.055)); panel_w=w-2*margin
+        headline_font=self._font(max(34,int(w*0.052)),True)
+        copy_font=self._font(max(23,int(w*0.031)),False)
+        head_lines=self._wrap_text(draw,headline,headline_font,panel_w-2*margin,3)
+        copy_lines=self._wrap_text(draw,copy,copy_font,panel_w-2*margin,4)
+        head_h=sum(draw.textbbox((0,0),x,font=headline_font)[3]+10 for x in head_lines)
+        copy_h=sum(draw.textbbox((0,0),x,font=copy_font)[3]+7 for x in copy_lines)
+        panel_h=max(170,head_h+copy_h+2*margin)
+        y=h-panel_h-margin
+        draw.rounded_rectangle((margin,y,w-margin,h-margin),radius=28,fill=(8,12,20,205))
+        ty=y+margin
+        for line in head_lines:
+            draw.text((margin*2,ty),line,font=headline_font,fill=(255,255,255,255))
+            ty += draw.textbbox((0,0),line,font=headline_font)[3]+10
+        if head_lines and copy_lines:ty+=8
+        for line in copy_lines:
+            draw.text((margin*2,ty),line,font=copy_font,fill=(235,240,248,255))
+            ty += draw.textbbox((0,0),line,font=copy_font)[3]+7
+        image.convert('RGB').save(path,quality=95)
+
     def generate_infographics(self,card,project_name='product',count=6,progress=None,is_cancelled=None,source_photo=None):
         if not isinstance(card,dict): raise RuntimeError('Сначала создайте структурированную AI-карточку.')
         plan=card.get('infographic_plan') or []
@@ -88,23 +150,28 @@ missing_facts, risks, ready_percent.
             goal=slide.get('goal','') if isinstance(slide,dict) else ''
             prompt=(preserve+
                     f"Create a premium marketplace product infographic for Wildberries/Ozon. Product: {card.get('product_type','product')}. "
-                    f"Art direction: {json.dumps(concept,ensure_ascii=False)}. Slide {i}. Goal: {goal}. Headline idea: {headline}. "
-                    f"Visual direction: {visual}. Supporting message: {copy}. Product-first composition, realistic commercial studio lighting, clean premium e-commerce design, high conversion focus. "
-                    "Keep the real product clearly recognizable and visually faithful to the reference. Do not invent product features, logos, certificates, awards or technical claims. Leave safe readable areas for exact Russian text overlays; avoid rendering long paragraphs inside the image.")
+                    f"Art direction: {json.dumps(concept,ensure_ascii=False)}. Slide {i}. Goal: {goal}. "
+                    f"Visual direction: {visual}. Product-first composition, realistic commercial studio lighting, clean premium e-commerce design, high conversion focus. "
+                    "Keep the real product clearly recognizable and visually faithful to the reference. Do not render text, letters, words, numbers, logos, certificates or fake technical claims. Leave a clean lower safe zone for exact text that the application will add after generation.")
             data=self._image_request(prompt,source_photo)
             items=data.get('data',[])
             if not items: raise RuntimeError('Image API не вернул изображение.')
-            item=items[0]; raw=item.get('b64_json'); path=folder/f'slide_{i:02d}.png'
-            if raw:path.write_bytes(base64.b64decode(raw))
+            item=items[0]; raw=item.get('b64_json'); path=folder/f'slide_{i:02d}.jpg'
+            temp=folder/f'slide_{i:02d}_raw.png'
+            if raw:temp.write_bytes(base64.b64decode(raw))
             elif item.get('url'):
-                img=requests.get(item['url'],timeout=120); img.raise_for_status(); path.write_bytes(img.content)
+                img=requests.get(item['url'],timeout=120); img.raise_for_status(); temp.write_bytes(img.content)
             else:raise RuntimeError('Не удалось получить байты изображения.')
+            Image.open(temp).convert('RGB').save(path,quality=95)
+            try:temp.unlink()
+            except Exception:pass
+            self._overlay_exact_text(path,headline,copy)
             save_asset(project_name,'infographic',path); out.append(path)
         if progress: progress(100,f'Визуалы готовы: {len(out)}')
         return out
 
     def full_product_pack(self,photo,info,count=6,progress=None,is_cancelled=None):
-        """One-click AI pipeline: analyze real product -> create all texts -> preserve product in generated visual system."""
+        """One-click AI pipeline: analyze real product -> create all texts -> preserve product -> render exact text."""
         if progress: progress(5,'AI анализирует товар и строит карточку')
         if is_cancelled and is_cancelled(): return {'cancelled':True}
         card=self.product_card(photo,info)

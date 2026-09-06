@@ -84,7 +84,7 @@ class Main(BaseMain):
             except:p={}
             card=p.get('card') or {}; imgs=p.get('images') or []
             vals=[r['id'],r['status'],r['entity_id'],r['risk'],r['reason'],'да' if card else 'нет',len(imgs)]
-            for j,x in enumerate(vals):t.setItem(i,j,QTableWidgetItem(str(x or ''))
+            for j,x in enumerate(vals):t.setItem(i,j,QTableWidgetItem(str(x or '')))
         t.horizontalHeader().setSectionResizeMode(4,QHeaderView.Stretch); v.addWidget(t,1)
         detail=QTextEdit(); detail.setReadOnly(True); v.addWidget(detail,1)
         def selected_id():

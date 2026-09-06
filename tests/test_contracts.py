@@ -78,6 +78,9 @@ class TestAdvertising(unittest.TestCase):
     def test_profit_engine_prefers_exact_ad_cost(self):
         products=[{'marketplace':'WB','external_id':'10','name':'x','stock':5}]; finance={'10':{'payout':800,'gross':1000}}; sales={'10':{'units':2,'returns':0,'gross':1000}}; cogs={'10':100}; ads={'10':{'spend':150,'sales':1000,'orders':2}}
         row=sku_profitability(products,finance,sales,999,cogs,ads)[0]; self.assertEqual(row['ad_cost'],150); self.assertEqual(row['ad_source'],'exact_wb_fullstats'); self.assertEqual(row['profit'],450)
+    def test_profit_engine_uses_units_for_cogs_and_margin(self):
+        products=[{'marketplace':'WB','external_id':'7','name':'sku','stock':9}]; finance={'7':{'payout':700}}; sales={'7':{'units':3,'returns':1,'gross':900}}; row=sku_profitability(products,finance,sales,0,{'7':100},{'7':{'spend':100}})[0]
+        self.assertEqual(row['cogs_total'],300); self.assertEqual(row['profit'],300); self.assertAlmostEqual(row['margin'],33.3333333333,places=5)
     def test_change_bids_groups_by_campaign(self):
         fake=MagicMock(); fake.ADVERT='https://advert-api.wildberries.ru'; fake._request.return_value={}; mgr=WBAdManager(fake); mgr.change_bids([{'advert_id':1,'nm_id':10,'bid_kopecks':250},{'advert_id':1,'nm_id':11,'bid_kopecks':300}]); payload=fake._request.call_args.kwargs['json']; self.assertEqual(len(payload['bids']),1); self.assertEqual(len(payload['bids'][0]['nm_bids']),2)
     def test_execute_action_blocks_large_delta(self):

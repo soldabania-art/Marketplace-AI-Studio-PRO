@@ -1,0 +1,30 @@
+name: Web Cloud
+
+on:
+  push:
+    branches: [web-cloud]
+    paths:
+      - 'web/**'
+      - '.github/workflows/web-cloud.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        run: npm install --package-lock-only && npm ci
+      - name: Build web app
+        run: npm run build

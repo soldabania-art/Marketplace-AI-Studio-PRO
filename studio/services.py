@@ -1,4 +1,5 @@
 import base64, json, mimetypes, requests, time
+from pathlib import Path
 from openpyxl import Workbook
 from .core import DATA, generated_dir, save_asset
 
@@ -10,6 +11,10 @@ class AIService:
     def _headers(self):
         if not self.key: raise RuntimeError('Не указан OpenAI API key')
         return {'Authorization':f'Bearer {self.key}','Content-Type':'application/json'}
+
+    def _auth_headers(self):
+        if not self.key: raise RuntimeError('Не указан OpenAI API key')
+        return {'Authorization':f'Bearer {self.key}'}
 
     def _call(self,input_data,timeout=120):
         r=requests.post('https://api.openai.com/v1/responses',headers=self._headers(),json={'model':self.model,'input':input_data},timeout=timeout)
@@ -46,13 +51,34 @@ missing_facts, risks, ready_percent.
             content.append({'type':'input_image','image_url':f'data:{mime};base64,{b64}'})
         return self._json(self._call([{'role':'user','content':content}]))
 
-    def generate_infographics(self,card,project_name='product',count=6,progress=None,is_cancelled=None):
+    def _image_request(self,prompt,source_photo=None):
+        source=Path(source_photo) if source_photo else None
+        if source and source.exists():
+            mime=mimetypes.guess_type(str(source))[0] or 'image/jpeg'
+            with source.open('rb') as fh:
+                r=requests.post(
+                    'https://api.openai.com/v1/images/edits',
+                    headers=self._auth_headers(),
+                    data={'model':'gpt-image-2','prompt':prompt,'size':'1024x1536','quality':'medium','n':'1'},
+                    files={'image':(source.name,fh,mime)},
+                    timeout=300,
+                )
+        else:
+            r=requests.post('https://api.openai.com/v1/images/generations',headers=self._headers(),json={
+                'model':'gpt-image-2','prompt':prompt,'size':'1024x1536','quality':'medium','n':1
+            },timeout=240)
+        if not r.ok: raise RuntimeError(f'Image API {r.status_code}: {r.text[:700]}')
+        return r.json()
+
+    def generate_infographics(self,card,project_name='product',count=6,progress=None,is_cancelled=None,source_photo=None):
         if not isinstance(card,dict): raise RuntimeError('Сначала создайте структурированную AI-карточку.')
         plan=card.get('infographic_plan') or []
         if not plan: raise RuntimeError('В карточке нет плана инфографики.')
         count=max(1,min(int(count),10)); out=[]
         folder=generated_dir()/f"{int(time.time())}_{safe_name(project_name)}"; folder.mkdir(parents=True,exist_ok=True)
         concept=card.get('visual_concept') or {}
+        preserve=('The uploaded image is the real product reference. Preserve the product identity, shape, proportions, materials, colors, packaging and visible details. '
+                  'Do not replace it with a different product, redesign it, add fake accessories, labels, logos, certifications or features. ')
         for i,slide in enumerate(plan[:count],start=1):
             if is_cancelled and is_cancelled(): break
             if progress: progress(int((i-1)/count*100),f'AI создаёт визуал {i}/{count}')
@@ -60,27 +86,25 @@ missing_facts, risks, ready_percent.
             visual=slide.get('visual','') if isinstance(slide,dict) else ''
             copy=slide.get('copy','') if isinstance(slide,dict) else ''
             goal=slide.get('goal','') if isinstance(slide,dict) else ''
-            prompt=(f"Premium marketplace product infographic for Wildberries/Ozon. Product: {card.get('product_type','product')}. "
+            prompt=(preserve+
+                    f"Create a premium marketplace product infographic for Wildberries/Ozon. Product: {card.get('product_type','product')}. "
                     f"Art direction: {json.dumps(concept,ensure_ascii=False)}. Slide {i}. Goal: {goal}. Headline idea: {headline}. "
                     f"Visual direction: {visual}. Supporting message: {copy}. Product-first composition, realistic commercial studio lighting, clean premium e-commerce design, high conversion focus. "
-                    "Do not invent product features, logos, certificates, awards or technical claims. Leave safe readable areas for Russian text overlays; avoid rendering long paragraphs inside the image.")
-            r=requests.post('https://api.openai.com/v1/images/generations',headers=self._headers(),json={
-                'model':'gpt-image-2','prompt':prompt,'size':'1024x1536','quality':'medium','n':1
-            },timeout=240)
-            if not r.ok: raise RuntimeError(f'Image API {r.status_code}: {r.text[:700]}')
-            data=r.json().get('data',[])
-            if not data: raise RuntimeError('Image API не вернул изображение.')
-            item=data[0]; raw=item.get('b64_json'); path=folder/f'slide_{i:02d}.png'
-            if raw: path.write_bytes(base64.b64decode(raw))
+                    "Keep the real product clearly recognizable and visually faithful to the reference. Do not invent product features, logos, certificates, awards or technical claims. Leave safe readable areas for exact Russian text overlays; avoid rendering long paragraphs inside the image.")
+            data=self._image_request(prompt,source_photo)
+            items=data.get('data',[])
+            if not items: raise RuntimeError('Image API не вернул изображение.')
+            item=items[0]; raw=item.get('b64_json'); path=folder/f'slide_{i:02d}.png'
+            if raw:path.write_bytes(base64.b64decode(raw))
             elif item.get('url'):
                 img=requests.get(item['url'],timeout=120); img.raise_for_status(); path.write_bytes(img.content)
-            else: raise RuntimeError('Не удалось получить байты изображения.')
+            else:raise RuntimeError('Не удалось получить байты изображения.')
             save_asset(project_name,'infographic',path); out.append(path)
         if progress: progress(100,f'Визуалы готовы: {len(out)}')
         return out
 
     def full_product_pack(self,photo,info,count=6,progress=None,is_cancelled=None):
-        """One-click AI pipeline: analyze product -> create all texts -> create visual system -> generate images."""
+        """One-click AI pipeline: analyze real product -> create all texts -> preserve product in generated visual system."""
         if progress: progress(5,'AI анализирует товар и строит карточку')
         if is_cancelled and is_cancelled(): return {'cancelled':True}
         card=self.product_card(photo,info)
@@ -91,7 +115,8 @@ missing_facts, risks, ready_percent.
         name=card.get('product_type') or 'product'
         paths=self.generate_infographics(card,name,count,
             progress=(lambda p,t: progress(25+int(p*0.75),t)) if progress else None,
-            is_cancelled=is_cancelled)
+            is_cancelled=is_cancelled,
+            source_photo=photo)
         return {'card':card,'images':[str(p) for p in paths],'cancelled':bool(is_cancelled and is_cancelled())}
 
     def review_reply(self,text,rating):

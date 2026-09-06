@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     jwt_secret: str = "dev-only-change-me"
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 60 * 24 * 7
+    email_verification_hours: int = 24
+    password_reset_minutes: int = 30
     frontend_url: str = "http://localhost:3000"
     admin_emails: str = ""
 

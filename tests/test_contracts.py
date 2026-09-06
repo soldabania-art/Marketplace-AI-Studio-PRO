@@ -8,6 +8,7 @@ from studio.local_ai_setup import recommended_text_model
 from studio.review_autopilot import ReviewAutopilot
 from studio.safety_control import limit_for
 from studio.wb_ad_manager import WBAdManager
+from studio.sku_analytics import sku_profitability
 
 
 class FakeResponse:
@@ -71,6 +72,12 @@ class TestWildberriesLogic(unittest.TestCase):
 class TestAdvertising(unittest.TestCase):
     def test_sku_stats_aggregates_nested_fullstats(self):
         fake=MagicMock(); fake.ADVERT='https://advert-api.wildberries.ru'; mgr=WBAdManager(fake); data=[{'advertId':1,'days':[{'apps':[{'nms':[{'nmId':10,'sum':100,'sum_price':1000,'orders':2,'clicks':5,'views':100}]}]}]}]; rows=mgr.sku_stats(data); self.assertEqual(len(rows),1); self.assertEqual(rows[0]['nm_id'],10); self.assertAlmostEqual(rows[0]['drr'],10.0)
+    def test_sku_totals_merge_same_nm_across_campaigns(self):
+        fake=MagicMock(); fake.ADVERT='x'; mgr=WBAdManager(fake); data=[{'advertId':1,'days':[{'apps':[{'nms':[{'nmId':10,'sum':100,'sum_price':500,'orders':1}]}]}]},{'advertId':2,'days':[{'apps':[{'nms':[{'nmId':10,'sum':50,'sum_price':500,'orders':2}]}]}]}]
+        totals=mgr.sku_totals(data); self.assertEqual(totals['10']['spend'],150); self.assertEqual(totals['10']['sales'],1000); self.assertEqual(totals['10']['orders'],3); self.assertEqual(totals['10']['campaigns'],[1,2])
+    def test_profit_engine_prefers_exact_ad_cost(self):
+        products=[{'marketplace':'WB','external_id':'10','name':'x','stock':5}]; finance={'10':{'payout':800,'gross':1000}}; sales={'10':{'units':2,'returns':0,'gross':1000}}; cogs={'10':100}; ads={'10':{'spend':150,'sales':1000,'orders':2}}
+        row=sku_profitability(products,finance,sales,999,cogs,ads)[0]; self.assertEqual(row['ad_cost'],150); self.assertEqual(row['ad_source'],'exact_wb_fullstats'); self.assertEqual(row['profit'],450)
     def test_change_bids_groups_by_campaign(self):
         fake=MagicMock(); fake.ADVERT='https://advert-api.wildberries.ru'; fake._request.return_value={}; mgr=WBAdManager(fake); mgr.change_bids([{'advert_id':1,'nm_id':10,'bid_kopecks':250},{'advert_id':1,'nm_id':11,'bid_kopecks':300}]); payload=fake._request.call_args.kwargs['json']; self.assertEqual(len(payload['bids']),1); self.assertEqual(len(payload['bids'][0]['nm_bids']),2)
     def test_execute_action_blocks_large_delta(self):

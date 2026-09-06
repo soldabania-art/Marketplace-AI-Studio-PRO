@@ -54,12 +54,12 @@ jobs:
       - name: Publish GitHub Release
         uses: ncipollo/release-action@v1
         with:
-          tag: v2.1.${{ github.run_number }}
-          name: Marketplace AI Studio PRO Mega Edition 2.1 build ${{ github.run_number }}
+          tag: v2.2.${{ github.run_number }}
+          name: Marketplace AI Studio PRO Mega Edition 2.2 build ${{ github.run_number }}
           body: |
-            Windows-сборка Marketplace AI Studio PRO Mega Edition 2.1 AUTONOMOUS GROWTH.
+            Windows-сборка Marketplace AI Studio PRO Mega Edition 2.2 CONTINUOUS AUTOPILOT.
 
-            Добавлено: рекламный AI-автопилот с защитным лимитом изменения ставок; AI-обработка и безопасные автоответы на отзывы; снимки эффективности карточек до/после; автоматическое предложение rollback при ухудшении бизнес-метрик; сохранены AI-фабрика, визуал, SEO и WB Publish Center.
+            Добавлено: непрерывный фоновый цикл магазина с настраиваемым интервалом; автоматический SEO/риск-мониторинг; рекламный автопилот с защитными лимитами; снимки эффективности; безопасные AI-ответы на отзывы в фоне при отдельном разрешении. Сохранены AI-фабрика текстов и визуала, WB Publish Center, версии и rollback.
 
             Скачать Marketplace_AI_Studio_PRO_Setup.exe ниже в Assets.
           artifacts: installer-output/Marketplace_AI_Studio_PRO_Setup.exe

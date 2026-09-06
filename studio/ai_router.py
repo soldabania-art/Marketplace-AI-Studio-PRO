@@ -18,19 +18,22 @@ class LocalTextAI:
         except Exception as e:
             return {'ok':False,'error':str(e),'url':self.base_url}
 
-    def _call(self,prompt,photo=None):
+    def _call(self,prompt,photo=None,timeout=None):
         content=[{'type':'text','text':prompt}]
         if photo and Path(photo).exists():
             mime=mimetypes.guess_type(photo)[0] or 'image/jpeg'
             b64=base64.b64encode(Path(photo).read_bytes()).decode()
             content.append({'type':'image_url','image_url':{'url':f'data:{mime};base64,{b64}'}})
         payload={'model':self.model,'messages':[{'role':'user','content':content}],'temperature':0.2}
-        r=requests.post(self.base_url+'/chat/completions',json=payload,timeout=self.timeout)
+        r=requests.post(self.base_url+'/chat/completions',json=payload,timeout=timeout or self.timeout)
         if not r.ok:
             raise RuntimeError(f'Local AI {r.status_code}: {(r.text or "")[:500]}')
         data=r.json(); choices=data.get('choices') or []
         if not choices: raise RuntimeError('Local AI не вернул ответ.')
         msg=choices[0].get('message') or {}; return str(msg.get('content') or '').strip()
+
+    def raw_text(self,prompt,timeout=120):
+        return self._call(str(prompt or ''),timeout=timeout)
 
     @staticmethod
     def _json(text):
@@ -75,6 +78,15 @@ class AIRouter:
         try:return getattr(self.local,method)(*args)
         except Exception:
             if self.mode=='economy' and self.cfg.get('ai_allow_paid_fallback',False):return getattr(self.premium,method)(*args)
+            raise
+
+    def raw_text(self,prompt,timeout=120):
+        """Public raw-text route for internal agents/classifiers. Honors the same paid-fallback policy."""
+        if self.mode=='premium':return self.premium._call(str(prompt or ''),timeout)
+        try:return self.local.raw_text(prompt,timeout)
+        except Exception:
+            if self.mode=='economy' and self.cfg.get('ai_allow_paid_fallback',False):
+                return self.premium._call(str(prompt or ''),timeout)
             raise
 
     def product_card(self,photo,info):return self._text('product_card',photo,info)

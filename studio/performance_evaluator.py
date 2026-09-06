@@ -1,6 +1,6 @@
 import json
 from datetime import datetime, timezone
-from .autopilot import card_versions
+from .autopilot import card_versions, actions
 from .performance_loop import snapshots, rollback_score, propose_rollback
 
 
@@ -36,9 +36,8 @@ def evaluate_entity(marketplace, entity_id, min_hours=24):
     created=_dt(current.get('created')); snap_time=_dt(current_snap.get('created'))
     if created and snap_time:
         hours=(snap_time-created).total_seconds()/3600.0
-        if hours<float(min_hours):
-            return {'ready':False,'reason':f'Нужно ещё данных: прошло {hours:.1f} ч из {min_hours}','version':current_version}
-    previous_versions=[v for v in versions if int(v.get('version') or 0)<current_version and str(v.get('status') or '').lower() in ('published','before_publish')]
+        if hours<float(min_hours):return {'ready':False,'reason':f'Нужно ещё данных: прошло {hours:.1f} ч из {min_hours}','version':current_version}
+    previous_versions=[v for v in versions if int(v.get('version') or 0)<current_version and str(v.get('status') or '').lower() in ('published','before_publish','rollback_published')]
     if not previous_versions:return {'ready':False,'reason':'Нет предыдущей версии для сравнения','version':current_version}
     previous=previous_versions[0]
     prev_snap=_latest_snapshot_for_version(rows,int(previous.get('version') or 0))
@@ -60,10 +59,22 @@ def evaluate_all(marketplace='WB', min_hours=24, limit=200):
     return out
 
 
+def _already_queued(entity_id,current_version):
+    nm=str(entity_id)
+    for a in actions(1000):
+        if a.get('marketplace')!='WB' or a.get('action_type')!='rollback_card' or str(a.get('entity_id'))!=nm:continue
+        try:p=json.loads(a.get('payload') or '{}')
+        except Exception:p={}
+        if int(p.get('from_version') or 0)==int(current_version or 0) and a.get('status') in ('proposed','approved','running','done'):
+            return True
+    return False
+
+
 def queue_needed_rollbacks(marketplace='WB',min_hours=24):
     queued=[]
     for item in evaluate_all(marketplace,min_hours):
         if int(item.get('score') or 0)<4:continue
+        if _already_queued(item['entity_id'],item['current_version']):continue
         result=propose_rollback(marketplace,item['entity_id'],item['current_version'],item['before'],item['after'])
         if result:queued.append({**item,'rollback':result})
     return queued

@@ -1,9 +1,38 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 import { ArrowRight, LockKeyhole, Mail, ShieldCheck, Sparkles } from 'lucide-react'
 
 export default function LoginPage() {
+  const router = useRouter()
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  async function submit(event) {
+    event.preventDefault()
+    setError('')
+    setLoading(true)
+    const form = new FormData(event.currentTarget)
+
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: form.get('email'), password: form.get('password') }),
+      })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error || 'Не удалось войти')
+      router.push('/account')
+      router.refresh()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <main className="authShell">
       <section className="authBrandPanel">
@@ -21,11 +50,12 @@ export default function LoginPage() {
           <span className="eyebrow">ДОБРО ПОЖАЛОВАТЬ</span>
           <h2>Войти в аккаунт</h2>
           <p className="authLead">Продолжите работу с вашими магазинами и AI Director.</p>
-          <form onSubmit={(e) => e.preventDefault()}>
-            <label>Email<div className="authInput"><Mail size={18}/><input type="email" placeholder="you@company.ru" required /></div></label>
-            <label>Пароль<div className="authInput"><LockKeyhole size={18}/><input type="password" placeholder="••••••••" required /></div></label>
-            <div className="authRow"><label className="check"><input type="checkbox"/> Запомнить меня</label><Link href="/forgot-password">Забыли пароль?</Link></div>
-            <button className="authPrimary" type="submit">Войти <ArrowRight size={18}/></button>
+          <form onSubmit={submit}>
+            <label>Email<div className="authInput"><Mail size={18}/><input name="email" type="email" placeholder="you@company.ru" autoComplete="email" required /></div></label>
+            <label>Пароль<div className="authInput"><LockKeyhole size={18}/><input name="password" type="password" placeholder="••••••••" autoComplete="current-password" required /></div></label>
+            <div className="authRow"><span /><Link href="/forgot-password">Забыли пароль?</Link></div>
+            {error && <div className="authError">{error}</div>}
+            <button className="authPrimary" type="submit" disabled={loading}>{loading ? 'Входим…' : <>Войти <ArrowRight size={18}/></>}</button>
           </form>
           <div className="authDivider"><span>или</span></div>
           <p className="authSwitch">Нет аккаунта? <Link href="/register">Создать бесплатно</Link></p>

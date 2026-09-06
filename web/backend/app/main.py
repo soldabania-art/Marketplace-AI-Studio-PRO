@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .account_router import router as account_router
+from .admin_router import router as admin_router
 from .config import get_settings
 from .db import Base, engine
 from .router import api_router
@@ -18,7 +19,7 @@ async def lifespan(app: FastAPI):
 settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
-    version="0.2.0",
+    version="0.3.0",
     description="Backend for Marketplace AI Studio Cloud",
     lifespan=lifespan,
 )
@@ -39,8 +40,9 @@ app.add_middleware(
 
 @app.get("/health", tags=["system"])
 def health():
-    return {"status": "ok", "service": "marketplace-ai-studio-api", "version": "0.2.0"}
+    return {"status": "ok", "service": "marketplace-ai-studio-api", "version": "0.3.0"}
 
 
 app.include_router(account_router, prefix="/api/v1", tags=["account"])
+app.include_router(admin_router, prefix="/api/v1", tags=["admin"])
 app.include_router(api_router, prefix="/api/v1")

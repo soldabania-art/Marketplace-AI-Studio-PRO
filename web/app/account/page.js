@@ -39,7 +39,10 @@ export default function AccountPage() {
     <main className={styles.shell}>
       <header className={styles.topbar}>
         <Link href="/" className={`brand ${styles.brand}`}><div className="brandMark"><Sparkles size={20}/></div><div><strong>Marketplace AI</strong><span>Studio Cloud</span></div></Link>
-        <button className={styles.logout} onClick={logout}><LogOut size={17}/> Выйти</button>
+        <div style={{display:'flex',gap:10,alignItems:'center'}}>
+          {account?.is_platform_admin && <Link href="/admin" className={styles.action}>Админ-панель</Link>}
+          <button className={styles.logout} onClick={logout}><LogOut size={17}/> Выйти</button>
+        </div>
       </header>
 
       <section className={styles.content}>
@@ -51,7 +54,7 @@ export default function AccountPage() {
             <article className={styles.card}><div className={styles.icon}><UserRound size={20}/></div><span className="eyebrow">ПРОФИЛЬ</span><h3>{account.full_name}</h3><p>{account.email}</p><small>{account.email_verified ? 'Email подтверждён' : 'Email ожидает подтверждения'}</small></article>
             <article className={styles.card}><div className={styles.icon}><Building2 size={20}/></div><span className="eyebrow">РАБОЧЕЕ ПРОСТРАНСТВО</span><h3>{account.workspace_name}</h3><p>Роль: {account.role}</p><small>WB/Ozon подключаются отдельным безопасным шагом</small></article>
             <article className={`${styles.card} ${styles.plan}`}><div className={styles.icon}><CreditCard size={20}/></div><span className="eyebrow">ТАРИФ</span><h3>{String(account.plan_code).toUpperCase()}</h3><p>Статус: {account.subscription_status}</p><Link href="/pricing" className={styles.action}>Управлять тарифом</Link></article>
-            <article className={styles.card}><div className={styles.icon}><ShieldCheck size={20}/></div><span className="eyebrow">БЕЗОПАСНОСТЬ</span><h3>Серверная сессия</h3><p>Токен входа хранится в HttpOnly cookie и недоступен JavaScript в браузере.</p><small>Следующий этап — подтверждение email и управление устройствами</small></article>
+            <article className={styles.card}><div className={styles.icon}><ShieldCheck size={20}/></div><span className="eyebrow">БЕЗОПАСНОСТЬ</span><h3>Серверная сессия</h3><p>Токен входа хранится в HttpOnly cookie и недоступен JavaScript в браузере.</p><small>{account.is_platform_admin ? 'У вас есть доступ к управлению платформой' : 'Следующий этап — подтверждение email и управление устройствами'}</small></article>
           </div>
         )}
       </section>

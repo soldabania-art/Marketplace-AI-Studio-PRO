@@ -65,7 +65,7 @@ class Main(BaseMain):
             try:n=len(json.loads(r.get('images_json') or '[]'))
             except:n=0
             vals=[r['id'],r['created'],r['marketplace'],r['entity_id'],r['version'],r['status'],n]
-            for j,x in enumerate(vals):t.setItem(i,j,QTableWidgetItem(str(x or ''))
+            for j,x in enumerate(vals):t.setItem(i,j,QTableWidgetItem(str(x or '')))
         t.horizontalHeader().setSectionResizeMode(1,QHeaderView.Stretch); v.addWidget(t,1)
         detail=QTextEdit(); detail.setReadOnly(True); v.addWidget(detail,1)
         def show():

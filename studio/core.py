@@ -10,7 +10,7 @@ CFG=DATA/'settings.json'
 PUBLIC_DEFAULTS={
     'openai_model':'gpt-5.6-sol',
     'openai_monthly_budget_usd':0.0,
-    'ai_mode':'economy',
+    'ai_mode':'free',
     'ai_allow_paid_fallback':False,
     'ai_allow_paid_images':False,
     'local_ai_url':'http://127.0.0.1:8080/v1',

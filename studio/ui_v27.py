@@ -1,5 +1,5 @@
 import json
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import *
 from .ui_v26 import Main as BaseMain
 from .core import replace_products, products
@@ -34,13 +34,12 @@ class Main(BaseMain):
             QMessageBox.critical(self, label, str(e))
 
     def primary(self, text, fn):
-        b = QPushButton(text); b.setObjectName('primary')
-        b.setCursor(Qt.PointingHandCursor) if 'Qt' in globals() else None
+        b = QPushButton(text); b.setObjectName('primary'); b.setCursor(Qt.PointingHandCursor)
         b.clicked.connect(lambda _=False, f=fn, t=text: self._invoke(f, t))
         return b
 
     def danger(self, text, fn):
-        b = QPushButton(text); b.setObjectName('danger')
+        b = QPushButton(text); b.setObjectName('danger'); b.setCursor(Qt.PointingHandCursor)
         b.clicked.connect(lambda _=False, f=fn, t=text: self._invoke(f, t))
         return b
 

@@ -27,6 +27,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Stamp build version
+        shell: pwsh
+        run: |
+          $version = "2.6.${{ github.run_number }}"
+          (Get-Content 'studio/__init__.py' -Raw) -replace "__version__='[^']+'", "__version__='$version'" | Set-Content 'studio/__init__.py' -Encoding utf8
+          (Get-Content 'installer.iss' -Raw) -replace '#define MyAppVersion "[^"]+"', "#define MyAppVersion `"$version`"" | Set-Content 'installer.iss' -Encoding utf8
+          Write-Host "Stamped version $version"
+
       - name: Smoke test Python sources
         shell: pwsh
         run: |

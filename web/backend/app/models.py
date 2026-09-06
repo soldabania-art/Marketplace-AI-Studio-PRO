@@ -34,6 +34,7 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     memberships: Mapped[list["Membership"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    legal_consents: Mapped[list["LegalConsent"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class Workspace(Base):
@@ -73,3 +74,20 @@ class Subscription(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     workspace: Mapped[Workspace] = relationship(back_populates="subscriptions")
+
+
+class LegalConsent(Base):
+    __tablename__ = "legal_consents"
+    __table_args__ = (
+        UniqueConstraint("user_id", "document_code", "document_version", name="uq_legal_consent_version"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    document_code: Mapped[str] = mapped_column(String(80), index=True)
+    document_version: Mapped[str] = mapped_column(String(40))
+    accepted: Mapped[bool] = mapped_column(Boolean, default=True)
+    source: Mapped[str] = mapped_column(String(80), default="web")
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    user: Mapped[User] = relationship(back_populates="legal_consents")

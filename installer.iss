@@ -1,5 +1,5 @@
 #define MyAppName "Marketplace AI Studio PRO"
-#define MyAppVersion "1.9.0"
+#define MyAppVersion "2.0.0"
 #define MyAppExeName "Marketplace_AI_Studio_PRO.exe"
 
 [Setup]

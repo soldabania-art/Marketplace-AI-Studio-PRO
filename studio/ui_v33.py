@@ -1,3 +1,4 @@
+import os
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import *
 from .ui_v32 import Main as BaseMain
@@ -14,8 +15,9 @@ class Main(BaseMain):
         self.setWindowTitle(f'Marketplace AI Studio PRO — Mega Edition {__version__} LOCAL AI MANAGER')
         self.ai_manager_timer=QTimer(self)
         self.ai_manager_timer.timeout.connect(self._background_ai_memory_guard)
-        self.ai_manager_timer.start(30000)
-        QTimer.singleShot(1800,self.refresh_ai_manager_silent)
+        if os.environ.get('MARKETPLACE_AI_TEST_MODE')!='1':
+            self.ai_manager_timer.start(30000)
+            QTimer.singleShot(1800,self.refresh_ai_manager_silent)
 
     def dashboard(self):
         super().dashboard(); w=self.stack.currentWidget(); layout=w.layout()
@@ -39,6 +41,7 @@ class Main(BaseMain):
                 f"Установлено моделей: {len(installed)} · загружено сейчас: {len(loaded)}")
 
     def refresh_ai_manager_silent(self):
+        if os.environ.get('MARKETPLACE_AI_TEST_MODE')=='1': return
         try:
             self.local_manager_state=manager_status(self.cfg)
             if hasattr(self,'ai_manager_label'):self.ai_manager_label.setText(self._manager_text(self.local_manager_state))
@@ -75,6 +78,7 @@ class Main(BaseMain):
             QMessageBox.information(self,'Local AI Manager','Переключение не потребовалось или подходящей установленной модели нет.')
 
     def _background_ai_memory_guard(self):
+        if os.environ.get('MARKETPLACE_AI_TEST_MODE')=='1':return
         if not bool(self.cfg.get('local_ai_auto_memory',True)):return
         if getattr(self,'active_worker',None):return
         try:

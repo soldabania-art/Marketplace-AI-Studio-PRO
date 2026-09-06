@@ -2,39 +2,13 @@
 
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
-import { ArrowLeft, Calculator, TrendingDown, TrendingUp } from 'lucide-react'
-
-const money = (v) => new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0}).format(Number.isFinite(v)?v:0)+' ₽'
-const pct = (v) => `${(Number.isFinite(v)?v:0).toFixed(1)}%`
-
+import { ArrowLeft, Calculator, RefreshCw, TrendingDown, TrendingUp } from 'lucide-react'
+const money=v=>new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0}).format(Number.isFinite(v)?v:0)+' ₽'; const pct=v=>`${(Number.isFinite(v)?v:0).toFixed(1)}%`
 export default function ProfitabilityCalculator(){
-  const [price,setPrice]=useState(1990)
-  const [cogs,setCogs]=useState(650)
-  const [commission,setCommission]=useState(20)
-  const [logistics,setLogistics]=useState(180)
-  const [ads,setAds]=useState(220)
-  const [tax,setTax]=useState(6)
-  const [other,setOther]=useState(60)
-
-  const r=useMemo(()=>{
-    const p=Number(price)||0, c=Number(cogs)||0, comm=p*(Number(commission)||0)/100, log=Number(logistics)||0, ad=Number(ads)||0, t=p*(Number(tax)||0)/100, o=Number(other)||0
-    const costs=c+comm+log+ad+t+o
-    const profit=p-costs
-    const margin=p>0?profit/p*100:0
-    const roi=c>0?profit/c*100:0
-    const breakEven=1-((Number(commission)||0)+(Number(tax)||0))/100
-    const breakEvenPrice=breakEven>0?(c+log+ad+o)/breakEven:0
-    return {comm,t,costs,profit,margin,roi,breakEvenPrice}
-  },[price,cogs,commission,logistics,ads,tax,other])
-
-  const fields=[['Цена продажи',price,setPrice,'₽'],['Себестоимость',cogs,setCogs,'₽'],['Комиссия маркетплейса',commission,setCommission,'%'],['Логистика',logistics,setLogistics,'₽'],['Реклама на заказ',ads,setAds,'₽'],['Налог',tax,setTax,'%'],['Прочие расходы',other,setOther,'₽']]
-  return <main className="workPage">
-    <div className="workHead"><Link href="/profit" className="ghostBtn"><ArrowLeft size={16}/> Profit Center</Link><Link href="/pricing" className="ghostBtn">Тарифы</Link></div>
-    <section className="workHero"><span className="eyebrow">ЮНИТ-ЭКОНОМИКА</span><h1>Калькулятор рентабельности</h1><p>Показывает чистую прибыль с единицы, маржинальность, ROI и цену безубыточности. Все значения можно менять вручную.</p></section>
-    <div className="factoryGrid"><section className="workPanel formPanel"><div className="panelTitle"><h2>Исходные данные</h2><Calculator size={20}/></div>{fields.map(([label,value,setter,suffix])=><label key={label}>{label}<div className="calcInput"><input type="number" min="0" step="0.01" value={value} onChange={e=>setter(e.target.value)}/><span>{suffix}</span></div></label>)}</section>
-    <section className="workPanel previewPanel"><span className="eyebrow">РЕЗУЛЬТАТ</span><div className={`profitHero ${r.profit>=0?'positive':'negative'}`}><div>{r.profit>=0?<TrendingUp size={22}/>:<TrendingDown size={22}/>}<span>Чистая прибыль с единицы</span></div><strong>{money(r.profit)}</strong></div>
-    <div className="calcStats"><div><span>Маржинальность</span><strong>{pct(r.margin)}</strong></div><div><span>ROI на себестоимость</span><strong>{pct(r.roi)}</strong></div><div><span>Все расходы</span><strong>{money(r.costs)}</strong></div><div><span>Цена безубыточности</span><strong>{money(r.breakEvenPrice)}</strong></div></div>
-    <div className="costBreakdown"><h3>Структура расходов</h3><div><span>Себестоимость</span><b>{money(Number(cogs)||0)}</b></div><div><span>Комиссия</span><b>{money(r.comm)}</b></div><div><span>Логистика</span><b>{money(Number(logistics)||0)}</b></div><div><span>Реклама</span><b>{money(Number(ads)||0)}</b></div><div><span>Налог</span><b>{money(r.t)}</b></div><div><span>Прочее</span><b>{money(Number(other)||0)}</b></div></div>
-    <small className="calcHint">Формула: цена − себестоимость − комиссия − логистика − реклама − налог − прочие расходы.</small></section></div>
-  </main>
+ const [price,setPrice]=useState(1990),[cogs,setCogs]=useState(650),[commission,setCommission]=useState(20),[logistics,setLogistics]=useState(180),[ads,setAds]=useState(220),[tax,setTax]=useState(6),[other,setOther]=useState(60)
+ const [marketplace,setMarketplace]=useState('wildberries'),[sku,setSku]=useState(''),[commissionMeta,setCommissionMeta]=useState({mode:'manual',message:'Пока используется ручное значение.'}),[loading,setLoading]=useState(false)
+ async function syncCommission(){setLoading(true);setCommissionMeta({mode:'loading',message:'Получаем актуальную комиссию…'});try{const qs=new URLSearchParams({marketplace,sku});const res=await fetch(`/api/marketplace/commission?${qs}`);const data=await res.json();if(!res.ok)throw new Error(data.error||'Комиссия недоступна');setCommission(data.commission_percent);setCommissionMeta({mode:'live',message:`Автоматически: ${data.source||marketplace}${data.updated_at?` · обновлено ${new Date(data.updated_at).toLocaleString('ru-RU')}`:''}`})}catch(e){setCommissionMeta({mode:'manual',message:`Автозагрузка недоступна: ${e.message} Ручное значение сохранено.`})}finally{setLoading(false)}}
+ const r=useMemo(()=>{const p=Number(price)||0,c=Number(cogs)||0,comm=p*(Number(commission)||0)/100,log=Number(logistics)||0,ad=Number(ads)||0,t=p*(Number(tax)||0)/100,o=Number(other)||0,costs=c+comm+log+ad+t+o,profit=p-costs,margin=p?profit/p*100:0,roi=c?profit/c*100:0,be=1-((Number(commission)||0)+(Number(tax)||0))/100;return{comm,t,costs,profit,margin,roi,breakEvenPrice:be>0?(c+log+ad+o)/be:0}},[price,cogs,commission,logistics,ads,tax,other])
+ const fields=[['Цена продажи',price,setPrice,'₽'],['Себестоимость',cogs,setCogs,'₽'],['Логистика',logistics,setLogistics,'₽'],['Реклама на заказ',ads,setAds,'₽'],['Налог',tax,setTax,'%'],['Прочие расходы',other,setOther,'₽']]
+ return <main className="workPage"><div className="workHead"><Link href="/profit" className="ghostBtn"><ArrowLeft size={16}/> Profit Center</Link><Link href="/pricing" className="ghostBtn">Тарифы</Link></div><section className="workHero"><span className="eyebrow">ЮНИТ-ЭКОНОМИКА</span><h1>Калькулятор рентабельности</h1><p>Комиссия WB/Ozon подставляется автоматически из подключённого магазина. Если интеграция недоступна, система ничего не выдумывает и оставляет ручной режим.</p></section><div className="factoryGrid"><section className="workPanel formPanel"><div className="panelTitle"><h2>Исходные данные</h2><Calculator size={20}/></div><label>Маркетплейс<select value={marketplace} onChange={e=>setMarketplace(e.target.value)}><option value="wildberries">Wildberries</option><option value="ozon">Ozon</option></select></label><label>Артикул / SKU<div className="calcInput"><input value={sku} onChange={e=>setSku(e.target.value)} placeholder="Например 18374629"/></div></label><button className="primaryBtn" onClick={syncCommission} disabled={loading}><RefreshCw size={16}/>{loading?'Получаем…':'Подтянуть комиссию'}</button><label>Комиссия маркетплейса<div className="calcInput"><input type="number" min="0" step="0.01" value={commission} onChange={e=>{setCommission(e.target.value);setCommissionMeta({mode:'manual',message:'Ручное переопределение комиссии.'})}}/><span>%</span></div><small className={`commissionSource ${commissionMeta.mode}`}>{commissionMeta.message}</small></label>{fields.map(([label,value,setter,suffix])=><label key={label}>{label}<div className="calcInput"><input type="number" min="0" step="0.01" value={value} onChange={e=>setter(e.target.value)}/><span>{suffix}</span></div></label>)}</section><section className="workPanel previewPanel"><span className="eyebrow">РЕЗУЛЬТАТ</span><div className={`profitHero ${r.profit>=0?'positive':'negative'}`}><div>{r.profit>=0?<TrendingUp size={22}/>:<TrendingDown size={22}/>}<span>Чистая прибыль с единицы</span></div><strong>{money(r.profit)}</strong></div><div className="calcStats"><div><span>Маржинальность</span><strong>{pct(r.margin)}</strong></div><div><span>ROI</span><strong>{pct(r.roi)}</strong></div><div><span>Все расходы</span><strong>{money(r.costs)}</strong></div><div><span>Безубыточность</span><strong>{money(r.breakEvenPrice)}</strong></div></div><div className="costBreakdown"><h3>Структура расходов</h3><div><span>Себестоимость</span><b>{money(Number(cogs)||0)}</b></div><div><span>Комиссия</span><b>{money(r.comm)}</b></div><div><span>Логистика</span><b>{money(Number(logistics)||0)}</b></div><div><span>Реклама</span><b>{money(Number(ads)||0)}</b></div><div><span>Налог</span><b>{money(r.t)}</b></div><div><span>Прочее</span><b>{money(Number(other)||0)}</b></div></div></section></div></main>
 }

@@ -7,8 +7,15 @@ DATA=Path(os.environ.get('LOCALAPPDATA',Path.home()))/'MarketplaceAIStudioPRO'
 DATA.mkdir(parents=True,exist_ok=True)
 DB=DATA/'studio.db'
 CFG=DATA/'settings.json'
-PUBLIC_DEFAULTS={'openai_model':'gpt-5.6-sol','ozon_client_id':'','company_name':'','telegram_chat_id':'','setup_completed':False}
-SECRET_KEYS=('openai_api_key','wb_token','ozon_api_key','telegram_token')
+PUBLIC_DEFAULTS={
+    'openai_model':'gpt-5.6-sol',
+    'openai_monthly_budget_usd':0.0,
+    'ozon_client_id':'',
+    'company_name':'',
+    'telegram_chat_id':'',
+    'setup_completed':False,
+}
+SECRET_KEYS=('openai_api_key','openai_admin_key','wb_token','ozon_api_key','telegram_token')
 
 def generated_dir():
     p=DATA/'generated'; p.mkdir(exist_ok=True); return p

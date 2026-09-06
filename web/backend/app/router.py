@@ -21,6 +21,10 @@ def integration_status(): return {'meta':DEMO_META,'wildberries':{'connected':Fa
 
 @api_router.get('/marketplaces/commission')
 def marketplace_commission(marketplace:str=Query(pattern='^(wildberries|ozon)$'),sku:str='',current_user:User=Depends(get_current_user)):
-    # Contract is intentionally fail-closed: never invent a marketplace tariff.
-    # The integration service will populate this from the seller's connected WB/Ozon account.
     raise HTTPException(status_code=409,detail=f'{marketplace}: магазин или тарифная интеграция ещё не подключены. Комиссия не подставлена.')
+
+@api_router.get('/fbo/slots')
+def fbo_slots(marketplace:str=Query(default='wildberries',pattern='^(wildberries|ozon)$'),free_only:bool=False,current_user:User=Depends(get_current_user)):
+    if marketplace == 'ozon':
+        raise HTTPException(status_code=409,detail='Ozon FBO: интеграция слотов приёмки ещё не подключена.')
+    raise HTTPException(status_code=409,detail='Wildberries FBW: подключите магазин. После подключения сервис загрузит актуальные склады и даты приёмки из официального API.')

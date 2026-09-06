@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from .db import get_db
 from .models import Membership, MembershipRole, Subscription, SubscriptionStatus, User, Workspace
 from .schemas import AccountResponse, LoginRequest, RegisterRequest, TokenResponse
-from .security import create_access_token, get_current_user, hash_password, verify_password
+from .security import create_access_token, get_current_user, hash_password, is_platform_admin, verify_password
 
 router = APIRouter()
 
@@ -91,4 +91,5 @@ def me(current_user: User = Depends(get_current_user), db: Session = Depends(get
         role=membership.role.value,
         plan_code=subscription.plan_code if subscription else "none",
         subscription_status=subscription.status.value if subscription else "none",
+        is_platform_admin=is_platform_admin(current_user),
     )

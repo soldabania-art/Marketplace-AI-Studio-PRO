@@ -1,6 +1,7 @@
 import './globals.css'
 import './workspace.css'
 import './site-foundation.css'
+import './fbo.css'
 import CookieConsent from './components/CookieConsent'
 
 export const metadata = {

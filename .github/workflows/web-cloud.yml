@@ -2,7 +2,7 @@ name: Web Cloud
 
 on:
   push:
-    branches: [web-cloud]
+    branches: [main, web-cloud]
     paths:
       - 'web/**'
       - '.github/workflows/web-cloud.yml'
@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -27,11 +27,26 @@ jobs:
           node-version: '22'
       - name: Install dependencies
         run: npm install
-      - name: Build static web app
+      - name: Build Next.js app
         run: npm run build
-      - name: Upload static site artifact
-        uses: actions/upload-artifact@v4
+
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web/backend
+    env:
+      MARKETPLACE_DATABASE_URL: sqlite:///./ci.db
+      MARKETPLACE_JWT_SECRET: ci-only-secret-not-for-production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          name: Marketplace_AI_Studio_Cloud
-          path: web/out
-          if-no-files-found: error
+          python-version: '3.12'
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt
+      - name: Run backend contract tests
+        run: pytest -q

@@ -49,16 +49,21 @@ jobs:
           MARKETPLACE_AI_TEST_MODE: '1'
         run: python -m unittest discover -s tests -p "test_contracts.py" -v
 
-      # Full Qt page construction is intentionally excluded from the release-critical path.
-      # It can block indefinitely on Windows headless runners even when application imports/contracts pass.
-      # Keep a bounded constructor probe so CI can never consume the entire build timeout here.
       - name: Bounded UI constructor probe
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
           MARKETPLACE_AI_TEST_MODE: '1'
         run: |
-          $p = Start-Process python -ArgumentList '-c', 'from PySide6.QtWidgets import QApplication; from studio.ui_v36 import Main; a=QApplication([]); w=Main(); print("ui constructor ok"); w.close()' -PassThru -NoNewWindow
+          @'
+          from PySide6.QtWidgets import QApplication
+          from studio.ui_v36 import Main
+          app = QApplication([])
+          win = Main()
+          print('ui constructor ok')
+          win.close()
+          '@ | Set-Content ui_probe.py -Encoding utf8
+          $p = Start-Process python -ArgumentList 'ui_probe.py' -PassThru -NoNewWindow
           if (-not $p.WaitForExit(45)) {
             Write-Warning 'Headless Qt constructor exceeded 45 seconds; terminating probe so packaging can continue.'
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue

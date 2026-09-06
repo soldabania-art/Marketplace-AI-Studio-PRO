@@ -31,11 +31,18 @@ class ReviewAutopilot:
             'raw': review,
         }
 
+    def _raw_text(self, prompt, timeout=90):
+        if hasattr(self.ai, 'raw_text'):
+            return self.ai.raw_text(prompt, timeout)
+        if hasattr(self.ai, '_call'):
+            return self.ai._call(prompt, timeout)
+        raise RuntimeError('AI-провайдер не поддерживает классификацию отзывов')
+
     def classify(self, review):
         r = self.normalize(review)
         prompt = f'''Ты модератор отзывов маркетплейса. Верни только JSON: {{"sentiment":"positive|neutral|negative","risk":"low|medium|high","needs_human":true|false,"reason":"кратко"}}.
 Оценка: {r['rating']}/5. Текст: {r['text']}. Высокий риск ставь для угроз, юридических претензий, безопасности товара, здоровья, возвратов денег, обвинений в подделке или если контекст неоднозначен.'''
-        text = self.ai._call(prompt, 90)
+        text = self._raw_text(prompt, 90)
         if text.startswith('```'):
             text = text.strip('`')
             if text.lower().startswith('json'): text = text[4:].strip()

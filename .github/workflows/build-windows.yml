@@ -31,7 +31,7 @@ jobs:
         shell: pwsh
         run: |
           python -m compileall -q app.py studio
-          python -c "import app; import studio.ui_v24; import studio.growth_engine; import studio.performance_evaluator; import studio.rollback_executor; print('smoke ok')"
+          python -c "import app; import studio.ui_v25; import studio.safety_control; import studio.growth_engine; import studio.performance_evaluator; import studio.rollback_executor; print('smoke ok')"
 
       - name: Build application EXE
         shell: pwsh
@@ -60,12 +60,12 @@ jobs:
       - name: Publish GitHub Release
         uses: ncipollo/release-action@v1
         with:
-          tag: v2.4.${{ github.run_number }}
-          name: Marketplace AI Studio PRO Mega Edition 2.4 build ${{ github.run_number }}
+          tag: v2.5.${{ github.run_number }}
+          name: Marketplace AI Studio PRO Mega Edition 2.5 build ${{ github.run_number }}
           body: |
-            Windows-сборка Marketplace AI Studio PRO Mega Edition 2.4 CLOSED-LOOP AUTOPILOT.
+            Windows-сборка Marketplace AI Studio PRO Mega Edition 2.5 COMMERCIAL GUARDRAILS.
 
-            Добавлено: SELF-OPTIMIZING AI сам выбирает слабую карточку WB, использует её текущий визуал как исходник, пересобирает тексты/SEO/инфографику, сохраняет baseline метрик и новую версию. CLOSED-LOOP контроллер после заданного периода сравнивает прибыль, выручку, ДРР, возвраты и другие показатели; при сильном ухудшении формирует rollback, а при отдельном разрешении AUTOPILOT может автоматически восстановить предыдущую версию текста и визуала.
+            Добавлено: аварийный STOP AUTOPILOT; локальный audit log всех внешних write-действий и блокировок; дневные лимиты публикаций карточек, рекламных изменений, автоответов и rollback; дневной бюджет суммарного изменения рекламных ставок; Telegram-отчёт владельцу один раз в день и ручная отправка отчёта. Исправлены syntax errors старых UI-слоёв, которые теперь ловятся smoke test до сборки EXE.
 
             Скачать Marketplace_AI_Studio_PRO_Setup.exe ниже в Assets.
           artifacts: installer-output/Marketplace_AI_Studio_PRO_Setup.exe

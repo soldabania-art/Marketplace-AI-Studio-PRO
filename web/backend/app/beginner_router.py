@@ -4,6 +4,8 @@ import hashlib
 import hmac
 import json
 import re
+from decimal import Decimal, ROUND_HALF_UP
+from typing import Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -33,6 +35,20 @@ class BeginnerDraftRequest(BaseModel):
     confirmed_facts: list[ConfirmedFact] = Field(min_length=2, max_length=40)
 
 
+class BeginnerEconomicsRequest(BaseModel):
+    marketplace: Literal["wildberries", "ozon"]
+    price: Decimal = Field(gt=0, le=10_000_000)
+    cogs: Decimal = Field(ge=0, le=10_000_000)
+    commission_percent: Decimal = Field(ge=0, le=100)
+    logistics: Decimal = Field(ge=0, le=1_000_000)
+    ads_per_order: Decimal = Field(default=Decimal("0"), ge=0, le=1_000_000)
+    tax_percent: Decimal = Field(default=Decimal("0"), ge=0, le=100)
+    returns_reserve: Decimal = Field(default=Decimal("0"), ge=0, le=1_000_000)
+    other_costs: Decimal = Field(default=Decimal("0"), ge=0, le=1_000_000)
+    target_margin_percent: Decimal = Field(default=Decimal("15"), ge=0, lt=100)
+    rates_confirmed_by_seller: bool
+
+
 def _analysis_bytes(analysis: dict) -> bytes:
     return json.dumps(analysis, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
 
@@ -55,6 +71,59 @@ def build_beginner_fact_set(analysis: dict, confirmed_facts: list[ConfirmedFact]
     canonical = {"schema_version": 1, "source": "beginner_confirmed_intake", "facts": facts}
     digest = hashlib.sha256(json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return {**canonical, "sha256": digest, "photo_analysis_confidence": analysis.get("confidence")}
+
+
+def _money(value: Decimal) -> float:
+    return float(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+def calculate_beginner_economics(payload: BeginnerEconomicsRequest) -> dict:
+    if not payload.rates_confirmed_by_seller:
+        raise HTTPException(400, "Подтвердите комиссию и логистику. Система не подставляет непроверенные тарифы.")
+    hundred = Decimal("100")
+    commission = payload.price * payload.commission_percent / hundred
+    tax = payload.price * payload.tax_percent / hundred
+    fixed_costs = payload.cogs + payload.logistics + payload.ads_per_order + payload.returns_reserve + payload.other_costs
+    total_costs = fixed_costs + commission + tax
+    profit = payload.price - total_costs
+    margin_percent = profit / payload.price * hundred
+    roi_percent = profit / payload.cogs * hundred if payload.cogs else None
+    variable_rate = (payload.commission_percent + payload.tax_percent) / hundred
+    break_even_price = fixed_costs / (Decimal("1") - variable_rate) if variable_rate < 1 else None
+    target_rate = (payload.commission_percent + payload.tax_percent + payload.target_margin_percent) / hundred
+    target_price = fixed_costs / (Decimal("1") - target_rate) if target_rate < 1 else None
+    blockers = []
+    if profit <= 0:
+        blockers.append("Цена не покрывает все указанные расходы.")
+    if margin_percent < payload.target_margin_percent:
+        blockers.append(f"Маржа ниже цели {payload.target_margin_percent}%.")
+    if break_even_price is None or target_price is None:
+        blockers.append("Сумма комиссии, налога и целевой маржи не позволяет рассчитать безопасную цену.")
+    return {
+        "marketplace": payload.marketplace,
+        "currency": "RUB",
+        "source": "seller_confirmed_manual_rates",
+        "price": _money(payload.price),
+        "costs": {
+            "cogs": _money(payload.cogs),
+            "commission": _money(commission),
+            "logistics": _money(payload.logistics),
+            "ads_per_order": _money(payload.ads_per_order),
+            "tax": _money(tax),
+            "returns_reserve": _money(payload.returns_reserve),
+            "other": _money(payload.other_costs),
+            "total": _money(total_costs),
+        },
+        "profit_per_unit": _money(profit),
+        "margin_percent": _money(margin_percent),
+        "roi_percent": _money(roi_percent) if roi_percent is not None else None,
+        "break_even_price": _money(break_even_price) if break_even_price is not None else None,
+        "recommended_min_price": _money(target_price) if target_price is not None else None,
+        "target_margin_percent": _money(payload.target_margin_percent),
+        "safe_to_launch": not blockers,
+        "blockers": blockers,
+        "publish_requires_confirmation": True,
+    }
 
 
 @router.post("/analyze-photo")
@@ -94,3 +163,8 @@ def generate_draft(payload: BeginnerDraftRequest, user: User = Depends(get_curre
         "publish_requires_confirmation": True,
         "next_step": "unit_economics",
     }
+
+
+@router.post("/calculate-economics")
+def calculate_economics(payload: BeginnerEconomicsRequest, user: User = Depends(get_current_user)):
+    return calculate_beginner_economics(payload)

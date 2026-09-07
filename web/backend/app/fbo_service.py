@@ -1,5 +1,7 @@
 import httpx
 
+from .rate_limit import wait_marketplace_slot
+
 WB_ACCEPTANCE_URL = "https://common-api.wildberries.ru/api/tariffs/v1/acceptance/coefficients"
 
 
@@ -29,6 +31,9 @@ async def fetch_wb_slots(token: str, warehouse_ids: list[int] | None = None) -> 
     params = {}
     if warehouse_ids:
         params["warehouseIDs"] = ",".join(str(x) for x in warehouse_ids)
+    # Conservative default. Endpoint-specific official limits can override this
+    # later without exposing or persisting the plaintext marketplace token.
+    await wait_marketplace_slot("wildberries", token, "acceptance-coefficients")
     async with httpx.AsyncClient(timeout=12.0) as client:
         response = await client.get(WB_ACCEPTANCE_URL, params=params, headers={"Authorization": token})
         response.raise_for_status()

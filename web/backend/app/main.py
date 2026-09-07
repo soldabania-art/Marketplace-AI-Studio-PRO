@@ -16,24 +16,35 @@ from .router import api_router
 from .store_router import router as store_router
 
 
+settings = get_settings()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
-    stop_event = asyncio.Event()
-    monitor_task = asyncio.create_task(monitor_forever(stop_event))
-    app.state.fbo_stop_event = stop_event
-    app.state.fbo_monitor_task = monitor_task
+    # Local development remains zero-friction. Production schema changes must go
+    # through Alembic before the API process starts.
+    if not settings.is_production:
+        Base.metadata.create_all(bind=engine)
+
+    stop_event = None
+    monitor_task = None
+    if settings.run_fbo_monitor_in_api:
+        stop_event = asyncio.Event()
+        monitor_task = asyncio.create_task(monitor_forever(stop_event))
+        app.state.fbo_stop_event = stop_event
+        app.state.fbo_monitor_task = monitor_task
+
     try:
         yield
     finally:
-        stop_event.set()
-        await monitor_task
+        if stop_event is not None and monitor_task is not None:
+            stop_event.set()
+            await monitor_task
 
 
-settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
-    version='0.9.0',
+    version='0.10.0',
     description='Backend for Marketplace AI Studio Cloud',
     lifespan=lifespan,
 )
@@ -54,7 +65,13 @@ app.add_middleware(
 
 @app.get('/health', tags=['system'])
 def health():
-    return {'status':'ok','service':'marketplace-ai-studio-api','version':'0.9.0'}
+    return {
+        'status':'ok',
+        'service':'marketplace-ai-studio-api',
+        'version':'0.10.0',
+        'environment':settings.environment,
+        'embedded_fbo_monitor':settings.run_fbo_monitor_in_api,
+    }
 
 
 app.include_router(account_router,prefix='/api/v1',tags=['account'])

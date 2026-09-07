@@ -1,22 +1,25 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useEffect,useMemo,useState } from 'react'
 import { BarChart3,Bell,Bot,Boxes,BrainCircuit,CircleDollarSign,FileText,Gauge,Megaphone,PackageSearch,Search,Settings,ShieldCheck,Sparkles,Star,TrendingDown,TrendingUp,WandSparkles } from 'lucide-react'
 import { useActiveStore } from '../lib/useActiveStore'
+import { makeDailyGreeting } from '../lib/dailyGreeting'
 
 const metrics=[{label:'Выручка сегодня',value:'482 640 ₽',delta:'+14,8%',tone:'good'},{label:'Чистая прибыль',value:'127 430 ₽',delta:'+21,3%',tone:'good'},{label:'Реклама',value:'41 280 ₽',delta:'ДРР 8,6%',tone:'neutral'},{label:'Заказы',value:'327',delta:'+38',tone:'good'}]
 const actions=[{severity:'critical',icon:TrendingDown,title:'SKU 18374629 уходит в убыток',text:'Реклама выросла на 37%, а маржа стала отрицательной. Потеря за 24 часа: 4 320 ₽.',effect:'+9 800 ₽/нед',href:'/ads',action:'Исправить рекламу'},{severity:'warning',icon:Search,title:'У 6 карточек просело SEO',text:'AI нашёл новые поисковые кластеры и подготовил обновлённые заголовки и описание.',effect:'+11–18% трафика',href:'/seo',action:'Обновить SEO'},{severity:'growth',icon:TrendingUp,title:'3 товара готовы к масштабированию',text:'Высокая маржа, стабильная конверсия и запас на 21 день. Можно безопасно увеличить трафик.',effect:'+74 000 ₽/мес',href:'/products',action:'Запустить рост'}]
 const nav=[['Обзор',Gauge,'/'],['AI Director',BrainCircuit,'/director'],['Profit Center',CircleDollarSign,'/profit'],['Товары',Boxes,'/products'],['AI Card Factory',WandSparkles,'/card-factory'],['SEO',Search,'/seo'],['Реклама',Megaphone,'/ads'],['Отзывы',Star,'/reviews'],['Остатки',PackageSearch,'/inventory'],['Отчёты',FileText,'/reports'],['Автопилот',Bot,'/autopilot']]
 
 export default function HomePage(){
- const [notice,setNotice]=useState(''); const [question,setQuestion]=useState(''); const [answer,setAnswer]=useState('')
+ const [notice,setNotice]=useState(''); const [question,setQuestion]=useState(''); const [answer,setAnswer]=useState(''); const [fullName,setFullName]=useState('')
  const {storeName}=useActiveStore()
+ useEffect(()=>{let active=true;fetch('/api/auth/me',{cache:'no-store'}).then(async r=>r.ok?r.json():null).then(p=>{if(active&&p)setFullName(p.full_name||p.name||'')}).catch(()=>{});return()=>{active=false}},[])
+ const greeting=useMemo(()=>makeDailyGreeting(fullName),[fullName])
  function ask(){if(!question.trim())return;setAnswer(`AI принял вопрос: «${question.trim()}». После подключения реальных данных ответ будет строиться только по активному магазину${storeName?` «${storeName}»`:''}.`)}
  return <main className="shell"><aside className="sidebar"><div className="brand"><div className="brandMark"><Sparkles size={20}/></div><div><strong>Marketplace AI</strong><span>Studio Cloud</span></div></div>
  <nav className="nav">{nav.map(([label,Icon,href],i)=><Link key={label} href={href} className={i===0?'navItem active':'navItem'}><Icon size={18}/><span>{label}</span>{label==='AI Director'&&<b>17</b>}</Link>)}</nav>
  <div className="marketplaces"><span className="eyebrow">МАРКЕТПЛЕЙСЫ</span><button className="marketRow" onClick={()=>setNotice(`Wildberries подключается отдельно для каждого магазина. Активный контекст: ${storeName||'магазин не выбран'}.`)}><i className="wbDot"/>Wildberries <span>○</span></button><button className="marketRow" onClick={()=>setNotice('Ozon будет подключаться по той же магазинной схеме после завершения проверенной API-интеграции.')}><i className="ozonDot"/>Ozon <span>○</span></button></div><Link href="/account" className="settingsBtn"><Settings size={18}/> Настройки</Link></aside>
- <section className="workspace"><header className="topbar"><div><span className="eyebrow">ПАНЕЛЬ УПРАВЛЕНИЯ · {storeName||'МАГАЗИН НЕ ВЫБРАН'}</span><h1>Доброе утро 👋</h1><small>Сводка ключевых показателей и приоритетов активного магазина.</small></div><div className="topActions"><button className="iconBtn" onClick={()=>setNotice('Новых системных уведомлений пока нет.')}><Bell size={19}/><span className="notificationDot"/></button><Link href="/account" className="profile"><div className="avatar">SB</div><div><strong>{storeName||'Мой магазин'}</strong><span>Аккаунт и подключения</span></div></Link></div></header>
+ <section className="workspace"><header className="topbar"><div><span className="eyebrow">ПАНЕЛЬ УПРАВЛЕНИЯ · {storeName||'МАГАЗИН НЕ ВЫБРАН'}</span><h1>{greeting.phrase}</h1><small>{greeting.tip}</small></div><div className="topActions"><button className="iconBtn" onClick={()=>setNotice('Новых системных уведомлений пока нет.')}><Bell size={19}/><span className="notificationDot"/></button><Link href="/account" className="profile"><div className="avatar">SB</div><div><strong>{storeName||'Мой магазин'}</strong><span>Аккаунт и подключения</span></div></Link></div></header>
  {notice&&<div className="panel" style={{marginBottom:16,padding:14}}>{notice}</div>}
  <section className="hero"><div><div className="heroKicker"><BrainCircuit size={17}/> AI Director</div><h2>Демо-режим показывает, как AI будет находить <em>возможности роста</em> по активному магазину.</h2><p>Реальные действия не отправляются в маркетплейс без подключения, разрешения и выбранного Store Context.</p></div><Link className="primaryBtn" href="/director"><Sparkles size={18}/> Открыть план действий</Link></section>
  <section className="metricsGrid">{metrics.map(m=><article className="metricCard" key={m.label}><span>{m.label}</span><strong>{m.value}</strong><small className={m.tone}>{m.delta}</small></article>)}</section>

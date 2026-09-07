@@ -15,7 +15,7 @@ from .fbo_service import fetch_wb_slots
 from .fbo_worker import process_watch
 from .job_queue import enqueue
 from .marketplace_connections import decrypt_connection
-from .models import FboWatch, MarketplaceConnection, Store
+from .models import BackgroundJob, FboWatch, MarketplaceConnection, Store
 
 logger = logging.getLogger(__name__)
 _LOCAL_LOCKS: dict[str, asyncio.Lock] = {}
@@ -156,11 +156,12 @@ async def process_enabled_watches_once() -> dict[str, int]:
         enqueued = 0
         for group in groups:
             store_id = group[1] if group[0] == 'store' else None
-            before = db.query(__import__('app.models', fromlist=['BackgroundJob']).BackgroundJob).filter_by(idempotency_key=f'fbo-poll:{group[0]}:{group[1]}:{bucket}').first()
+            key = f'fbo-poll:{group[0]}:{group[1]}:{bucket}'
+            before = db.query(BackgroundJob.id).filter(BackgroundJob.idempotency_key == key).first()
             enqueue(
                 db,
                 job_type='fbo.poll',
-                idempotency_key=f'fbo-poll:{group[0]}:{group[1]}:{bucket}',
+                idempotency_key=key,
                 payload={'scope': group[0], 'id': group[1]},
                 workspace_id=_workspace_for_store(db, store_id),
                 store_id=store_id,

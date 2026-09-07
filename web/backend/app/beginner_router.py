@@ -9,12 +9,16 @@ from typing import Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from .ai_card_factory import analyze_product_photo, generate_grounded_copy
 from .config import get_settings
-from .models import User
+from .db import get_db
+from .models import BeginnerProject, User
 from .security import get_current_user
+from .store_access import resolve_store
 
 router = APIRouter(prefix="/beginner", tags=["beginner"])
 DATA_URL = re.compile(r"^data:(image/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=\s]+)$")
@@ -47,6 +51,36 @@ class BeginnerEconomicsRequest(BaseModel):
     other_costs: Decimal = Field(default=Decimal("0"), ge=0, le=1_000_000)
     target_margin_percent: Decimal = Field(default=Decimal("15"), ge=0, lt=100)
     rates_confirmed_by_seller: bool
+
+
+ProjectStage = Literal["facts", "card", "economics", "publish", "management"]
+
+
+class BeginnerProjectCreate(BaseModel):
+    store_id: str = Field(min_length=1, max_length=36)
+    title: str = Field(default="Новый товар", min_length=1, max_length=160)
+    stage: ProjectStage = "facts"
+    state: dict = Field(default_factory=dict)
+
+    @field_validator("state")
+    @classmethod
+    def validate_state_size(cls, value):
+        if len(json.dumps(value, ensure_ascii=False)) > 250_000:
+            raise ValueError("Состояние проекта слишком большое")
+        return value
+
+
+class BeginnerProjectPatch(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+    stage: ProjectStage | None = None
+    state: dict | None = None
+
+    @field_validator("state")
+    @classmethod
+    def validate_state_size(cls, value):
+        if value is not None and len(json.dumps(value, ensure_ascii=False)) > 250_000:
+            raise ValueError("Состояние проекта слишком большое")
+        return value
 
 
 def _analysis_bytes(analysis: dict) -> bytes:
@@ -126,6 +160,26 @@ def calculate_beginner_economics(payload: BeginnerEconomicsRequest) -> dict:
     }
 
 
+def serialize_project(project: BeginnerProject) -> dict:
+    return {
+        "id": project.id,
+        "store_id": project.store_id,
+        "title": project.title,
+        "stage": project.stage,
+        "state": project.state or {},
+        "created_at": project.created_at,
+        "updated_at": project.updated_at,
+    }
+
+
+def accessible_project(db: Session, user: User, project_id: str) -> BeginnerProject:
+    project = db.get(BeginnerProject, project_id)
+    if project is None:
+        raise HTTPException(404, "Товарный проект не найден.")
+    resolve_store(db, user, project.store_id)
+    return project
+
+
 @router.post("/analyze-photo")
 def analyze_photo(payload: PhotoAnalysisRequest, user: User = Depends(get_current_user)):
     match = DATA_URL.fullmatch(payload.image_data_url)
@@ -168,3 +222,45 @@ def generate_draft(payload: BeginnerDraftRequest, user: User = Depends(get_curre
 @router.post("/calculate-economics")
 def calculate_economics(payload: BeginnerEconomicsRequest, user: User = Depends(get_current_user)):
     return calculate_beginner_economics(payload)
+
+
+@router.get("/projects")
+def list_projects(store_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = resolve_store(db, user, store_id)
+    projects = list(db.scalars(
+        select(BeginnerProject)
+        .where(BeginnerProject.store_id == store.id)
+        .order_by(BeginnerProject.updated_at.desc())
+        .limit(30)
+    ).all())
+    return {"store_id": store.id, "projects": [serialize_project(project) for project in projects]}
+
+
+@router.post("/projects", status_code=201)
+def create_project(payload: BeginnerProjectCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = resolve_store(db, user, payload.store_id)
+    project = BeginnerProject(
+        store_id=store.id,
+        created_by_user_id=user.id,
+        title=payload.title.strip(),
+        stage=payload.stage,
+        state=payload.state,
+    )
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+    return serialize_project(project)
+
+
+@router.patch("/projects/{project_id}")
+def update_project(project_id: str, payload: BeginnerProjectPatch, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    project = accessible_project(db, user, project_id)
+    if payload.title is not None:
+        project.title = payload.title.strip()
+    if payload.stage is not None:
+        project.stage = payload.stage
+    if payload.state is not None:
+        project.state = payload.state
+    db.commit()
+    db.refresh(project)
+    return serialize_project(project)

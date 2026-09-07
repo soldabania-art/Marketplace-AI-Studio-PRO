@@ -99,3 +99,34 @@ def test_password_reset_is_generic_and_one_time():
     assert client.post("/api/v1/auth/login", json={"email":email,"password":old_password}).status_code == 401
     assert client.post("/api/v1/auth/login", json={"email":email,"password":new_password}).status_code == 200
     assert client.post("/api/v1/auth/password-reset/confirm", json={"token":raw_token,"new_password":"AnotherStrong789!"}).status_code == 400
+
+
+def test_beginner_project_persists_and_is_tenant_scoped():
+    _, _, first_token = _register_user()
+    first_headers = {"Authorization": f"Bearer {first_token}"}
+    first_store = client.get("/api/v1/stores", headers=first_headers).json()["stores"][0]["id"]
+    created = client.post(
+        "/api/v1/beginner/projects",
+        headers=first_headers,
+        json={"store_id": first_store, "title": "Органайзер", "stage": "facts", "state": {"answers": {"0": "Металл"}}},
+    )
+    assert created.status_code == 201
+    project_id = created.json()["id"]
+    updated = client.patch(
+        f"/api/v1/beginner/projects/{project_id}",
+        headers=first_headers,
+        json={"stage": "economics", "state": {"economics": {"profit_per_unit": 480}}},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["stage"] == "economics"
+    listed = client.get(f"/api/v1/beginner/projects?store_id={first_store}", headers=first_headers)
+    assert listed.status_code == 200
+    assert listed.json()["projects"][0]["state"]["economics"]["profit_per_unit"] == 480
+
+    _, _, second_token = _register_user()
+    forbidden = client.patch(
+        f"/api/v1/beginner/projects/{project_id}",
+        headers={"Authorization": f"Bearer {second_token}"},
+        json={"title": "Чужой проект"},
+    )
+    assert forbidden.status_code == 404

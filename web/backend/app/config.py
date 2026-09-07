@@ -23,7 +23,11 @@ class Settings(BaseSettings):
     vapid_private_key: str = ""
     vapid_subject: str = ""
     marketplace_token_key: str = ""
+    marketplace_secret_provider: str = "fernet"
     marketplace_default_min_interval_seconds: float = 2.0
+    marketplace_limiter_backend: str = "memory"
+    redis_url: str = ""
+    redis_key_prefix: str = "mai"
     fbo_poll_seconds: int = 60
     fbo_worker_concurrency: int = 12
     fbo_account_min_interval_seconds: int = 10

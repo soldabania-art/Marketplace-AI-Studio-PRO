@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
-import { backendRequest } from '../../../../../lib/backend'
+import { backendRequest } from '../../../../lib/backend'
 
 export async function POST(request){
   const store=await cookies()

@@ -8,6 +8,7 @@ from .config import get_settings
 from .db import get_db
 from .models import FboWatch, PushSubscription, User
 from .security import get_current_user
+from .store_access import resolve_store
 
 router = APIRouter()
 
@@ -24,6 +25,7 @@ class PushBody(BaseModel):
 
 class WatchBody(BaseModel):
     marketplace: str = 'wildberries'
+    store_id: str | None = None
     warehouse_filter: str = ''
     free_only: bool = False
     enabled: bool = True
@@ -71,17 +73,40 @@ def delete_push(body: PushBody, user: User = Depends(get_current_user), db: Sess
     return {'ok': True}
 
 
+@router.get('/fbo/watch')
+def get_watch(store_id: str | None = None, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = resolve_store(db, user, store_id)
+    row = db.query(FboWatch).filter(
+        FboWatch.store_id == store.id,
+        FboWatch.marketplace == 'wildberries',
+    ).first()
+    if not row:
+        return {'enabled': False, 'store_id': store.id, 'scope': 'all_warehouses', 'coefficients': [0, 1]}
+    return {
+        'enabled': row.enabled,
+        'watch_id': row.id,
+        'store_id': store.id,
+        'scope': 'all_warehouses' if not row.warehouse_filter else 'filtered',
+        'warehouse_filter': row.warehouse_filter,
+        'coefficients': [0] if row.free_only else [0, 1],
+        'last_checked_at': row.last_checked_at,
+    }
+
+
 @router.post('/fbo/watch')
 def save_watch(body: WatchBody, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if body.marketplace != 'wildberries':
         raise HTTPException(409, 'Серверный мониторинг складов сейчас доступен только для Wildberries.')
+    store = resolve_store(db, user, body.store_id)
     row = db.query(FboWatch).filter(
-        FboWatch.user_id == user.id,
+        FboWatch.store_id == store.id,
         FboWatch.marketplace == body.marketplace,
     ).first()
     if not row:
-        row = FboWatch(user_id=user.id, marketplace=body.marketplace)
+        row = FboWatch(user_id=user.id, store_id=store.id, marketplace=body.marketplace)
         db.add(row)
+    else:
+        row.user_id = user.id
     row.warehouse_filter = body.warehouse_filter[:500]
     row.free_only = body.free_only
     row.enabled = body.enabled
@@ -90,6 +115,7 @@ def save_watch(body: WatchBody, user: User = Depends(get_current_user), db: Sess
         'ok': True,
         'enabled': row.enabled,
         'watch_id': row.id,
+        'store_id': store.id,
         'scope': 'all_warehouses' if not row.warehouse_filter else 'filtered',
         'coefficients': [0] if row.free_only else [0, 1],
     }

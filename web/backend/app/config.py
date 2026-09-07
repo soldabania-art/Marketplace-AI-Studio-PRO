@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     fbo_account_min_interval_seconds: int = 10
     fbo_cycle_jitter_seconds: int = 5
     run_fbo_monitor_in_api: bool = False
+    job_worker_concurrency: int = 8
+    job_idle_poll_seconds: float = 1.0
+    job_lease_seconds: int = 300
+    job_retry_base_seconds: int = 10
+    job_retry_max_seconds: int = 900
     model_config = SettingsConfigDict(env_file=".env", env_prefix="MARKETPLACE_", extra="ignore")
 
     @property

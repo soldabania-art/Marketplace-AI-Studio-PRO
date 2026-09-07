@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Building2, ChevronDown } from 'lucide-react'
 
-const STORE_KEY='mai_active_store_id'
+const STORE_KEY='mai_store_id'
 
 export default function GlobalStoreSelector(){
   const [stores,setStores]=useState([])
@@ -27,6 +27,15 @@ export default function GlobalStoreSelector(){
       .catch(e=>alive&&setError(e.message))
     return ()=>{alive=false}
   },[])
+
+  useEffect(()=>{
+    function sync(event){
+      const next=event?.detail?.store_id||window.localStorage.getItem(STORE_KEY)||''
+      if(next&&stores.some(x=>x.id===next)) setActiveId(next)
+    }
+    window.addEventListener('mai:store-changed',sync)
+    return ()=>window.removeEventListener('mai:store-changed',sync)
+  },[stores])
 
   const active=useMemo(()=>stores.find(x=>x.id===activeId),[stores,activeId])
 

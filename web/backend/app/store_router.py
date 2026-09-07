@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .db import get_db
-from .models import Membership, MembershipRole, Store, User
+from .models import Membership, MembershipRole, Store, User, Workspace
 from .security import get_current_user
 from .store_access import list_accessible_stores
 
@@ -20,6 +20,13 @@ class StoreCreateBody(BaseModel):
 @router.get('/stores')
 def stores(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rows = list_accessible_stores(db, user)
+    memberships = db.scalars(
+        select(Membership).where(Membership.user_id == user.id)
+    ).all()
+    workspace_ids = [m.workspace_id for m in memberships]
+    workspace_map = {
+        row.id: row for row in db.scalars(select(Workspace).where(Workspace.id.in_(workspace_ids))).all()
+    } if workspace_ids else {}
     return {
         'stores': [
             {
@@ -30,7 +37,16 @@ def stores(user: User = Depends(get_current_user), db: Session = Depends(get_db)
                 'active': row.is_active,
             }
             for row in rows
-        ]
+        ],
+        'workspaces': [
+            {
+                'id': membership.workspace_id,
+                'name': workspace_map[membership.workspace_id].name if membership.workspace_id in workspace_map else 'Workspace',
+                'role': membership.role.value,
+                'can_manage_stores': membership.role in {MembershipRole.owner, MembershipRole.admin},
+            }
+            for membership in memberships
+        ],
     }
 
 

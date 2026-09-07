@@ -2,7 +2,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Membership, MembershipRole, Store, User
+from .models import Membership, MembershipRole, Store, User, Workspace
 
 
 def accessible_store_query(user_id: str):
@@ -15,7 +15,20 @@ def accessible_store_query(user_id: str):
 
 
 def list_accessible_stores(db: Session, user: User) -> list[Store]:
-    return list(db.scalars(accessible_store_query(user.id)).all())
+    stores = list(db.scalars(accessible_store_query(user.id)).all())
+    if stores:
+        return stores
+
+    memberships = list(db.scalars(select(Membership).where(Membership.user_id == user.id)).all())
+    if len(memberships) == 1:
+        workspace = db.get(Workspace, memberships[0].workspace_id)
+        if workspace is not None:
+            store = Store(workspace_id=workspace.id, name=workspace.name or 'Основной магазин')
+            db.add(store)
+            db.commit()
+            db.refresh(store)
+            return [store]
+    return []
 
 
 def resolve_store(db: Session, user: User, store_id: str | None = None) -> Store:

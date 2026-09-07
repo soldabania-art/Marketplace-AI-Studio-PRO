@@ -7,6 +7,7 @@ from .fbo_service import fetch_wb_slots
 from .marketplace_connections import decrypt_connection
 from .models import MarketplaceConnection, User
 from .security import get_current_user
+from .store_access import resolve_store
 
 api_router = APIRouter()
 
@@ -32,23 +33,25 @@ def marketplace_commission(marketplace:str=Query(pattern='^(wildberries|ozon)$')
 async def fbo_slots(
     marketplace:str=Query(default='wildberries',pattern='^(wildberries|ozon)$'),
     free_only:bool=False,
+    store_id:str|None=None,
     current_user:User=Depends(get_current_user),
     db:Session=Depends(get_db),
 ):
     if marketplace == 'ozon':
         raise HTTPException(status_code=409,detail='Ozon FBO: интеграция слотов приёмки ещё не подключена.')
 
+    store=resolve_store(db,current_user,store_id)
     connection=(
         db.query(MarketplaceConnection)
         .filter(
-            MarketplaceConnection.user_id==current_user.id,
+            MarketplaceConnection.store_id==store.id,
             MarketplaceConnection.marketplace=='wildberries',
             MarketplaceConnection.enabled.is_(True),
         )
         .first()
     )
     if not connection:
-        raise HTTPException(status_code=409,detail='Wildberries FBW: сначала подключите магазин в настройках.')
+        raise HTTPException(status_code=409,detail='Wildberries FBW: сначала подключите выбранный магазин в настройках.')
 
     token=decrypt_connection(connection)
     try:
@@ -67,6 +70,8 @@ async def fbo_slots(
         slots=[slot for slot in slots if slot.get('free_acceptance')]
     return {
         'marketplace':'wildberries',
+        'store_id':store.id,
+        'store_name':store.name,
         'live_data':True,
         'coefficients':[0] if free_only else [0,1],
         'scope':'all_warehouses',

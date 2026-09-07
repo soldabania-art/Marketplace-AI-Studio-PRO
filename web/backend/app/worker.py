@@ -3,15 +3,15 @@
 Production command:
     python -m app.worker
 
-One worker process hosts the lightweight FBO scheduler and the durable database
-job consumers. Multiple replicas are safe: FBO uses per-account leases and the
-job queue uses PostgreSQL SKIP LOCKED claiming.
+One worker process hosts lightweight schedulers and durable database job
+consumers. Multiple replicas are safe through leases and PostgreSQL SKIP LOCKED.
 """
 import asyncio
 import logging
 import signal
 
 from . import fbo_jobs  # noqa: F401 - registers durable job handlers
+from . import marketplace_sync  # noqa: F401 - registers marketplace sync handlers
 from .fbo_monitor import monitor_forever
 from .job_queue import job_worker_forever
 

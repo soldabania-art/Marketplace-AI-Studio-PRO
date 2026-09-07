@@ -14,20 +14,20 @@ from .models import FboWatch, MarketplaceConnection
 logger = logging.getLogger(__name__)
 
 
-def _load_connection(db: Session, user_id: str) -> MarketplaceConnection | None:
-    return (
-        db.query(MarketplaceConnection)
-        .filter(
-            MarketplaceConnection.user_id == user_id,
-            MarketplaceConnection.marketplace == "wildberries",
-            MarketplaceConnection.enabled.is_(True),
-        )
-        .first()
+def _load_connection(db: Session, watch: FboWatch) -> MarketplaceConnection | None:
+    query = db.query(MarketplaceConnection).filter(
+        MarketplaceConnection.marketplace == 'wildberries',
+        MarketplaceConnection.enabled.is_(True),
     )
+    if watch.store_id:
+        query = query.filter(MarketplaceConnection.store_id == watch.store_id)
+    else:
+        query = query.filter(MarketplaceConnection.user_id == watch.user_id)
+    return query.first()
 
 
 async def process_enabled_watches_once() -> dict[str, int]:
-    """Process each seller account at most once per cycle, then fan out to its watches."""
+    """Fetch WB once per connected store per cycle and fan out to that store's watches."""
     db = SessionLocal()
     checked_accounts = 0
     checked_watches = 0
@@ -35,18 +35,16 @@ async def process_enabled_watches_once() -> dict[str, int]:
     try:
         watches = (
             db.query(FboWatch)
-            .filter(
-                FboWatch.enabled.is_(True),
-                FboWatch.marketplace == "wildberries",
-            )
+            .filter(FboWatch.enabled.is_(True), FboWatch.marketplace == 'wildberries')
             .all()
         )
-        by_user: dict[str, list[FboWatch]] = {}
+        groups: dict[str, list[FboWatch]] = {}
         for watch in watches:
-            by_user.setdefault(watch.user_id, []).append(watch)
+            key = f'store:{watch.store_id}' if watch.store_id else f'legacy-user:{watch.user_id}'
+            groups.setdefault(key, []).append(watch)
 
-        for user_id, user_watches in by_user.items():
-            connection = _load_connection(db, user_id)
+        for group_key, group_watches in groups.items():
+            connection = _load_connection(db, group_watches[0])
             if not connection:
                 continue
             try:
@@ -55,22 +53,22 @@ async def process_enabled_watches_once() -> dict[str, int]:
                 checked_accounts += 1
             except httpx.HTTPStatusError as exc:
                 status = exc.response.status_code if exc.response is not None else None
-                logger.warning("WB slot monitor request failed for user=%s status=%s", user_id, status)
+                logger.warning('WB slot monitor request failed group=%s status=%s', group_key, status)
                 continue
             except Exception:
-                logger.exception("WB slot monitor failed for user=%s", user_id)
+                logger.exception('WB slot monitor failed group=%s', group_key)
                 continue
 
-            for watch in user_watches:
+            for watch in group_watches:
                 checked_watches += 1
                 pushes_sent += process_watch(db, watch, slots)
     finally:
         db.close()
 
     return {
-        "checked_accounts": checked_accounts,
-        "checked_watches": checked_watches,
-        "pushes_sent": pushes_sent,
+        'checked_accounts': checked_accounts,
+        'checked_watches': checked_watches,
+        'pushes_sent': pushes_sent,
     }
 
 
@@ -81,7 +79,7 @@ async def monitor_forever(stop_event: asyncio.Event) -> None:
         try:
             await process_enabled_watches_once()
         except Exception:
-            logger.exception("FBO monitor cycle failed")
+            logger.exception('FBO monitor cycle failed')
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=interval)
         except asyncio.TimeoutError:

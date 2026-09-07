@@ -8,8 +8,10 @@ export async function GET(request){
   const {searchParams}=new URL(request.url)
   const marketplace=searchParams.get('marketplace')||'wildberries'
   const freeOnly=searchParams.get('free_only')||'false'
+  const storeId=searchParams.get('store_id')||''
   try{
     const qs=new URLSearchParams({marketplace,free_only:freeOnly})
+    if(storeId) qs.set('store_id',storeId)
     const {response,payload}=await backendRequest(`/api/v1/fbo/slots?${qs.toString()}`,{headers:{Authorization:`Bearer ${token}`}})
     if(!response.ok) return NextResponse.json({error:payload?.detail||'Не удалось получить слоты приёмки'},{status:response.status})
     return NextResponse.json(payload)

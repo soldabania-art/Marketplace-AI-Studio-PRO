@@ -5,6 +5,9 @@ class Settings(BaseSettings):
     app_name: str = "Marketplace AI Studio API"
     environment: str = "development"
     database_url: str = "sqlite:///./marketplace_cloud.db"
+    database_pool_size: int = 10
+    database_max_overflow: int = 20
+    database_pool_timeout_seconds: int = 30
     jwt_secret: str = "dev-only-change-me"
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 60 * 24 * 7
@@ -20,10 +23,16 @@ class Settings(BaseSettings):
     vapid_subject: str = ""
     marketplace_token_key: str = ""
     fbo_poll_seconds: int = 60
+    run_fbo_monitor_in_api: bool = False
     model_config = SettingsConfigDict(env_file=".env", env_prefix="MARKETPLACE_", extra="ignore")
+
     @property
     def admin_email_set(self) -> set[str]:
         return {email.strip().lower() for email in self.admin_emails.split(",") if email.strip()}
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment.strip().lower() in {"production", "prod"}
 
 @lru_cache
 def get_settings() -> Settings:

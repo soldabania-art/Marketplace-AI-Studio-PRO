@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { Building2, CreditCard, KeyRound, Laptop, LogOut, MailCheck, Plus, ShieldCheck, Sparkles, Store as StoreIcon, Unplug, UserRound } from 'lucide-react'
+import { getActiveStoreId, setActiveStoreId, STORE_EVENT } from '../../lib/useActiveStore'
 import styles from './page.module.css'
 
 const eventNames = { login:'Вход', logout:'Выход', registration:'Регистрация', session_created:'Создана сессия', session_revoked:'Сессия завершена' }
@@ -36,10 +37,10 @@ export default function AccountPage() {
     const payload=await response.json()
     if(!response.ok) throw new Error(payload.error||'Не удалось загрузить магазины')
     setStoresData(payload)
-    const saved=typeof window!=='undefined'?localStorage.getItem('mai_store_id'):''
+    const saved=getActiveStoreId()
     const next=payload.stores.find(x=>x.id===saved)?.id||payload.stores[0]?.id||''
     setSelectedStoreId(next)
-    if(next&&typeof window!=='undefined') localStorage.setItem('mai_store_id',next)
+    if(next&&next!==saved) setActiveStoreId(next)
     return next
   }
 
@@ -61,9 +62,21 @@ export default function AccountPage() {
     return () => { active=false }
   }, [router])
 
+  useEffect(()=>{
+    let alive=true
+    async function syncStore(event){
+      const next=event?.detail?.store_id||getActiveStoreId()
+      if(!next||next===selectedStoreId||!storesData.stores.some(store=>store.id===next)) return
+      setSelectedStoreId(next); setError(''); setBusy('switch')
+      try{await loadWb(next)}catch(e){if(alive)setError(e.message)}finally{if(alive)setBusy('')}
+    }
+    window.addEventListener(STORE_EVENT,syncStore)
+    return()=>{alive=false;window.removeEventListener(STORE_EVENT,syncStore)}
+  },[selectedStoreId,storesData.stores])
+
   async function chooseStore(id){
     setSelectedStoreId(id); setError(''); setBusy('switch')
-    if(typeof window!=='undefined') localStorage.setItem('mai_store_id',id)
+    setActiveStoreId(id)
     try{await loadWb(id)}catch(e){setError(e.message)}finally{setBusy('')}
   }
 

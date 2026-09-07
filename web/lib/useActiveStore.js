@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 export const STORE_KEY='mai_store_id'
 export const STORE_EVENT='mai:store-changed'
@@ -22,43 +22,53 @@ export function useActiveStore(){
   const [storeName,setStoreName]=useState('')
   const [stores,setStores]=useState([])
   const [loading,setLoading]=useState(true)
+  const [error,setError]=useState('')
+  const storesRef=useRef([])
 
-  async function refresh(preferredId=''){
-    setLoading(true)
+  const applyStore=useCallback((nextId,rows=storesRef.current)=>{
+    const next=rows.some(x=>x.id===nextId)?nextId:(rows[0]?.id||'')
+    setStoreId(next)
+    setStoreName(rows.find(x=>x.id===next)?.name||'')
+    return next
+  },[])
+
+  const refresh=useCallback(async(preferredId='')=>{
+    setLoading(true); setError('')
     try{
       const response=await fetch('/api/stores',{cache:'no-store'})
       const payload=await response.json()
       if(!response.ok) throw new Error(payload.error||'Не удалось загрузить магазины')
       const rows=payload.stores||[]
+      storesRef.current=rows
       setStores(rows)
       const saved=preferredId||getActiveStoreId()
-      const next=rows.some(x=>x.id===saved)?saved:(rows[0]?.id||'')
-      setStoreId(next)
-      setStoreName(rows.find(x=>x.id===next)?.name||'')
+      const next=applyStore(saved,rows)
       if(next&&next!==getActiveStoreId()) setActiveStoreId(next)
       return {storeId:next,stores:rows}
-    } finally { setLoading(false) }
-  }
+    }catch(e){
+      setError(e.message||'Не удалось загрузить магазины')
+      throw e
+    }finally{setLoading(false)}
+  },[applyStore])
 
   useEffect(()=>{
     let alive=true
-    refresh().catch(()=>alive&&setLoading(false))
+    refresh().catch(()=>{})
     function changed(event){
-      const next=event?.detail?.store_id||getActiveStoreId()
       if(!alive) return
-      setStoreId(next)
-      setStoreName(stores.find(x=>x.id===next)?.name||'')
-      if(!stores.some(x=>x.id===next)) refresh(next).catch(()=>{})
+      const next=event?.detail?.store_id||getActiveStoreId()
+      const rows=storesRef.current
+      if(rows.some(x=>x.id===next)) applyStore(next,rows)
+      else refresh(next).catch(()=>{})
     }
     window.addEventListener(STORE_EVENT,changed)
     return ()=>{alive=false;window.removeEventListener(STORE_EVENT,changed)}
-  },[stores.length])
+  },[applyStore,refresh])
 
-  function select(storeId){
-    setActiveStoreId(storeId)
-    setStoreId(storeId)
-    setStoreName(stores.find(x=>x.id===storeId)?.name||'')
+  function select(nextId){
+    const next=applyStore(nextId)
+    setActiveStoreId(next)
   }
 
-  return {storeId,storeName,stores,loading,select,refresh}
+  return {storeId,storeName,stores,loading,error,select,refresh}
 }

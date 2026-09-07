@@ -7,6 +7,7 @@ from sqlalchemy import text
 
 from .account_router import router as account_router
 from .admin_router import router as admin_router
+from .beginner_router import router as beginner_router
 from .card_factory_router import router as card_factory_router
 from .config import get_settings
 from .db import Base, engine
@@ -48,6 +49,7 @@ def ready():
 
 app.include_router(account_router,prefix='/api/v1',tags=['account'])
 app.include_router(admin_router,prefix='/api/v1',tags=['admin'])
+app.include_router(beginner_router,prefix='/api/v1')
 app.include_router(card_factory_router,prefix='/api/v1')
 app.include_router(legal_router,prefix='/api/v1',tags=['legal'])
 app.include_router(push_router,prefix='/api/v1',tags=['push'])

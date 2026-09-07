@@ -70,6 +70,33 @@ OUTPUT_SCHEMA = {
     "additionalProperties": False,
 }
 
+PHOTO_ANALYSIS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "product_name_guess": {"type": "string", "maxLength": 160},
+        "category_guess": {"type": "string", "maxLength": 160},
+        "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+        "visible_facts": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "label": {"type": "string"},
+                    "value": {"type": "string"},
+                    "evidence": {"type": "string", "enum": ["visible_on_photo"]},
+                },
+                "required": ["label", "value", "evidence"],
+                "additionalProperties": False,
+            },
+        },
+        "required_questions": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 10},
+        "photo_warnings": {"type": "array", "items": {"type": "string"}, "maxItems": 8},
+    },
+    "required": ["product_name_guess", "category_guess", "confidence", "visible_facts", "required_questions", "photo_warnings"],
+    "additionalProperties": False,
+}
+
 
 def _output_text(payload: dict) -> str:
     for item in payload.get("output") or []:
@@ -131,3 +158,34 @@ def generate_grounded_copy(fact_set: dict) -> dict:
     result = json.loads(_output_text(response.json()))
     validate_grounding(result, fact_set)
     return result
+
+
+def analyze_product_photo(image_data_url: str) -> dict:
+    settings = get_settings()
+    if not settings.openai_api_key:
+        raise RuntimeError("Старт с нуля не настроен: отсутствует серверный OpenAI API key")
+    body = {
+        "model": settings.openai_model,
+        "input": [{
+            "role": "user",
+            "content": [
+                {"type": "input_text", "text": (
+                    "Проанализируй одно фото товара для запуска на WB/Ozon. Выдели только признаки, "
+                    "которые действительно видны. Название и категорию пометь как предположение через confidence. "
+                    "Никогда не угадывай материал, точные размеры, состав, комплектность, функции, бренд, "
+                    "сертификаты или страну производства. Всё необходимое, чего не видно, преврати в короткие "
+                    "required_questions для продавца. Оцени, какие дополнительные ракурсы или качество фото нужны."
+                )},
+                {"type": "input_image", "image_url": image_data_url, "detail": "high"},
+            ],
+        }],
+        "text": {"format": {"type": "json_schema", "name": "new_seller_photo_analysis", "strict": True, "schema": PHOTO_ANALYSIS_SCHEMA}},
+    }
+    with httpx.Client(timeout=settings.openai_timeout_seconds) as client:
+        response = client.post(
+            OPENAI_RESPONSES_URL,
+            json=body,
+            headers={"Authorization": f"Bearer {settings.openai_api_key}", "Content-Type": "application/json"},
+        )
+    response.raise_for_status()
+    return json.loads(_output_text(response.json()))

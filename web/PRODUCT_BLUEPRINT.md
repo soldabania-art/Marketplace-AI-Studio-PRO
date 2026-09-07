@@ -9,6 +9,22 @@ The product is designed around one loop:
 
 The target UX is maximum automation: the seller connects stores, supplies product facts and business constraints, then AI Director continuously prioritizes work. AI creates card copy/SEO/visual concepts and, where generation is available, visual assets. Deterministic engines remain the source of business calculations.
 
+## Beginner Launch Studio — «Старт с нуля»
+This is a distinct product entry point for a person who has not sold on marketplaces before. It shares the same account, Store, Card Factory, Profit Center and AI Director architecture; it is not a disconnected second product.
+
+Primary promise: `one product photo -> confirmed fact set -> marketplace-ready launch project -> approved publication -> ongoing store operations`.
+
+Flow:
+1. Upload one phone photo. Vision AI may identify only visibly supported properties and must label product/category identification as a confidence-scored guess.
+2. Ask the smallest possible set of plain-language questions for non-visible facts: material, dimensions, composition, package contents, brand, certificates, supplier documents, COGS and available stock.
+3. Build an immutable confirmed fact set. Unknown facts remain unknown; the system never fills them with plausible guesses.
+4. Generate WB/Ozon-specific title, description, SEO, characteristics mapping and an infographic/image plan.
+5. Check category requirements, marketplace constraints and unit economics before offering publication.
+6. Show a complete preview/diff. Publishing, price changes and advertising spend require explicit confirmation unless the seller later configures bounded autopilot permissions.
+7. After launch, hand the product to AI Director for stock risk, advertising, reviews, profit and content-performance monitoring.
+
+Beginner language must avoid marketplace jargon or explain it at the point of use. The workspace shows one next action at a time and never exposes the full professional dashboard as a setup checklist.
+
 ## Product layers
 1. Seller OS — daily operations for one or many stores.
 2. Market Intelligence — competitors, search demand and niche discovery.

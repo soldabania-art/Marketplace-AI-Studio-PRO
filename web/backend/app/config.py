@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     vapid_subject: str = ""
     marketplace_token_key: str = ""
     fbo_poll_seconds: int = 60
+    fbo_worker_concurrency: int = 12
+    fbo_account_min_interval_seconds: int = 10
+    fbo_cycle_jitter_seconds: int = 5
     run_fbo_monitor_in_api: bool = False
     model_config = SettingsConfigDict(env_file=".env", env_prefix="MARKETPLACE_", extra="ignore")
 

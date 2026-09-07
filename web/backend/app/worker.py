@@ -1,48 +1,40 @@
 """Dedicated Marketplace AI Studio background worker.
 
-Run separately from the HTTP API in production:
+Production command:
     python -m app.worker
 
-The current worker hosts FBO monitoring. Additional queues/jobs will move behind
-this process instead of being executed in request handlers.
+One worker process hosts the lightweight FBO scheduler and the durable database
+job consumers. Multiple replicas are safe: FBO uses per-account leases and the
+job queue uses PostgreSQL SKIP LOCKED claiming.
 """
-
 import asyncio
 import logging
 import signal
 
 from .fbo_monitor import monitor_forever
+from .job_queue import job_worker_forever
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger=logging.getLogger(__name__)
 
-
-async def _run() -> None:
-    stop_event = asyncio.Event()
-    loop = asyncio.get_running_loop()
-
-    def request_stop() -> None:
-        logger.info('Worker shutdown requested')
-        stop_event.set()
-
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(sig, request_stop)
-        except NotImplementedError:
-            # Windows event loops do not always support add_signal_handler.
-            pass
-
+async def _run()->None:
+    stop_event=asyncio.Event(); loop=asyncio.get_running_loop()
+    def request_stop():
+        logger.info('Worker shutdown requested'); stop_event.set()
+    for sig in (signal.SIGINT,signal.SIGTERM):
+        try: loop.add_signal_handler(sig,request_stop)
+        except NotImplementedError: pass
     logger.info('Marketplace AI Studio worker started')
-    await monitor_forever(stop_event)
+    tasks=[asyncio.create_task(monitor_forever(stop_event),name='fbo-scheduler'),asyncio.create_task(job_worker_forever(stop_event),name='job-queue')]
+    try:
+        await asyncio.gather(*tasks)
+    finally:
+        stop_event.set()
+        await asyncio.gather(*tasks,return_exceptions=True)
     logger.info('Marketplace AI Studio worker stopped')
 
+def main()->None:
+    try: asyncio.run(_run())
+    except KeyboardInterrupt: pass
 
-def main() -> None:
-    try:
-        asyncio.run(_run())
-    except KeyboardInterrupt:
-        pass
-
-
-if __name__ == '__main__':
-    main()
+if __name__=='__main__': main()

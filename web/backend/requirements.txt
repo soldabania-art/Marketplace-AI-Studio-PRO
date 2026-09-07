@@ -11,4 +11,5 @@ PyJWT>=2.10,<3.0
 httpx>=0.28,<1.0
 pywebpush>=2.0,<3.0
 cryptography>=44,<47
+redis[hiredis]>=5.2,<7.0
 pytest>=8.3,<9.0

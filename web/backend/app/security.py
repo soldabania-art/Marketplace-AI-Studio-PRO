@@ -75,10 +75,17 @@ def get_current_session(
     expires_at = session.expires_at
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at <= datetime.now(timezone.utc):
+    now = datetime.now(timezone.utc)
+    if expires_at <= now:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session has expired")
-    session.last_seen_at = datetime.now(timezone.utc)
-    db.commit()
+
+    last_seen = session.last_seen_at
+    if last_seen.tzinfo is None:
+        last_seen = last_seen.replace(tzinfo=timezone.utc)
+    write_interval = max(60, get_settings().session_last_seen_write_seconds)
+    if (now - last_seen).total_seconds() >= write_interval:
+        session.last_seen_at = now
+        db.commit()
     return session
 
 

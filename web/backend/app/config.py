@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 60 * 24 * 7
     session_days: int = 7
+    session_last_seen_write_seconds: int = 300
     login_attempt_window_minutes: int = 15
     login_attempt_max_failures: int = 5
     email_verification_hours: int = 24

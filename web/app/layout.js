@@ -2,6 +2,7 @@ import './globals.css'
 import './workspace.css'
 import './site-foundation.css'
 import './fbo.css'
+import './store-selector.css'
 import CookieConsent from './components/CookieConsent'
 import GlobalStoreSelector from './components/GlobalStoreSelector'
 

@@ -1,7 +1,5 @@
 from functools import lru_cache
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
 
 class Settings(BaseSettings):
     app_name: str = "Marketplace AI Studio API"
@@ -20,13 +18,12 @@ class Settings(BaseSettings):
     vapid_public_key: str = ""
     vapid_private_key: str = ""
     vapid_subject: str = ""
-
+    marketplace_token_key: str = ""
+    fbo_poll_seconds: int = 60
     model_config = SettingsConfigDict(env_file=".env", env_prefix="MARKETPLACE_", extra="ignore")
-
     @property
     def admin_email_set(self) -> set[str]:
         return {email.strip().lower() for email in self.admin_emails.split(",") if email.strip()}
-
 
 @lru_cache
 def get_settings() -> Settings:

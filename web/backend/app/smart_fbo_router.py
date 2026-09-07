@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -34,7 +35,7 @@ def _queue_refresh(db,store):
     return enqueue(db,job_type='marketplace.wb.analytics.sync',idempotency_key=f'wb-sync:{store.id}:{bucket}',payload={'store_id':store.id},workspace_id=store.workspace_id,store_id=store.id,priority=50,max_attempts=5)
 
 @router.get('/live')
-def snapshot_plan(store_id:str|None=None,lead_time_days:int=Query(default=7,ge=0,le=90),target_cover_days:int=Query(default=21,ge=1,le=180),safety_days:int=Query(default=5,ge=0,le=90),current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+def snapshot_plan(store_id:str|None=None,lead_time_days:Annotated[int,Query(ge=0,le=90)]=7,target_cover_days:Annotated[int,Query(ge=1,le=180)]=21,safety_days:Annotated[int,Query(ge=0,le=90)]=5,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     """Fast Smart FBO read path. Never calls WB from the UI request."""
     store=resolve_store(db,current_user,store_id); _connection(db,store.id)
     stocks_snap=latest_snapshot(db,store_id=store.id,marketplace='wildberries',snapshot_type='stocks')

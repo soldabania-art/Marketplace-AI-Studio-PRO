@@ -30,6 +30,8 @@ Marketplace AI Studio Cloud uses one container image with separate process roles
 - `MARKETPLACE_JWT_SECRET` — long random secret, never committed
 - `MARKETPLACE_MARKETPLACE_TOKEN_KEY` — temporary Fernet provider key until managed SecretProvider/KMS rollout
 - `MARKETPLACE_FRONTEND_URL`
+- `MARKETPLACE_OPENAI_API_KEY` — server-only key for AI Card Factory; never expose it to the frontend
+- `MARKETPLACE_OPENAI_MODEL` — optional model override (defaults to `gpt-5.6-terra`)
 - VAPID settings when Web Push is enabled
 
 Frontend must set `MARKETPLACE_API_URL` to the externally reachable API base URL.

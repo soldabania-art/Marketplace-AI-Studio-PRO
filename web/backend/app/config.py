@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     job_retry_base_seconds: int = 10
     job_retry_max_seconds: int = 900
     job_priority_aging_seconds: int = 300
+    openai_api_key: str = ""
+    openai_model: str = "gpt-5.6-terra"
+    openai_timeout_seconds: float = 60.0
     model_config = SettingsConfigDict(env_file=".env", env_prefix="MARKETPLACE_", extra="ignore")
 
     @property

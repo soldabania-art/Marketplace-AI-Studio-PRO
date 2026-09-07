@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     vapid_private_key: str = ""
     vapid_subject: str = ""
     marketplace_token_key: str = ""
+    marketplace_default_min_interval_seconds: float = 2.0
     fbo_poll_seconds: int = 60
     fbo_worker_concurrency: int = 12
     fbo_account_min_interval_seconds: int = 10
@@ -32,6 +33,7 @@ class Settings(BaseSettings):
     job_lease_seconds: int = 300
     job_retry_base_seconds: int = 10
     job_retry_max_seconds: int = 900
+    job_priority_aging_seconds: int = 300
     model_config = SettingsConfigDict(env_file=".env", env_prefix="MARKETPLACE_", extra="ignore")
 
     @property

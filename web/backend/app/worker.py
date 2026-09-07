@@ -11,6 +11,7 @@ import asyncio
 import logging
 import signal
 
+from . import fbo_jobs  # noqa: F401 - registers durable job handlers
 from .fbo_monitor import monitor_forever
 from .job_queue import job_worker_forever
 

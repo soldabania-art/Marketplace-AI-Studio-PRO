@@ -1,0 +1,23 @@
+.globalStoreSelector{
+  position:sticky;
+  top:8px;
+  left:auto;
+  transform:none;
+  width:max-content;
+  margin:8px auto 0;
+}
+
+.shell .sidebar{
+  top:64px;
+}
+
+@media(max-width:900px){
+  .globalStoreSelector{
+    top:6px;
+    width:calc(100vw - 16px);
+    margin:6px auto 0;
+  }
+  .shell .sidebar{
+    top:0;
+  }
+}

@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
-import { backendRequest } from '../../../../../lib/backend'
+import { backendRequest } from '../../../../lib/backend'
 
 async function sessionToken(){
   const store=await cookies()

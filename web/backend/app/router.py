@@ -1,6 +1,11 @@
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
 
-from .models import User
+from .db import get_db
+from .fbo_service import fetch_wb_slots
+from .marketplace_connections import decrypt_connection
+from .models import MarketplaceConnection, User
 from .security import get_current_user
 
 api_router = APIRouter()
@@ -24,7 +29,47 @@ def marketplace_commission(marketplace:str=Query(pattern='^(wildberries|ozon)$')
     raise HTTPException(status_code=409,detail=f'{marketplace}: магазин или тарифная интеграция ещё не подключены. Комиссия не подставлена.')
 
 @api_router.get('/fbo/slots')
-def fbo_slots(marketplace:str=Query(default='wildberries',pattern='^(wildberries|ozon)$'),free_only:bool=False,current_user:User=Depends(get_current_user)):
+async def fbo_slots(
+    marketplace:str=Query(default='wildberries',pattern='^(wildberries|ozon)$'),
+    free_only:bool=False,
+    current_user:User=Depends(get_current_user),
+    db:Session=Depends(get_db),
+):
     if marketplace == 'ozon':
         raise HTTPException(status_code=409,detail='Ozon FBO: интеграция слотов приёмки ещё не подключена.')
-    raise HTTPException(status_code=409,detail='Wildberries FBW: подключите магазин. После подключения сервис загрузит актуальные склады и даты приёмки из официального API.')
+
+    connection=(
+        db.query(MarketplaceConnection)
+        .filter(
+            MarketplaceConnection.user_id==current_user.id,
+            MarketplaceConnection.marketplace=='wildberries',
+            MarketplaceConnection.enabled.is_(True),
+        )
+        .first()
+    )
+    if not connection:
+        raise HTTPException(status_code=409,detail='Wildberries FBW: сначала подключите магазин в настройках.')
+
+    token=decrypt_connection(connection)
+    try:
+        slots=await fetch_wb_slots(token)
+    except httpx.HTTPStatusError as exc:
+        status=exc.response.status_code if exc.response is not None else 502
+        if status in {401,403}:
+            raise HTTPException(status_code=409,detail='Wildberries отклонил токен магазина. Переподключите WB.')
+        if status == 429:
+            raise HTTPException(status_code=429,detail='Wildberries временно ограничил частоту запросов. Повторите позже.')
+        raise HTTPException(status_code=502,detail='Wildberries временно недоступен. Повторите позже.')
+    except httpx.RequestError:
+        raise HTTPException(status_code=502,detail='Не удалось связаться с Wildberries. Повторите позже.')
+
+    if free_only:
+        slots=[slot for slot in slots if slot.get('free_acceptance')]
+    return {
+        'marketplace':'wildberries',
+        'live_data':True,
+        'coefficients':[0] if free_only else [0,1],
+        'scope':'all_warehouses',
+        'count':len(slots),
+        'slots':slots,
+    }

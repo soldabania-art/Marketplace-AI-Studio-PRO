@@ -24,16 +24,19 @@ def _data_url(raw=b"real-image-bytes"):
 def test_beginner_photo_analysis_marks_facts_for_confirmation(monkeypatch):
     expected = {"product_name_guess": "Органайзер", "required_questions": ["Какой материал?"]}
     monkeypatch.setattr("app.beginner_router.analyze_product_photo", lambda image: expected)
-    result = analyze_photo(PhotoAnalysisRequest(image_data_url=_data_url(b"x" * 80)), user=SimpleNamespace(id="u1"))
+    monkeypatch.setattr("app.beginner_router.resolve_store", lambda db, user, store_id: SimpleNamespace(id=store_id, workspace_id="ws1"))
+    monkeypatch.setattr("app.beginner_router.reserve_trial_card", lambda db, workspace_id: ({"cards_remaining": 4}, False))
+    result = analyze_photo(PhotoAnalysisRequest(store_id="store-1", image_data_url=_data_url(b"x" * 80)), user=SimpleNamespace(id="u1"), db=SimpleNamespace())
     assert result["analysis"] == expected
     assert result["source"] == "single_photo"
     assert result["facts_require_confirmation"] is True
     assert len(result["analysis_signature"]) == 64
 
 
-def test_beginner_photo_rejects_unsupported_data_url():
+def test_beginner_photo_rejects_unsupported_data_url(monkeypatch):
+    monkeypatch.setattr("app.beginner_router.resolve_store", lambda db, user, store_id: SimpleNamespace(id=store_id, workspace_id="ws1"))
     with pytest.raises(HTTPException) as exc:
-        analyze_photo(PhotoAnalysisRequest(image_data_url="data:text/plain;base64," + "eA==" * 30), user=SimpleNamespace(id="u1"))
+        analyze_photo(PhotoAnalysisRequest(store_id="store-1", image_data_url="data:text/plain;base64," + "eA==" * 30), user=SimpleNamespace(id="u1"), db=SimpleNamespace())
     assert exc.value.status_code == 400
 
 
@@ -47,15 +50,23 @@ def test_beginner_fact_set_contains_only_seller_confirmed_values():
     assert len(facts["sha256"]) == 64
 
 
-def test_beginner_draft_rejects_changed_photo_analysis():
+def test_photo_analysis_signature_is_bound_to_store():
+    analysis = {"confidence": "high", "visible_facts": []}
+    assert sign_analysis(analysis, "store-1") != sign_analysis(analysis, "store-2")
+
+
+def test_beginner_draft_rejects_changed_photo_analysis(monkeypatch):
     original = {"confidence": "medium", "visible_facts": []}
+    monkeypatch.setattr("app.beginner_router.resolve_store", lambda db, user, store_id: SimpleNamespace(id=store_id, workspace_id="ws1"))
+    monkeypatch.setattr("app.beginner_router.ensure_ai_access", lambda db, workspace_id, allow_exhausted=False: {})
     payload = BeginnerDraftRequest(
+        store_id="store-1",
         analysis={"confidence": "high", "visible_facts": []},
-        analysis_signature=sign_analysis(original),
+        analysis_signature=sign_analysis(original, "store-1"),
         confirmed_facts=[ConfirmedFact(label="Товар", value="Органайзер"), ConfirmedFact(label="Категория", value="Хранение")],
     )
     with pytest.raises(HTTPException) as exc:
-        generate_draft(payload, user=SimpleNamespace(id="u1"))
+        generate_draft(payload, user=SimpleNamespace(id="u1"), db=SimpleNamespace())
     assert exc.value.status_code == 400
 
 
@@ -69,12 +80,15 @@ def test_beginner_draft_uses_grounded_generator(monkeypatch):
         return generated
 
     monkeypatch.setattr("app.beginner_router.generate_grounded_copy", fake_generate)
+    monkeypatch.setattr("app.beginner_router.resolve_store", lambda db, user, store_id: SimpleNamespace(id=store_id, workspace_id="ws1"))
+    monkeypatch.setattr("app.beginner_router.ensure_ai_access", lambda db, workspace_id, allow_exhausted=False: {})
     payload = BeginnerDraftRequest(
+        store_id="store-1",
         analysis=analysis,
-        analysis_signature=sign_analysis(analysis),
+        analysis_signature=sign_analysis(analysis, "store-1"),
         confirmed_facts=[ConfirmedFact(label="Товар", value="Органайзер"), ConfirmedFact(label="Категория", value="Хранение")],
     )
-    result = generate_draft(payload, user=SimpleNamespace(id="u1"))
+    result = generate_draft(payload, user=SimpleNamespace(id="u1"), db=SimpleNamespace())
     assert result["draft"] == generated
     assert captured["source"] == "beginner_confirmed_intake"
     assert result["publish_requires_confirmation"] is True

@@ -41,7 +41,7 @@ from .security import (
 router = APIRouter()
 
 PLANS = [
-    {"code": "trial", "name": "Trial", "price_monthly_rub": 0, "stores": 1, "users": 1, "ai_generation": "limited", "autopilot": "recommendations"},
+    {"code": "trial", "name": "Пробный запуск", "price_monthly_rub": 0, "stores": 1, "users": 1, "duration_days": 3, "ai_cards": 5, "ai_generation": "five_cards", "autopilot": "disabled"},
     {"code": "pro", "name": "PRO", "price_monthly_rub": 4990, "stores": 3, "users": 3, "ai_generation": "extended", "autopilot": "assisted"},
     {"code": "business", "name": "Business", "price_monthly_rub": 12990, "stores": 10, "users": 10, "ai_generation": "priority", "autopilot": "advanced"},
 ]

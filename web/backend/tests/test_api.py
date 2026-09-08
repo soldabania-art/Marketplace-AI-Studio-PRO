@@ -1,3 +1,4 @@
+import base64
 import uuid
 
 from fastapi.testclient import TestClient
@@ -130,3 +131,71 @@ def test_beginner_project_persists_and_is_tenant_scoped():
         json={"title": "Чужой проект"},
     )
     assert forbidden.status_code == 404
+
+
+def test_beginner_trial_starts_on_success_and_stops_after_five_cards(monkeypatch):
+    _, _, token = _register_user()
+    headers = {"Authorization": f"Bearer {token}"}
+    store_id = client.get("/api/v1/stores", headers=headers).json()["stores"][0]["id"]
+    before = client.get(f"/api/v1/beginner/trial?store_id={store_id}", headers=headers).json()
+    assert before["status"] == "not_started"
+    assert before["cards_remaining"] == 5
+    monkeypatch.setattr("app.beginner_router.analyze_product_photo", lambda image: {
+        "product_name_guess": "Товар",
+        "category_guess": "Категория",
+        "confidence": "medium",
+        "visible_facts": [],
+        "required_questions": ["Укажите материал"],
+        "photo_warnings": [],
+    })
+    image = "data:image/jpeg;base64," + base64.b64encode(b"x" * 80).decode()
+    last_analysis = None
+    for remaining in range(4, -1, -1):
+        response = client.post(
+            "/api/v1/beginner/analyze-photo",
+            headers=headers,
+            json={"store_id": store_id, "image_data_url": image},
+        )
+        assert response.status_code == 200
+        assert response.json()["trial"]["cards_remaining"] == remaining
+        last_analysis = response.json()
+    exhausted = client.get(f"/api/v1/beginner/trial?store_id={store_id}", headers=headers).json()
+    assert exhausted["status"] == "exhausted"
+    assert exhausted["read_only"] is True
+    assert client.post(
+        "/api/v1/beginner/analyze-photo",
+        headers=headers,
+        json={"store_id": store_id, "image_data_url": image},
+    ).status_code == 402
+    monkeypatch.setattr("app.beginner_router.generate_grounded_copy", lambda fact_set: {
+        "wb_title": "Товар",
+        "ozon_title": "Товар",
+        "description": "Описание подтверждённого товара",
+        "seo_phrases": ["товар"],
+        "visual_plan": ["Главное фото"],
+        "used_fact_ids": ["seller.confirmed.0"],
+    })
+    completed_fifth = client.post(
+        "/api/v1/beginner/generate-draft",
+        headers=headers,
+        json={
+            "store_id": store_id,
+            "analysis": last_analysis["analysis"],
+            "analysis_signature": last_analysis["analysis_signature"],
+            "confirmed_facts": [{"label": "Название", "value": "Товар"}, {"label": "Категория", "value": "Категория"}],
+        },
+    )
+    assert completed_fifth.status_code == 200
+
+
+def test_failed_photo_analysis_does_not_start_or_consume_trial(monkeypatch):
+    _, _, token = _register_user()
+    headers = {"Authorization": f"Bearer {token}"}
+    store_id = client.get("/api/v1/stores", headers=headers).json()["stores"][0]["id"]
+    monkeypatch.setattr("app.beginner_router.analyze_product_photo", lambda image: (_ for _ in ()).throw(RuntimeError("AI unavailable")))
+    image = "data:image/jpeg;base64," + base64.b64encode(b"x" * 80).decode()
+    response = client.post("/api/v1/beginner/analyze-photo", headers=headers, json={"store_id": store_id, "image_data_url": image})
+    assert response.status_code == 503
+    status = client.get(f"/api/v1/beginner/trial?store_id={store_id}", headers=headers).json()
+    assert status["status"] == "not_started"
+    assert status["cards_used"] == 0

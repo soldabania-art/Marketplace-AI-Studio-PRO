@@ -19,12 +19,14 @@ from .db import get_db
 from .models import BeginnerProject, User
 from .security import get_current_user
 from .store_access import resolve_store
+from .trial_service import ensure_ai_access, refund_trial_card, reserve_trial_card, trial_snapshot, workspace_subscription
 
 router = APIRouter(prefix="/beginner", tags=["beginner"])
 DATA_URL = re.compile(r"^data:(image/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=\s]+)$")
 
 
 class PhotoAnalysisRequest(BaseModel):
+    store_id: str = Field(min_length=1, max_length=36)
     image_data_url: str = Field(min_length=100, max_length=12_000_000)
 
 
@@ -34,6 +36,7 @@ class ConfirmedFact(BaseModel):
 
 
 class BeginnerDraftRequest(BaseModel):
+    store_id: str = Field(min_length=1, max_length=36)
     analysis: dict
     analysis_signature: str = Field(min_length=64, max_length=64)
     confirmed_facts: list[ConfirmedFact] = Field(min_length=2, max_length=40)
@@ -83,16 +86,16 @@ class BeginnerProjectPatch(BaseModel):
         return value
 
 
-def _analysis_bytes(analysis: dict) -> bytes:
-    return json.dumps(analysis, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+def _analysis_bytes(analysis: dict, store_id: str) -> bytes:
+    return json.dumps({"analysis": analysis, "store_id": store_id}, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
 
 
-def sign_analysis(analysis: dict) -> str:
-    return hmac.new(get_settings().jwt_secret.encode(), _analysis_bytes(analysis), hashlib.sha256).hexdigest()
+def sign_analysis(analysis: dict, store_id: str) -> str:
+    return hmac.new(get_settings().jwt_secret.encode(), _analysis_bytes(analysis, store_id), hashlib.sha256).hexdigest()
 
 
-def _verify_analysis(analysis: dict, signature: str) -> None:
-    if not hmac.compare_digest(sign_analysis(analysis), signature):
+def _verify_analysis(analysis: dict, signature: str, store_id: str) -> None:
+    if not hmac.compare_digest(sign_analysis(analysis, store_id), signature):
         raise HTTPException(400, "Результат анализа фотографии изменён. Загрузите фото заново.")
 
 
@@ -181,7 +184,8 @@ def accessible_project(db: Session, user: User, project_id: str) -> BeginnerProj
 
 
 @router.post("/analyze-photo")
-def analyze_photo(payload: PhotoAnalysisRequest, user: User = Depends(get_current_user)):
+def analyze_photo(payload: PhotoAnalysisRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = resolve_store(db, user, payload.store_id)
     match = DATA_URL.fullmatch(payload.image_data_url)
     if not match:
         raise HTTPException(400, "Поддерживаются фотографии JPG, PNG и WebP.")
@@ -191,18 +195,26 @@ def analyze_photo(payload: PhotoAnalysisRequest, user: User = Depends(get_curren
         raise HTTPException(400, "Файл изображения повреждён.") from exc
     if len(raw) > 8 * 1024 * 1024:
         raise HTTPException(413, "Фотография должна быть не больше 8 МБ.")
+    trial, started_now = reserve_trial_card(db, store.workspace_id)
+    completed = False
     try:
         analysis = analyze_product_photo(payload.image_data_url)
-        return {"analysis": analysis, "analysis_signature": sign_analysis(analysis), "source": "single_photo", "facts_require_confirmation": True}
+        completed = True
+        return {"analysis": analysis, "analysis_signature": sign_analysis(analysis, store.id), "source": "single_photo", "facts_require_confirmation": True, "trial": trial}
     except RuntimeError as exc:
         raise HTTPException(503, str(exc)) from exc
     except (ValueError, httpx.HTTPError) as exc:
         raise HTTPException(502, "AI не смог надёжно проанализировать фотографию. Попробуйте другой снимок.") from exc
+    finally:
+        if not completed:
+            refund_trial_card(db, store.workspace_id, started_now)
 
 
 @router.post("/generate-draft")
-def generate_draft(payload: BeginnerDraftRequest, user: User = Depends(get_current_user)):
-    _verify_analysis(payload.analysis, payload.analysis_signature)
+def generate_draft(payload: BeginnerDraftRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = resolve_store(db, user, payload.store_id)
+    ensure_ai_access(db, store.workspace_id, allow_exhausted=True)
+    _verify_analysis(payload.analysis, payload.analysis_signature, store.id)
     fact_set = build_beginner_fact_set(payload.analysis, payload.confirmed_facts)
     try:
         draft = generate_grounded_copy(fact_set)
@@ -222,6 +234,12 @@ def generate_draft(payload: BeginnerDraftRequest, user: User = Depends(get_curre
 @router.post("/calculate-economics")
 def calculate_economics(payload: BeginnerEconomicsRequest, user: User = Depends(get_current_user)):
     return calculate_beginner_economics(payload)
+
+
+@router.get("/trial")
+def trial_status(store_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = resolve_store(db, user, store_id)
+    return trial_snapshot(workspace_subscription(db, store.workspace_id))
 
 
 @router.get("/projects")

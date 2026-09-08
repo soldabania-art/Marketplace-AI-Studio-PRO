@@ -1,1 +1,1 @@
-"""Marketplace AI Studio Cloud backend."""
+"""TROVENDI backend."""

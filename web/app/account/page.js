@@ -3,8 +3,9 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { Building2, CreditCard, KeyRound, Laptop, LogOut, MailCheck, Plus, ShieldCheck, Sparkles, Store as StoreIcon, Unplug, UserRound } from 'lucide-react'
+import { Building2, CreditCard, KeyRound, Laptop, LogOut, MailCheck, Plus, ShieldCheck, Store as StoreIcon, Unplug, UserRound } from 'lucide-react'
 import { getActiveStoreId, setActiveStoreId, STORE_EVENT } from '../../lib/useActiveStore'
+import BrandLogo from '../../components/BrandLogo'
 import styles from './page.module.css'
 
 const eventNames = { login:'Вход', logout:'Выход', registration:'Регистрация', session_created:'Создана сессия', session_revoked:'Сессия завершена' }
@@ -125,7 +126,7 @@ export default function AccountPage() {
   const selectedStore=storesData.stores.find(x=>x.id===selectedStoreId)
 
   return <main className={styles.shell}>
-    <header className={styles.topbar}><Link href="/" className={`brand ${styles.brand}`}><div className="brandMark"><Sparkles size={20}/></div><div><strong>Marketplace AI</strong><span>Studio Cloud</span></div></Link><div className={styles.topActions}>{account?.is_platform_admin&&<Link href="/admin" className={styles.action}>Админ-панель</Link>}<button className={styles.logout} onClick={logout}><LogOut size={17}/> Выйти</button></div></header>
+    <header className={styles.topbar}><Link href="/" aria-label="TROVENDI"><BrandLogo className={styles.brand} /></Link><div className={styles.topActions}>{account?.is_platform_admin&&<Link href="/admin" className={styles.action}>Админ-панель</Link>}<button className={styles.logout} onClick={logout}><LogOut size={17}/> Выйти</button></div></header>
     <section className={styles.content}><div className={styles.heading}><span className="eyebrow">ЛИЧНЫЙ КАБИНЕТ</span><h1>Аккаунт, магазины и безопасность</h1><p>Один аккаунт может управлять несколькими магазинами и клиентами агентства.</p></div>
     {loading&&<div className={styles.notice}>Загружаем данные аккаунта…</div>}{error&&<div className={`${styles.notice} ${styles.error}`}>{error}</div>}
     {account&&<>

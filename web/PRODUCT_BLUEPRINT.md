@@ -1,9 +1,9 @@
-# Marketplace AI Studio Cloud
+# TROVENDI — AI Commerce OS
 
 > Living execution map: [`PRODUCT_ROADMAP.md`](./PRODUCT_ROADMAP.md). Every accepted product decision, integration and delivery gate must be recorded there before implementation is considered planned.
 
 ## Product direction
-Marketplace AI Studio Cloud is a web-first AI operating system for marketplace sellers, starting with Wildberries and Ozon and designed for later expansion to Yandex Market, Megamarket, AliExpress and other verified integrations.
+TROVENDI is a web-first AI operating system for marketplace sellers, starting with Wildberries and Ozon and designed for later expansion to Yandex Market, Megamarket, AliExpress and other verified integrations.
 
 The product is designed around one loop:
 

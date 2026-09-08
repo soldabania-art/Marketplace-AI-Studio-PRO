@@ -1,14 +1,16 @@
 from functools import lru_cache
+import secrets
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    app_name: str = "Marketplace AI Studio API"
+    app_name: str = "TROVENDI API"
     environment: str = "development"
     database_url: str = "sqlite:///./marketplace_cloud.db"
     database_pool_size: int = 10
     database_max_overflow: int = 20
     database_pool_timeout_seconds: int = 30
-    jwt_secret: str = "dev-only-change-me"
+    jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 60 * 24 * 7
     session_days: int = 7
@@ -50,6 +52,17 @@ class Settings(BaseSettings):
     openai_image_timeout_seconds: float = 120.0
     openai_image_estimated_cost_microusd: int = 5000
     model_config = SettingsConfigDict(env_file=".env", env_prefix="MARKETPLACE_", extra="ignore")
+
+    @model_validator(mode="after")
+    def secure_runtime_secrets(self):
+        if self.jwt_secret:
+            if self.is_production and len(self.jwt_secret) < 32:
+                raise ValueError("MARKETPLACE_JWT_SECRET must contain at least 32 characters in production")
+            return self
+        if self.is_production:
+            raise ValueError("MARKETPLACE_JWT_SECRET is required in production")
+        self.jwt_secret = secrets.token_urlsafe(48)
+        return self
 
     @property
     def admin_email_set(self) -> set[str]:

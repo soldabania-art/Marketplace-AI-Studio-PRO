@@ -1,4 +1,4 @@
-"""Dedicated Marketplace AI Studio background worker.
+"""Dedicated TROVENDI background worker.
 
 Production command:
     python -m app.worker
@@ -25,14 +25,14 @@ async def _run()->None:
     for sig in (signal.SIGINT,signal.SIGTERM):
         try: loop.add_signal_handler(sig,request_stop)
         except NotImplementedError: pass
-    logger.info('Marketplace AI Studio worker started')
+    logger.info('TROVENDI worker started')
     tasks=[asyncio.create_task(monitor_forever(stop_event),name='fbo-scheduler'),asyncio.create_task(job_worker_forever(stop_event),name='job-queue')]
     try:
         await asyncio.gather(*tasks)
     finally:
         stop_event.set()
         await asyncio.gather(*tasks,return_exceptions=True)
-    logger.info('Marketplace AI Studio worker stopped')
+    logger.info('TROVENDI worker stopped')
 
 def main()->None:
     try: asyncio.run(_run())

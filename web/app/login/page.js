@@ -3,7 +3,8 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
-import { ArrowRight, LockKeyhole, Mail, ShieldCheck, Sparkles } from 'lucide-react'
+import { ArrowRight, LockKeyhole, Mail, ShieldCheck } from 'lucide-react'
+import BrandLogo from '../../components/BrandLogo'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -36,7 +37,7 @@ export default function LoginPage() {
   return (
     <main className="authShell">
       <section className="authBrandPanel">
-        <div className="brand authBrand"><div className="brandMark"><Sparkles size={20} /></div><div><strong>Marketplace AI</strong><span>Studio Cloud</span></div></div>
+        <BrandLogo className="authBrand" />
         <div className="authPitch">
           <span className="eyebrow">AI OPERATING SYSTEM ДЛЯ СЕЛЛЕРОВ</span>
           <h1>Управляйте WB и Ozon из одного AI-центра.</h1>

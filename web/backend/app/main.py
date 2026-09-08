@@ -33,8 +33,8 @@ async def lifespan(app:FastAPI):
     finally:
         if stop_event is not None and monitor_task is not None: stop_event.set(); await monitor_task
 
-app=FastAPI(title=settings.app_name,version='0.15.0',description='Backend for Marketplace AI Studio Cloud',lifespan=lifespan)
-allowed_origins={'http://localhost:3000','https://marketplace-ai-studio-pro.vercel.app',settings.frontend_url.rstrip('/')}
+app=FastAPI(title=settings.app_name,version='0.15.0',description='TROVENDI backend',lifespan=lifespan)
+allowed_origins={'http://localhost:3000','https://trovendi.ru','https://www.trovendi.ru','https://marketplace-ai-studio-pro.vercel.app',settings.frontend_url.rstrip('/')}
 app.add_middleware(CORSMiddleware,allow_origins=sorted(x for x in allowed_origins if x),allow_credentials=True,allow_methods=['GET','POST','PATCH','DELETE'],allow_headers=['*'])
 
 @app.get('/health',tags=['system'])

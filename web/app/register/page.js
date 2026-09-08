@@ -3,7 +3,8 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
-import { ArrowRight, Building2, LockKeyhole, Mail, Sparkles, User } from 'lucide-react'
+import { ArrowRight, Building2, LockKeyhole, Mail, User } from 'lucide-react'
+import BrandLogo from '../../components/BrandLogo'
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -41,8 +42,8 @@ export default function RegisterPage() {
   return (
     <main className="authShell">
       <section className="authBrandPanel">
-        <div className="brand authBrand"><div className="brandMark"><Sparkles size={20}/></div><div><strong>Marketplace AI</strong><span>Studio Cloud</span></div></div>
-        <div className="authPitch"><span className="eyebrow">СТАРТ ЗА НЕСКОЛЬКО МИНУТ</span><h1>Создайте свой AI-центр управления продажами.</h1><p>Сначала аккаунт и рабочее пространство. WB/Ozon подключим отдельным безопасным шагом после входа.</p><div className="trialBadge">14 дней Trial · без привязки карты на старте</div></div>
+        <BrandLogo className="authBrand" />
+        <div className="authPitch"><span className="eyebrow">СТАРТ ЗА НЕСКОЛЬКО МИНУТ</span><h1>Создайте свой AI-центр управления продажами.</h1><p>Сначала аккаунт и рабочее пространство. WB/Ozon подключим отдельным безопасным шагом после входа.</p><div className="trialBadge">3 дня Trial · до 5 карточек · без привязки карты</div></div>
       </section>
       <section className="authFormPanel"><div className="authCard"><span className="eyebrow">НОВЫЙ АККАУНТ</span><h2>Регистрация</h2><p className="authLead">Создайте владельца и первое рабочее пространство.</p>
         <form onSubmit={submit}>

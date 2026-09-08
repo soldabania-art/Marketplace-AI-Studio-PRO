@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { RefreshCcw, ShieldCheck, Sparkles } from 'lucide-react'
+import { RefreshCcw, ShieldCheck } from 'lucide-react'
+import { BrandMark } from '../../components/BrandLogo'
 import styles from './admin.module.css'
 
 const PLAN_LABELS = { trial: 'Trial', pro: 'PRO', business: 'Business' }
@@ -55,8 +56,8 @@ export default function AdminPage() {
     <main className={styles.shell}>
       <header className={styles.top}>
         <div className={styles.brand}>
-          <div className={styles.mark}><Sparkles size={20}/></div>
-          <div><strong>Marketplace AI</strong><span>Platform Admin</span></div>
+          <BrandMark size={40} />
+          <div><strong>TROVENDI</strong><span>Platform Admin</span></div>
         </div>
         <Link href="/account" className={styles.back}>← Личный кабинет</Link>
       </header>

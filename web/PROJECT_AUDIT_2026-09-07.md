@@ -1,4 +1,4 @@
-# Marketplace AI Studio — full project audit
+# TROVENDI — full project audit
 
 Date: 2026-09-07
 Scope: web SaaS, FastAPI backend, background workers, marketplace integration foundation, security, billing, legal, CI/deployment, and legacy desktop code present in the repository.

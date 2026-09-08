@@ -1,6 +1,6 @@
 # Backend scaling baseline
 
-Marketplace AI Studio must be designed for at least 1,000 active client accounts and should avoid architectural limits that force a rewrite before 10,000 clients.
+TROVENDI must be designed for at least 1,000 active client accounts and should avoid architectural limits that force a rewrite before 10,000 clients.
 
 ## Tenant isolation
 

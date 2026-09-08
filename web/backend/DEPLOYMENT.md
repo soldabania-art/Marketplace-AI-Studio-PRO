@@ -1,6 +1,6 @@
 # Backend staging / production deployment contract
 
-Marketplace AI Studio Cloud uses one container image with separate process roles.
+TROVENDI uses one container image with separate process roles.
 
 ## Required services
 

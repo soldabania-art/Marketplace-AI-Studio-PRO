@@ -1,4 +1,4 @@
-# Marketplace AI Studio PRO — living product roadmap
+# TROVENDI — living product roadmap
 
 Status: source of truth for product scope, priorities and delivery gates. Update this file whenever a product decision is accepted. A feature mentioned in chat but absent here is not yet scheduled.
 
@@ -226,6 +226,9 @@ A feature is done only when all applicable gates pass:
 
 ## 12. Product decision log
 
+- The public product name is **TROVENDI**, the primary domain is **trovendi.ru**, and the descriptor is **AI Commerce OS**.
+- The TROVENDI mark combines the letter T with an upward arrow: product launch, controlled growth and one direction of management.
+- Legacy technical identifiers (`marketplace-ai-studio-pro`, `marketplace-ai-studio-api`, `mai_session`, `mai_store_id`) remain temporarily unchanged for deployment, session and data migration safety. They are not customer-facing brand names.
 - Beginner mode is a first-class entry point, not a separate disposable landing page.
 - Trial is 72 hours from first successful AI analysis and limited to five successful cards.
 - AI controls orchestration while deterministic services control facts, money and permissions.

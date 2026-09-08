@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
-import { ArrowRight, Mail, Sparkles } from 'lucide-react'
+import { ArrowRight, Mail } from 'lucide-react'
+import BrandLogo from '../../components/BrandLogo'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
@@ -31,5 +32,5 @@ export default function ForgotPasswordPage() {
     }
   }
 
-  return <main className="authShell simpleAuth"><section className="authFormPanel"><div className="authCard"><div className="brand authMiniBrand"><div className="brandMark"><Sparkles size={20}/></div><div><strong>Marketplace AI</strong><span>Studio Cloud</span></div></div><span className="eyebrow">ВОССТАНОВЛЕНИЕ ДОСТУПА</span><h2>Забыли пароль?</h2><p className="authLead">Введите email аккаунта. Мы отправим безопасную одноразовую ссылку для создания нового пароля.</p><form onSubmit={submit}><label>Email<div className="authInput"><Mail size={18}/><input type="email" placeholder="you@company.ru" required value={email} onChange={(e)=>setEmail(e.target.value)}/></div></label><button className="authPrimary" type="submit" disabled={loading}>{loading ? 'Отправляем…' : 'Отправить ссылку'} <ArrowRight size={18}/></button></form>{message && <p className="authLead" style={{color:'#7ee2b8',marginTop:16}}>{message}</p>}{error && <p className="authLead" style={{color:'#ff8c96',marginTop:16}}>{error}</p>}<p className="authSwitch"><Link href="/login">← Вернуться ко входу</Link></p></div></section></main>
+  return <main className="authShell simpleAuth"><section className="authFormPanel"><div className="authCard"><BrandLogo className="authMiniBrand" /><span className="eyebrow">ВОССТАНОВЛЕНИЕ ДОСТУПА</span><h2>Забыли пароль?</h2><p className="authLead">Введите email аккаунта. Мы отправим безопасную одноразовую ссылку для создания нового пароля.</p><form onSubmit={submit}><label>Email<div className="authInput"><Mail size={18}/><input type="email" placeholder="you@company.ru" required value={email} onChange={(e)=>setEmail(e.target.value)}/></div></label><button className="authPrimary" type="submit" disabled={loading}>{loading ? 'Отправляем…' : 'Отправить ссылку'} <ArrowRight size={18}/></button></form>{message && <p className="authLead" style={{color:'#7ee2b8',marginTop:16}}>{message}</p>}{error && <p className="authLead" style={{color:'#ff8c96',marginTop:16}}>{error}</p>}<p className="authSwitch"><Link href="/login">← Вернуться ко входу</Link></p></div></section></main>
 }

@@ -53,7 +53,7 @@ AI coordinates the work, but deterministic services remain authoritative for mon
 - Target package: one complete showcase card with an image pack plus four standard cards. Image-pack entitlement activates only when durable generated-image storage is ready.
 - Paid subscription removes trial limits according to the selected plan.
 
-Current implementation includes the 72-hour clock, five-success quota, store-bound signed analysis, persisted projects and read-only enforcement. Generated-image storage and official publication remain delivery gates.
+Current implementation includes the 72-hour clock, five-success quota, store-bound signed analysis, persisted projects and read-only enforcement. Durable public image storage is connected for Card Factory; Beginner Studio reuse and official publication remain delivery gates.
 
 ## 4. Seller and agency journeys
 
@@ -232,3 +232,4 @@ A feature is done only when all applicable gates pass:
 - Android is a shared-platform client; API, events and permissions must be mobile-ready now.
 - Russia/CIS accounting compatibility is implemented through Integration Hub: direct priority adapters plus universal file/API/SDK paths.
 - WB remains the first complete production vertical; breadth must not weaken correctness of the write path.
+- A public FRA1 Vercel Blob store is connected to `marketplace-ai-studio-pro` through rotating OIDC credentials; no long-lived read-write token is enabled.

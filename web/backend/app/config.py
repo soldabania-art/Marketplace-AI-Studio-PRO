@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-5.6-terra"
     openai_timeout_seconds: float = 60.0
+    openai_input_microusd_per_million_tokens: int = 0
+    openai_output_microusd_per_million_tokens: int = 0
     model_config = SettingsConfigDict(env_file=".env", env_prefix="MARKETPLACE_", extra="ignore")
 
     @property

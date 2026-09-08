@@ -110,6 +110,25 @@ def _output_text(payload: dict) -> str:
     raise ValueError("OpenAI не вернул текст результата")
 
 
+def _metadata(payload: dict, settings) -> dict:
+    usage = payload.get("usage") or {}
+    input_tokens = int(usage.get("input_tokens") or 0)
+    output_tokens = int(usage.get("output_tokens") or 0)
+    estimated = round(
+        input_tokens * settings.openai_input_microusd_per_million_tokens / 1_000_000
+        + output_tokens * settings.openai_output_microusd_per_million_tokens / 1_000_000
+    )
+    return {"response_id": payload.get("id") or "", "model": payload.get("model") or settings.openai_model, "usage": usage, "estimated_cost_microusd": estimated}
+
+
+def _structured_response(body: dict, settings) -> tuple[dict, dict]:
+    with httpx.Client(timeout=settings.openai_timeout_seconds) as client:
+        response = client.post(OPENAI_RESPONSES_URL,json=body,headers={"Authorization":f"Bearer {settings.openai_api_key}","Content-Type":"application/json"})
+    response.raise_for_status()
+    payload = response.json()
+    return json.loads(_output_text(payload)), _metadata(payload, settings)
+
+
 def validate_grounding(result: dict, fact_set: dict) -> None:
     allowed_ids = {row["id"] for row in fact_set["facts"]}
     used_ids = set(result.get("used_fact_ids") or [])
@@ -148,15 +167,9 @@ def generate_grounded_copy(fact_set: dict) -> dict:
         ],
         "text": {"format": {"type": "json_schema", "name": "marketplace_card_draft", "strict": True, "schema": OUTPUT_SCHEMA}},
     }
-    with httpx.Client(timeout=settings.openai_timeout_seconds) as client:
-        response = client.post(
-            OPENAI_RESPONSES_URL,
-            json=body,
-            headers={"Authorization": f"Bearer {settings.openai_api_key}", "Content-Type": "application/json"},
-        )
-    response.raise_for_status()
-    result = json.loads(_output_text(response.json()))
+    result, metadata = _structured_response(body, settings)
     validate_grounding(result, fact_set)
+    result["_generation_metadata"] = metadata
     return result
 
 
@@ -181,11 +194,6 @@ def analyze_product_photo(image_data_url: str) -> dict:
         }],
         "text": {"format": {"type": "json_schema", "name": "new_seller_photo_analysis", "strict": True, "schema": PHOTO_ANALYSIS_SCHEMA}},
     }
-    with httpx.Client(timeout=settings.openai_timeout_seconds) as client:
-        response = client.post(
-            OPENAI_RESPONSES_URL,
-            json=body,
-            headers={"Authorization": f"Bearer {settings.openai_api_key}", "Content-Type": "application/json"},
-        )
-    response.raise_for_status()
-    return json.loads(_output_text(response.json()))
+    result, metadata = _structured_response(body, settings)
+    result["_generation_metadata"] = metadata
+    return result

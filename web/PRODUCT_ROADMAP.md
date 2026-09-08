@@ -170,7 +170,7 @@ The web product and future Android app use the same versioned API, permissions a
 | Products | Reads real WB catalog facts | Provenance and cross-source identity mapping |
 | Beginner Studio | Photo analysis, confirmed facts, draft and saved project implemented | Durable image assets and publication |
 | Trial | 3 days / 5 successful cards enforced server-side | Billing transition and entitlement tests |
-| Card Factory | Grounded beginner generation in progress | One shared store-scoped factory and version history |
+| Card Factory | Store-scoped grounded generation, addressable history and cost records implemented | Version comparison and approved publication |
 | Profit Center | Product shell/foundation | Full settlement and cost reconciliation |
 | AI Director | Product architecture defined | Evidence-backed recommendation queue |
 | Advertising, reviews, claims | Planned | Read-only insights before approved writes |

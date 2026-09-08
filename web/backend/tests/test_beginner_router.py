@@ -26,6 +26,9 @@ def test_beginner_photo_analysis_marks_facts_for_confirmation(monkeypatch):
     monkeypatch.setattr("app.beginner_router.analyze_product_photo", lambda image: expected)
     monkeypatch.setattr("app.beginner_router.resolve_store", lambda db, user, store_id: SimpleNamespace(id=store_id, workspace_id="ws1"))
     monkeypatch.setattr("app.beginner_router.reserve_trial_card", lambda db, workspace_id: ({"cards_remaining": 4}, False))
+    monkeypatch.setattr("app.beginner_router.begin_generation", lambda *args, **kwargs: SimpleNamespace(id="generation-1"))
+    monkeypatch.setattr("app.beginner_router.complete_generation", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.beginner_router.fail_generation", lambda *args, **kwargs: None)
     result = analyze_photo(PhotoAnalysisRequest(store_id="store-1", image_data_url=_data_url(b"x" * 80)), user=SimpleNamespace(id="u1"), db=SimpleNamespace())
     assert result["analysis"] == expected
     assert result["source"] == "single_photo"
@@ -82,6 +85,9 @@ def test_beginner_draft_uses_grounded_generator(monkeypatch):
     monkeypatch.setattr("app.beginner_router.generate_grounded_copy", fake_generate)
     monkeypatch.setattr("app.beginner_router.resolve_store", lambda db, user, store_id: SimpleNamespace(id=store_id, workspace_id="ws1"))
     monkeypatch.setattr("app.beginner_router.ensure_ai_access", lambda db, workspace_id, allow_exhausted=False: {})
+    monkeypatch.setattr("app.beginner_router.begin_generation", lambda *args, **kwargs: SimpleNamespace(id="generation-2"))
+    monkeypatch.setattr("app.beginner_router.complete_generation", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.beginner_router.fail_generation", lambda *args, **kwargs: None)
     payload = BeginnerDraftRequest(
         store_id="store-1",
         analysis=analysis,

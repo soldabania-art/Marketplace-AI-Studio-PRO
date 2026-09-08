@@ -6,9 +6,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from .ai_card_factory import build_fact_set, generate_grounded_copy
+from .ai_generation_service import begin_generation, complete_generation, fail_generation, public_generation
 from .db import get_db
 from .marketplace_sync import latest_snapshot
-from .models import MarketplaceConnection, User
+from .models import AIGeneration, MarketplaceConnection, User
 from .security import get_current_user
 from .store_access import resolve_store
 
@@ -61,15 +62,25 @@ def generate(payload: GenerateCardRequest, user: User = Depends(get_current_user
     store = _resolve_connected_store(db, user, payload.store_id)
     source, snapshot = _load_card(db, store.id, payload.nm_id)
     fact_set = build_fact_set(source)
+    generation = begin_generation(db, store=store, user=user, feature="card_factory_copy", subject_id=str(payload.nm_id), input_payload=fact_set, fact_set_sha256=fact_set["sha256"])
     try:
         draft = generate_grounded_copy(fact_set)
     except RuntimeError as exc:
+        fail_generation(db, generation, exc)
         raise HTTPException(503, str(exc)) from exc
     except (ValueError, json.JSONDecodeError) as exc:
+        fail_generation(db, generation, exc)
         raise HTTPException(502, f"AI не прошёл проверку фактов: {exc}") from exc
     except httpx.HTTPError as exc:
+        fail_generation(db, generation, exc)
         raise HTTPException(502, "AI-сервис временно не ответил. Попробуйте ещё раз.") from exc
+    except Exception as exc:
+        fail_generation(db, generation, exc)
+        raise
+    metadata = draft.pop("_generation_metadata", {})
+    complete_generation(db, generation, draft, metadata)
     return {
+        "generation_id": generation.id,
         "store_id": store.id,
         "nm_id": payload.nm_id,
         "fact_set_sha256": fact_set["sha256"],
@@ -77,3 +88,22 @@ def generate(payload: GenerateCardRequest, user: User = Depends(get_current_user
         "draft": draft,
         "publish_requires_confirmation": True,
     }
+
+
+@router.get("/generations/{generation_id}")
+def generation(generation_id: str, store_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = resolve_store(db, user, store_id)
+    item = db.query(AIGeneration).filter(AIGeneration.id == generation_id, AIGeneration.store_id == store.id).first()
+    if not item:
+        raise HTTPException(404, "AI-генерация не найдена в выбранном магазине.")
+    return public_generation(item)
+
+
+@router.get("/generations")
+def generations(store_id: str, nm_id: int | None = None, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = resolve_store(db, user, store_id)
+    query = db.query(AIGeneration).filter(AIGeneration.store_id == store.id, AIGeneration.feature == "card_factory_copy")
+    if nm_id:
+        query = query.filter(AIGeneration.subject_id == str(nm_id))
+    items = query.order_by(AIGeneration.created_at.desc()).limit(50).all()
+    return {"items": [public_generation(item) for item in items]}

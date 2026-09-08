@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .ai_card_factory import analyze_product_photo, generate_grounded_copy
+from .ai_generation_service import begin_generation, complete_generation, fail_generation
 from .config import get_settings
 from .db import get_db
 from .models import BeginnerProject, User
@@ -196,15 +197,23 @@ def analyze_photo(payload: PhotoAnalysisRequest, user: User = Depends(get_curren
     if len(raw) > 8 * 1024 * 1024:
         raise HTTPException(413, "Фотография должна быть не больше 8 МБ.")
     trial, started_now = reserve_trial_card(db, store.workspace_id)
+    generation = begin_generation(db, store=store, user=user, feature="beginner_photo_analysis", subject_id="new-product", input_payload={"image_sha256": hashlib.sha256(raw).hexdigest(), "image_bytes": len(raw), "media_type": match.group(1)})
     completed = False
     try:
         analysis = analyze_product_photo(payload.image_data_url)
+        metadata = analysis.pop("_generation_metadata", {})
+        complete_generation(db, generation, analysis, metadata)
         completed = True
-        return {"analysis": analysis, "analysis_signature": sign_analysis(analysis, store.id), "source": "single_photo", "facts_require_confirmation": True, "trial": trial}
+        return {"generation_id": generation.id, "analysis": analysis, "analysis_signature": sign_analysis(analysis, store.id), "source": "single_photo", "facts_require_confirmation": True, "trial": trial}
     except RuntimeError as exc:
+        fail_generation(db, generation, exc)
         raise HTTPException(503, str(exc)) from exc
     except (ValueError, httpx.HTTPError) as exc:
+        fail_generation(db, generation, exc)
         raise HTTPException(502, "AI не смог надёжно проанализировать фотографию. Попробуйте другой снимок.") from exc
+    except Exception as exc:
+        fail_generation(db, generation, exc)
+        raise
     finally:
         if not completed:
             refund_trial_card(db, store.workspace_id, started_now)
@@ -216,13 +225,22 @@ def generate_draft(payload: BeginnerDraftRequest, user: User = Depends(get_curre
     ensure_ai_access(db, store.workspace_id, allow_exhausted=True)
     _verify_analysis(payload.analysis, payload.analysis_signature, store.id)
     fact_set = build_beginner_fact_set(payload.analysis, payload.confirmed_facts)
+    generation = begin_generation(db, store=store, user=user, feature="beginner_card_copy", subject_id=fact_set["sha256"], input_payload=fact_set, fact_set_sha256=fact_set["sha256"])
     try:
         draft = generate_grounded_copy(fact_set)
     except RuntimeError as exc:
+        fail_generation(db, generation, exc)
         raise HTTPException(503, str(exc)) from exc
     except (ValueError, httpx.HTTPError) as exc:
+        fail_generation(db, generation, exc)
         raise HTTPException(502, "AI-черновик не прошёл проверку подтверждённых фактов.") from exc
+    except Exception as exc:
+        fail_generation(db, generation, exc)
+        raise
+    metadata = draft.pop("_generation_metadata", {})
+    complete_generation(db, generation, draft, metadata)
     return {
+        "generation_id": generation.id,
         "draft": draft,
         "fact_set_sha256": fact_set["sha256"],
         "source": "seller_confirmed_facts",

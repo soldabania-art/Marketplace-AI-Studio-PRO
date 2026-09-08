@@ -41,5 +41,14 @@
 .dangerPublishBtn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid #d75b64;border-radius:10px;background:#a9343d;color:#fff;padding:11px 14px;font-weight:700}
 .dangerPublishBtn:disabled{opacity:.4;cursor:not-allowed}
 .publishHint{margin-top:16px;padding:12px;border:1px dashed #355276;border-radius:10px;color:#91a3b9}
+.verificationBox{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px;margin-top:16px;border-color:#355276;background:#0a1726}
+.verificationBox .verificationIcon{width:42px;height:42px;display:grid;place-items:center;border-radius:12px;background:#122640;color:#8bbfff}
+.verificationBox strong,.verificationBox span{display:block}
+.verificationBox span{margin-top:4px;color:#8296ae;font-size:12px}
+.verificationBox button{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid #355276;border-radius:9px;background:#122640;color:#d6e9ff;padding:10px 12px}
+.verificationBox.applied{border-color:rgba(66,231,164,.35)}
+.verificationBox.applied .verificationIcon{background:rgba(66,231,164,.1);color:#42e7a4}
+.verificationBox.mismatch{border-color:rgba(255,107,120,.4)}
+.verificationBox.mismatch .verificationIcon{background:rgba(255,107,120,.1);color:#ff7f8a}
 @media(max-width:760px){.diffGrid{grid-template-columns:1fr}}
-@media(max-width:640px){.visualPlanRow{align-items:flex-start;flex-direction:column}.assetGrid{grid-template-columns:1fr}.versionList>button{flex-direction:column}}
+@media(max-width:640px){.visualPlanRow{align-items:flex-start;flex-direction:column}.assetGrid{grid-template-columns:1fr}.versionList>button{flex-direction:column}.verificationBox{grid-template-columns:auto 1fr}.verificationBox button{grid-column:1/-1}}

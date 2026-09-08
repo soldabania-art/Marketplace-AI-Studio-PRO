@@ -51,6 +51,10 @@ class ConfirmPublicationRequest(BaseModel):
     confirmation: str = Field(min_length=1, max_length=40)
 
 
+class VerifyPublicationRequest(BaseModel):
+    store_id: str = Field(min_length=1, max_length=36)
+
+
 def _load_card(db: Session, store_id: str, nm_id: int) -> tuple[dict, object]:
     snapshot = latest_snapshot(db, store_id=store_id, marketplace="wildberries", snapshot_type="catalog")
     if not snapshot:
@@ -95,6 +99,11 @@ def _publication_payload(row: CardPublication) -> dict:
         "payload_sha256": row.payload_sha256,
         "diff": row.diff_payload,
         "attempt_count": row.attempt_count,
+        "verification_status": getattr(row, "verification_status", "not_checked"),
+        "verification": getattr(row, "verification_payload", {}) or {},
+        "verification_attempt_count": getattr(row, "verification_attempt_count", 0),
+        "last_verified_at": getattr(row, "last_verified_at", None),
+        "verified_at": getattr(row, "verified_at", None),
         "error": row.error,
         "approved_at": row.approved_at,
         "submitted_at": row.submitted_at,
@@ -104,6 +113,26 @@ def _publication_payload(row: CardPublication) -> dict:
 
 def _find_card(cards: list[dict], nm_id: int) -> dict | None:
     return next((item for item in cards if int(item.get("nm_id") or 0) == nm_id), None)
+
+
+def _verification_result(publication: CardPublication, live: dict) -> tuple[str, dict]:
+    proposed = publication.proposed_payload or {}
+    source = publication.source_payload or {}
+    fields = {
+        field: {
+            "expected": str(proposed.get(field) or ""),
+            "actual": str(live.get(field) or ""),
+            "matches": str(live.get(field) or "") == str(proposed.get(field) or ""),
+        }
+        for field in ("title", "description")
+    }
+    if all(item["matches"] for item in fields.values()):
+        status = "applied"
+    elif all(str(live.get(field) or "") == str(source.get(field) or "") for field in fields):
+        status = "pending"
+    else:
+        status = "mismatch"
+    return status, {"fields": fields, "live_card_updated_at": live.get("updated_at")}
 
 
 @router.get("/cards/{nm_id}")
@@ -339,9 +368,15 @@ async def publish_card(publication_id: str, payload: ConfirmPublicationRequest, 
 
     proposed = publication.proposed_payload or {}
     if live.get("title") == proposed.get("title") and live.get("description") == proposed.get("description"):
+        now = datetime.now(timezone.utc)
         publication.status = PublicationStatus.submitted
         publication.provider_response = {"accepted": True, "already_applied": True}
-        publication.submitted_at = datetime.now(timezone.utc)
+        publication.submitted_at = now
+        publication.verification_status = "applied"
+        publication.verification_payload = _verification_result(publication, live)[1]
+        publication.verification_attempt_count += 1
+        publication.last_verified_at = now
+        publication.verified_at = now
         publication.error = ""
         db.commit()
         return _publication_payload(publication)
@@ -383,8 +418,60 @@ async def publish_card(publication_id: str, payload: ConfirmPublicationRequest, 
     publication.status = PublicationStatus.submitted
     publication.provider_response = response
     publication.submitted_at = datetime.now(timezone.utc)
+    publication.verification_status = "pending"
+    publication.verification_payload = {}
     publication.error = ""
     db.commit()
+    return _publication_payload(publication)
+
+
+@router.post("/publications/{publication_id}/verify")
+async def verify_publication(publication_id: str, payload: VerifyPublicationRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = _resolve_connected_store(db, user, payload.store_id)
+    publication = db.query(CardPublication).filter(
+        CardPublication.id == publication_id,
+        CardPublication.store_id == store.id,
+    ).with_for_update().first()
+    if not publication:
+        raise HTTPException(404, "Публикация не найдена в выбранном магазине.")
+    if publication.status != PublicationStatus.submitted:
+        raise HTTPException(409, "Сначала отправьте подтверждённую версию в Wildberries.")
+
+    connection = _connection(db, store.id)
+    token = decrypt_connection(connection)
+    now = datetime.now(timezone.utc)
+    publication.verification_attempt_count += 1
+    publication.last_verified_at = now
+    try:
+        source = publication.source_payload or {}
+        live = await fetch_wb_card(token, nm_id=int(publication.subject_id), vendor_code=source.get("vendorCode") or "")
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code if exc.response is not None else 502
+        publication.verification_status = "error"
+        publication.verification_payload = {"message": "WB не разрешил контрольное чтение карточки.", "status_code": status}
+        db.commit()
+        if status in {401, 403}:
+            raise HTTPException(409, "WB отклонил токен. Переподключите магазин.") from exc
+        if status == 429:
+            raise HTTPException(429, "WB ограничил частоту проверок. Повторите позже.") from exc
+        raise HTTPException(502, "Не удалось проверить карточку после публикации.") from exc
+    except httpx.RequestError as exc:
+        publication.verification_status = "error"
+        publication.verification_payload = {"message": "WB временно недоступен для контрольного чтения."}
+        db.commit()
+        raise HTTPException(502, "Не удалось связаться с WB для проверки публикации.") from exc
+
+    if not live:
+        publication.verification_status = "mismatch"
+        publication.verification_payload = {"message": "Карточка отсутствует в свежем ответе WB."}
+    else:
+        status, result = _verification_result(publication, live)
+        publication.verification_status = status
+        publication.verification_payload = result
+        if status == "applied":
+            publication.verified_at = now
+    db.commit()
+    db.refresh(publication)
     return _publication_payload(publication)
 
 

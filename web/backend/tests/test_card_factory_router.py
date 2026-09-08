@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app.card_factory_router import ConfirmPublicationRequest, _find_card, _load_card, _publication_payload, publish_card
+from app.card_factory_router import ConfirmPublicationRequest, _find_card, _load_card, _publication_payload, _verification_result, publish_card
 from app.models import PublicationStatus
 
 
@@ -44,6 +44,25 @@ def test_publication_payload_exposes_diff_and_hash_but_not_full_wb_payload():
 def test_find_card_uses_exact_nm_id():
     assert _find_card([{'nm_id':41},{'nm_id':42,'title':'Right'}],42)['title']=='Right'
     assert _find_card([{'nm_id':41}],42) is None
+
+
+@pytest.mark.parametrize(
+    ("live", "expected"),
+    [
+        ({"title": "New", "description": "New description"}, "applied"),
+        ({"title": "Old", "description": "Old description"}, "pending"),
+        ({"title": "Third party", "description": "Changed elsewhere"}, "mismatch"),
+    ],
+)
+def test_verification_result_distinguishes_applied_pending_and_mismatch(live, expected):
+    publication = SimpleNamespace(
+        proposed_payload={"title": "New", "description": "New description"},
+        source_payload={"title": "Old", "description": "Old description"},
+    )
+    status, result = _verification_result(publication, live)
+    assert status == expected
+    assert result["fields"]["title"]["actual"] == live["title"]
+    assert result["fields"]["description"]["matches"] is (expected == "applied")
 
 
 class PublicationQuery:

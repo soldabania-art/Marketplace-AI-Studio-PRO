@@ -13,7 +13,7 @@ def stable_hash(payload: dict) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def begin_generation(db: Session, *, store: Store, user: User, feature: str, subject_id: str, input_payload: dict, fact_set_sha256: str = "") -> AIGeneration:
+def begin_generation(db: Session, *, store: Store, user: User, feature: str, subject_id: str, input_payload: dict, fact_set_sha256: str = "", model: str | None = None) -> AIGeneration:
     generation = AIGeneration(
         workspace_id=store.workspace_id,
         store_id=store.id,
@@ -22,7 +22,7 @@ def begin_generation(db: Session, *, store: Store, user: User, feature: str, sub
         subject_id=str(subject_id),
         input_hash=stable_hash(input_payload),
         fact_set_sha256=fact_set_sha256,
-        model=get_settings().openai_model,
+        model=model or get_settings().openai_model,
         input_payload=input_payload,
         status=GenerationStatus.pending,
     )

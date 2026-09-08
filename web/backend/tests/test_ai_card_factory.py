@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.ai_card_factory import _metadata, build_fact_set, validate_grounding
+from app.ai_card_factory import _metadata, _source_photo_url, build_fact_set, validate_grounding
 
 
 def _card():
@@ -65,3 +65,9 @@ def test_generation_metadata_tracks_usage_and_estimated_cost():
     settings = SimpleNamespace(openai_model="cheap-model", openai_input_microusd_per_million_tokens=1_000_000, openai_output_microusd_per_million_tokens=2_000_000)
     metadata = _metadata({"id": "response-1", "model": "actual-model", "usage": {"input_tokens": 2, "output_tokens": 1}}, settings)
     assert metadata == {"response_id": "response-1", "model": "actual-model", "usage": {"input_tokens": 2, "output_tokens": 1}, "estimated_cost_microusd": 4}
+
+
+def test_visual_source_accepts_only_trusted_wb_photo_hosts():
+    assert _source_photo_url({"photos": [{"big": "https://basket-01.wbbasket.ru/item.webp"}]}) == "https://basket-01.wbbasket.ru/item.webp"
+    with pytest.raises(ValueError, match="доверенного"):
+        _source_photo_url({"photos": [{"big": "https://attacker.example/item.webp"}]})

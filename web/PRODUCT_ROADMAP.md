@@ -170,7 +170,7 @@ The web product and future Android app use the same versioned API, permissions a
 | Products | Reads real WB catalog facts | Provenance and cross-source identity mapping |
 | Beginner Studio | Photo analysis, confirmed facts, draft and saved project implemented | Durable image assets and publication |
 | Trial | 3 days / 5 successful cards enforced server-side | Billing transition and entitlement tests |
-| Card Factory | Store-scoped grounded generation, addressable history and cost records implemented | Version comparison and approved publication |
+| Card Factory | Grounded copy plus versioned image editing from real WB photos with Blob persistence | Version comparison and approved publication |
 | Profit Center | Product shell/foundation | Full settlement and cost reconciliation |
 | AI Director | Product architecture defined | Evidence-backed recommendation queue |
 | Advertising, reviews, claims | Planned | Read-only insights before approved writes |
@@ -183,7 +183,7 @@ The web product and future Android app use the same versioned API, permissions a
 ### P0 — complete the safe vertical product
 
 1. Finish one store-scoped Card Factory using real catalog facts.
-2. Persist generated images and generation metadata.
+2. Persist generated images and generation metadata. **Implemented for Card Factory; Beginner Studio reuse remains.**
 3. Add validation preview and confirmed WB publication.
 4. Complete source-based Profit Center reconciliation.
 5. Add billing entitlements and trial-to-paid transition.

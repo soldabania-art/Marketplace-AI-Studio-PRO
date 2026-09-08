@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     openai_timeout_seconds: float = 60.0
     openai_input_microusd_per_million_tokens: int = 0
     openai_output_microusd_per_million_tokens: int = 0
+    openai_image_model: str = "gpt-image-1-mini"
+    openai_image_quality: str = "low"
+    openai_image_size: str = "1024x1024"
+    openai_image_timeout_seconds: float = 120.0
+    openai_image_estimated_cost_microusd: int = 5000
     model_config = SettingsConfigDict(env_file=".env", env_prefix="MARKETPLACE_", extra="ignore")
 
     @property

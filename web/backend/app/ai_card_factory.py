@@ -3,12 +3,14 @@ import hashlib
 import json
 import re
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
 from .config import get_settings
 
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
+OPENAI_IMAGE_EDITS_URL = "https://api.openai.com/v1/images/edits"
 
 
 def _text(value: Any) -> str:
@@ -197,3 +199,48 @@ def analyze_product_photo(image_data_url: str) -> dict:
     result, metadata = _structured_response(body, settings)
     result["_generation_metadata"] = metadata
     return result
+
+
+def _source_photo_url(fact_set: dict) -> str:
+    for photo in fact_set.get("photos") or []:
+        values = photo.values() if isinstance(photo, dict) else [photo]
+        for value in values:
+            if not isinstance(value, str):
+                continue
+            parsed = urlparse(value)
+            host = (parsed.hostname or "").lower()
+            if parsed.scheme == "https" and (host.endswith(".wbbasket.ru") or host.endswith(".wbstatic.net")):
+                return value
+    raise ValueError("У карточки нет доверенного исходного фото WB для безопасной генерации")
+
+
+def generate_product_visual(fact_set: dict, visual_direction: str) -> tuple[str, dict, dict]:
+    """Edit a real WB product photo; return WebP base64, persisted metadata and safe prompt data."""
+    settings = get_settings()
+    if not settings.openai_api_key:
+        raise RuntimeError("Генерация изображений не настроена: отсутствует серверный OpenAI API key")
+    source_url = _source_photo_url(fact_set)
+    with httpx.Client(timeout=30.0, follow_redirects=False) as client:
+        source = client.get(source_url)
+    source.raise_for_status()
+    if len(source.content) > 10 * 1024 * 1024:
+        raise ValueError("Исходное фото WB слишком большое")
+    facts = "; ".join(f"{row['label']}: {row['value']}" for row in fact_set.get("facts") or [])
+    prompt = (
+        "Создай квадратный коммерческий слайд карточки маркетплейса, используя загруженное фото как строгий референс товара. "
+        "Сохрани форму, цвет, детали, бренд и комплектацию товара без изменений. Не добавляй предметы, функции, размеры, "
+        "материалы, текст, логотипы, значки или обещания, которых нет в подтверждённых фактах. "
+        f"Направление слайда: {visual_direction}. Подтверждённые факты: {facts}."
+    )
+    filename = "source.webp" if "webp" in source.headers.get("content-type", "") else "source.jpg"
+    data = {"model": settings.openai_image_model, "prompt": prompt, "size": settings.openai_image_size, "quality": settings.openai_image_quality, "output_format": "webp", "output_compression": "85"}
+    with httpx.Client(timeout=settings.openai_image_timeout_seconds) as client:
+        response = client.post(OPENAI_IMAGE_EDITS_URL, data=data, files=[("image[]", (filename, source.content, source.headers.get("content-type", "image/jpeg")))], headers={"Authorization": f"Bearer {settings.openai_api_key}"})
+    response.raise_for_status()
+    payload = response.json()
+    image_base64 = ((payload.get("data") or [{}])[0]).get("b64_json")
+    if not image_base64:
+        raise ValueError("AI не вернул изображение")
+    metadata = {"model": settings.openai_image_model, "usage": payload.get("usage") or {}, "estimated_cost_microusd": settings.openai_image_estimated_cost_microusd, "response_id": response.headers.get("x-request-id", "")}
+    result = {"storage_status": "awaiting_blob", "visual_direction": visual_direction, "source_photo_url": source_url, "format": "webp", "size": settings.openai_image_size, "quality": settings.openai_image_quality}
+    return image_base64, metadata, result

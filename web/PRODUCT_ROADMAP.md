@@ -170,7 +170,7 @@ The web product and future Android app use the same versioned API, permissions a
 | Products | Reads real WB catalog facts | Provenance and cross-source identity mapping |
 | Beginner Studio | Photo analysis, confirmed facts, draft and saved project implemented | Durable image assets and publication |
 | Trial | 3 days / 5 successful cards enforced server-side | Billing transition and entitlement tests |
-| Card Factory | Grounded copy plus versioned image editing from real WB photos with Blob persistence | Version comparison and approved publication |
+| Card Factory | Grounded copy, saved versions, before/after review and confirmed WB text submission | Post-write WB verification and separately approved media publication |
 | Profit Center | Product shell/foundation | Full settlement and cost reconciliation |
 | AI Director | Product architecture defined | Evidence-backed recommendation queue |
 | Advertising, reviews, claims | Planned | Read-only insights before approved writes |
@@ -184,7 +184,7 @@ The web product and future Android app use the same versioned API, permissions a
 
 1. Finish one store-scoped Card Factory using real catalog facts.
 2. Persist generated images and generation metadata. **Implemented for Card Factory; Beginner Studio reuse remains.**
-3. Add validation preview and confirmed WB publication.
+3. Add validation preview and confirmed WB publication. **Implemented for title and description submission; post-write verification and media publication remain.**
 4. Complete source-based Profit Center reconciliation.
 5. Add billing entitlements and trial-to-paid transition.
 
@@ -233,3 +233,4 @@ A feature is done only when all applicable gates pass:
 - Russia/CIS accounting compatibility is implemented through Integration Hub: direct priority adapters plus universal file/API/SDK paths.
 - WB remains the first complete production vertical; breadth must not weaken correctness of the write path.
 - A public FRA1 Vercel Blob store is connected to `marketplace-ai-studio-pro` through rotating OIDC credentials; no long-lived read-write token is enabled.
+- WB text publication is bound to one saved AI generation and payload hash, requires an owner/admin confirmation, re-reads the live card before writing, and records the provider response without claiming moderation is complete.

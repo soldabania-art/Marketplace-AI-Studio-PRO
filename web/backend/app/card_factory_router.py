@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 import httpx
@@ -7,14 +8,16 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from .ai_card_factory import build_fact_set, generate_grounded_copy, generate_product_visual
-from .ai_generation_service import begin_generation, complete_generation, fail_generation, public_generation
+from .ai_generation_service import begin_generation, complete_generation, fail_generation, public_generation, stable_hash
 from .config import get_settings
 from .db import get_db
+from .marketplace_connections import decrypt_connection
 from .marketplace_sync import latest_snapshot
-from .models import AIGeneration, GenerationStatus, MarketplaceConnection, User
+from .models import AIGeneration, CardPublication, GenerationStatus, MarketplaceConnection, PublicationStatus, User
 from .security import get_current_user
-from .store_access import resolve_store
+from .store_access import require_store_admin, resolve_store
 from .trial_service import ensure_ai_access, refund_trial_card, reserve_trial_card
+from .wb_content import build_card_update, fetch_wb_card, update_wb_card
 
 router = APIRouter(prefix="/card-factory", tags=["card-factory"])
 
@@ -38,6 +41,16 @@ class FinalizeVisualRequest(BaseModel):
     sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
+class PreparePublicationRequest(GenerateCardRequest):
+    generation_id: str = Field(min_length=36, max_length=36)
+
+
+class ConfirmPublicationRequest(BaseModel):
+    store_id: str = Field(min_length=1, max_length=36)
+    payload_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    confirmation: str = Field(min_length=1, max_length=40)
+
+
 def _load_card(db: Session, store_id: str, nm_id: int) -> tuple[dict, object]:
     snapshot = latest_snapshot(db, store_id=store_id, marketplace="wildberries", snapshot_type="catalog")
     if not snapshot:
@@ -58,6 +71,39 @@ def _resolve_connected_store(db: Session, user: User, store_id: str):
     if not connection:
         raise HTTPException(409, "Wildberries не подключён к выбранному магазину.")
     return store
+
+
+def _connection(db: Session, store_id: str) -> MarketplaceConnection:
+    connection = db.query(MarketplaceConnection).filter(
+        MarketplaceConnection.store_id == store_id,
+        MarketplaceConnection.marketplace == "wildberries",
+        MarketplaceConnection.enabled.is_(True),
+    ).first()
+    if not connection:
+        raise HTTPException(409, "Wildberries не подключён к выбранному магазину.")
+    return connection
+
+
+def _publication_payload(row: CardPublication) -> dict:
+    return {
+        "id": row.id,
+        "generation_id": row.generation_id,
+        "store_id": row.store_id,
+        "nm_id": int(row.subject_id),
+        "marketplace": row.marketplace,
+        "status": row.status.value,
+        "payload_sha256": row.payload_sha256,
+        "diff": row.diff_payload,
+        "attempt_count": row.attempt_count,
+        "error": row.error,
+        "approved_at": row.approved_at,
+        "submitted_at": row.submitted_at,
+        "created_at": row.created_at,
+    }
+
+
+def _find_card(cards: list[dict], nm_id: int) -> dict | None:
+    return next((item for item in cards if int(item.get("nm_id") or 0) == nm_id), None)
 
 
 @router.get("/cards/{nm_id}")
@@ -189,3 +235,164 @@ def generations(store_id: str, nm_id: int | None = None, user: User = Depends(ge
         query = query.filter(AIGeneration.subject_id == str(nm_id))
     items = query.order_by(AIGeneration.created_at.desc()).limit(50).all()
     return {"items": [public_generation(item) for item in items]}
+
+
+@router.post("/publications/prepare", status_code=201)
+def prepare_publication(payload: PreparePublicationRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = _resolve_connected_store(db, user, payload.store_id)
+    source, snapshot = _load_card(db, store.id, payload.nm_id)
+    fact_set = build_fact_set(source)
+    generation = db.query(AIGeneration).filter(
+        AIGeneration.id == payload.generation_id,
+        AIGeneration.store_id == store.id,
+        AIGeneration.feature == "card_factory_copy",
+        AIGeneration.subject_id == str(payload.nm_id),
+        AIGeneration.status == GenerationStatus.completed,
+    ).first()
+    if not generation:
+        raise HTTPException(404, "Сохранённая текстовая версия карточки не найдена.")
+    if generation.fact_set_sha256 != fact_set["sha256"]:
+        raise HTTPException(409, "Каталог изменился после генерации. Создайте новую AI-версию перед публикацией.")
+    result = generation.result_payload or {}
+    try:
+        proposed = build_card_update(source, title=result.get("wb_title") or "", description=result.get("description") or "")
+        current = build_card_update(source, title=source.get("title") or "", description=source.get("description") or "")
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    diff = {
+        "title": {"before": current["title"], "after": proposed["title"], "changed": current["title"] != proposed["title"]},
+        "description": {"before": current["description"], "after": proposed["description"], "changed": current["description"] != proposed["description"]},
+        "unchanged_fields": ["brand", "dimensions", "characteristics", "sizes", "barcodes"],
+        "catalog_snapshot_created_at": snapshot.created_at.isoformat() if snapshot.created_at else None,
+    }
+    if not diff["title"]["changed"] and not diff["description"]["changed"]:
+        raise HTTPException(409, "AI-версия не отличается от текущей карточки WB.")
+    payload_sha256 = stable_hash(proposed)
+    existing = db.query(CardPublication).filter(
+        CardPublication.store_id == store.id,
+        CardPublication.generation_id == generation.id,
+        CardPublication.payload_sha256 == payload_sha256,
+        CardPublication.status == PublicationStatus.prepared,
+    ).order_by(CardPublication.created_at.desc()).first()
+    if existing:
+        return _publication_payload(existing)
+    publication = CardPublication(
+        workspace_id=store.workspace_id,
+        store_id=store.id,
+        user_id=user.id,
+        generation_id=generation.id,
+        subject_id=str(payload.nm_id),
+        fact_set_sha256=fact_set["sha256"],
+        source_card_sha256=stable_hash(current),
+        payload_sha256=payload_sha256,
+        source_payload=current,
+        proposed_payload=proposed,
+        diff_payload=diff,
+        status=PublicationStatus.prepared,
+    )
+    db.add(publication)
+    db.commit()
+    db.refresh(publication)
+    return _publication_payload(publication)
+
+
+@router.post("/publications/{publication_id}/publish")
+async def publish_card(publication_id: str, payload: ConfirmPublicationRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = _resolve_connected_store(db, user, payload.store_id)
+    require_store_admin(db, user, store)
+    publication = db.query(CardPublication).filter(
+        CardPublication.id == publication_id,
+        CardPublication.store_id == store.id,
+    ).with_for_update().first()
+    if not publication:
+        raise HTTPException(404, "Подготовленная публикация не найдена.")
+    if publication.status == PublicationStatus.submitted:
+        return _publication_payload(publication)
+    if publication.status == PublicationStatus.submitting:
+        raise HTTPException(409, "Эта версия уже отправляется в Wildberries.")
+    if publication.status == PublicationStatus.stale:
+        raise HTTPException(409, "Карточка WB изменилась. Подготовьте новую проверку перед публикацией.")
+    if payload.payload_sha256 != publication.payload_sha256:
+        raise HTTPException(409, "Подтверждение относится к другой версии карточки.")
+    if payload.confirmation.strip().upper() != "ОПУБЛИКОВАТЬ":
+        raise HTTPException(422, "Для публикации введите слово ОПУБЛИКОВАТЬ.")
+
+    connection = _connection(db, store.id)
+    token = decrypt_connection(connection)
+    try:
+        source = publication.source_payload or {}
+        live = await fetch_wb_card(token, nm_id=int(publication.subject_id), vendor_code=source.get("vendorCode") or "")
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code if exc.response is not None else 502
+        if status in {401, 403}:
+            raise HTTPException(409, "WB отклонил токен. Переподключите магазин с правом редактирования контента.") from exc
+        if status == 429:
+            raise HTTPException(429, "WB ограничил частоту проверки карточки. Повторите позже.") from exc
+        raise HTTPException(502, "Не удалось получить свежую карточку из WB.") from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(502, "Не удалось связаться с WB для контрольной проверки.") from exc
+    if not live:
+        publication.status = PublicationStatus.stale
+        publication.error = "Карточка отсутствует в свежем ответе WB."
+        db.commit()
+        raise HTTPException(409, publication.error)
+
+    proposed = publication.proposed_payload or {}
+    if live.get("title") == proposed.get("title") and live.get("description") == proposed.get("description"):
+        publication.status = PublicationStatus.submitted
+        publication.provider_response = {"accepted": True, "already_applied": True}
+        publication.submitted_at = datetime.now(timezone.utc)
+        publication.error = ""
+        db.commit()
+        return _publication_payload(publication)
+    try:
+        live_current = build_card_update(live, title=live.get("title") or "", description=live.get("description") or "")
+    except ValueError as exc:
+        publication.status = PublicationStatus.stale
+        publication.error = f"Свежая карточка WB неполная: {exc}"
+        db.commit()
+        raise HTTPException(409, publication.error) from exc
+    if build_fact_set(live)["sha256"] != publication.fact_set_sha256 or stable_hash(live_current) != publication.source_card_sha256:
+        publication.status = PublicationStatus.stale
+        publication.error = "Карточка WB изменилась после подготовки. AI-версия не отправлена."
+        db.commit()
+        raise HTTPException(409, publication.error)
+
+    publication.status = PublicationStatus.submitting
+    publication.approved_at = datetime.now(timezone.utc)
+    publication.attempt_count += 1
+    publication.error = ""
+    db.commit()
+    try:
+        response = await update_wb_card(token, proposed)
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code if exc.response is not None else 502
+        publication.status = PublicationStatus.failed
+        publication.error = f"WB отклонил обновление карточки (HTTP {status})."
+        db.commit()
+        if status in {401, 403}:
+            raise HTTPException(409, "Токен WB не разрешает редактировать контент магазина.") from exc
+        if status == 429:
+            raise HTTPException(429, "WB ограничил частоту публикаций. Повторите позже.") from exc
+        raise HTTPException(502, publication.error) from exc
+    except httpx.RequestError as exc:
+        publication.status = PublicationStatus.failed
+        publication.error = "Ответ WB не получен. Перед повтором карточка будет проверена заново."
+        db.commit()
+        raise HTTPException(502, publication.error) from exc
+    publication.status = PublicationStatus.submitted
+    publication.provider_response = response
+    publication.submitted_at = datetime.now(timezone.utc)
+    publication.error = ""
+    db.commit()
+    return _publication_payload(publication)
+
+
+@router.get("/publications")
+def publications(store_id: str, nm_id: int | None = None, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = resolve_store(db, user, store_id)
+    query = db.query(CardPublication).filter(CardPublication.store_id == store.id)
+    if nm_id:
+        query = query.filter(CardPublication.subject_id == str(nm_id))
+    rows = query.order_by(CardPublication.created_at.desc()).limit(30).all()
+    return {"items": [_publication_payload(row) for row in rows]}

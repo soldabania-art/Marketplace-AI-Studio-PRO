@@ -1,7 +1,12 @@
+import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from app.card_factory_router import _load_card
+import pytest
+from fastapi import HTTPException
+
+from app.card_factory_router import ConfirmPublicationRequest, _find_card, _load_card, _publication_payload, publish_card
+from app.models import PublicationStatus
 
 
 def test_load_card_selects_nm_id_only_inside_requested_store_snapshot(monkeypatch):
@@ -20,3 +25,55 @@ def test_load_card_selects_nm_id_only_inside_requested_store_snapshot(monkeypatc
     assert card["title"] == "Second"
     assert selected_snapshot is snapshot
     assert calls == [("store-7", "wildberries", "catalog")]
+
+
+def test_publication_payload_exposes_diff_and_hash_but_not_full_wb_payload():
+    row=SimpleNamespace(
+        id='p1',generation_id='g1',store_id='s1',subject_id='42',marketplace='wildberries',
+        status=PublicationStatus.prepared,payload_sha256='a'*64,diff_payload={'title':{'before':'A','after':'B'}},
+        attempt_count=0,error='',approved_at=None,submitted_at=None,created_at=datetime.now(timezone.utc),
+        source_payload={'sizes':[{'skus':['secret-ish-barcode']}]},proposed_payload={'description':'full payload'},
+    )
+    result=_publication_payload(row)
+    assert result['payload_sha256']=='a'*64
+    assert result['diff']['title']['after']=='B'
+    assert 'source_payload' not in result
+    assert 'proposed_payload' not in result
+
+
+def test_find_card_uses_exact_nm_id():
+    assert _find_card([{'nm_id':41},{'nm_id':42,'title':'Right'}],42)['title']=='Right'
+    assert _find_card([{'nm_id':41}],42) is None
+
+
+class PublicationQuery:
+    def __init__(self,row): self.row=row
+    def filter(self,*args): return self
+    def with_for_update(self): return self
+    def first(self): return self.row
+
+
+class PublicationDb:
+    def __init__(self,row): self.row=row
+    def query(self,*args): return PublicationQuery(self.row)
+
+
+def test_publish_requires_exact_confirmation_before_any_wb_call(monkeypatch):
+    row=SimpleNamespace(
+        id='p1',generation_id='g1',store_id='s1',subject_id='42',marketplace='wildberries',
+        status=PublicationStatus.prepared,payload_sha256='a'*64,diff_payload={},
+        attempt_count=0,error='',approved_at=None,submitted_at=None,created_at=datetime.now(timezone.utc),
+    )
+    store=SimpleNamespace(id='s1',workspace_id='w1')
+    monkeypatch.setattr('app.card_factory_router._resolve_connected_store',lambda db,user,store_id:store)
+    monkeypatch.setattr('app.card_factory_router.require_store_admin',lambda db,user,store:None)
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(publish_card(
+            'p1',
+            ConfirmPublicationRequest(store_id='s1',payload_sha256='a'*64,confirmation='да'),
+            user=SimpleNamespace(id='u1'),
+            db=PublicationDb(row),
+        ))
+    assert error.value.status_code==422
+    assert row.status==PublicationStatus.prepared
+    assert row.attempt_count==0

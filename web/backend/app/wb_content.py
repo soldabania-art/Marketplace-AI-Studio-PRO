@@ -1,4 +1,4 @@
-"""Wildberries Content API product-card reader.
+"""Wildberries Content API product-card reader and guarded writer.
 
 Uses the official /content/v2/get/cards/list endpoint with cursor pagination.
 Only normalized seller-card facts are returned; marketplace tokens are never logged.
@@ -8,6 +8,7 @@ import httpx
 from .rate_limit import wait_marketplace_slot
 
 WB_CARDS_LIST_URL='https://content-api.wildberries.ru/content/v2/get/cards/list'
+WB_CARDS_UPDATE_URL='https://content-api.wildberries.ru/content/v2/cards/update'
 
 
 def normalize_card(card:dict)->dict:
@@ -25,6 +26,7 @@ def normalize_card(card:dict)->dict:
         'subject_id':card.get('subjectID'),
         'subject_name':str(card.get('subjectName') or ''),
         'description':str(card.get('description') or ''),
+        'dimensions':card.get('dimensions') or {},
         'photos':photos,
         'photo_count':len(photos),
         'characteristics':card.get('characteristics') or [],
@@ -33,6 +35,62 @@ def normalize_card(card:dict)->dict:
         'created_at':card.get('createdAt'),
         'updated_at':card.get('updatedAt'),
     }
+
+
+def build_card_update(card:dict,*,title:str,description:str)->dict:
+    """Build the full WB update object while changing only approved copy fields."""
+    result={
+        'nmID':int(card.get('nm_id') or 0),
+        'vendorCode':str(card.get('vendor_code') or ''),
+        'brand':str(card.get('brand') or ''),
+        'title':str(title).strip(),
+        'description':str(description).strip(),
+        'characteristics':[
+            {'id':row.get('id'),'value':row.get('value')}
+            for row in (card.get('characteristics') or [])
+            if row.get('id') is not None
+        ],
+        'sizes':[
+            {key:row.get(key) for key in ('chrtID','techSize','wbSize','skus') if row.get(key) is not None}
+            for row in (card.get('sizes') or [])
+        ],
+    }
+    if card.get('dimensions'):
+        result['dimensions']=card['dimensions']
+    if not result['nmID'] or not result['vendorCode']:
+        raise ValueError('В карточке WB отсутствует nmID или артикул продавца.')
+    if not 3<=len(result['title'])<=120:
+        raise ValueError('Заголовок WB должен содержать от 3 до 120 символов.')
+    if not 20<=len(result['description'])<=5000:
+        raise ValueError('Описание WB должно содержать от 20 до 5000 символов.')
+    return result
+
+
+async def update_wb_card(token:str,payload:dict)->dict:
+    """Submit one complete card update to WB after the caller confirms it."""
+    await wait_marketplace_slot('wildberries',token,'content-cards-update',min_interval_seconds=0.6)
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response=await client.post(WB_CARDS_UPDATE_URL,json=[payload],headers={'Authorization':token})
+    response.raise_for_status()
+    if not response.content:
+        return {'accepted':True,'status_code':response.status_code}
+    try:
+        body=response.json()
+    except ValueError:
+        body={'message':response.text[:1000]}
+    return {'accepted':True,'status_code':response.status_code,'response':body}
+
+
+async def fetch_wb_card(token:str,*,nm_id:int,vendor_code:str)->dict|None:
+    """Read one live card for the final optimistic-concurrency check."""
+    await wait_marketplace_slot('wildberries',token,'content-card-read-before-write',min_interval_seconds=0.6)
+    body={'settings':{'filter':{'withPhoto':-1,'textSearch':str(vendor_code)},'cursor':{'limit':100}}}
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response=await client.post(WB_CARDS_LIST_URL,json=body,headers={'Authorization':token})
+    response.raise_for_status()
+    payload=response.json() if response.content else {}
+    cards=[normalize_card(card) for card in (payload.get('cards') or []) if card.get('nmID')]
+    return next((card for card in cards if card['nm_id']==int(nm_id)),None)
 
 
 async def fetch_wb_cards(token:str,max_pages:int=200)->list[dict]:

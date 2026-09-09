@@ -1,0 +1,221 @@
+.profitCenterPage {
+  color: #eef5ff;
+}
+.profitToolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.profitToolbar > div {
+  margin-right: auto;
+  display: grid;
+  gap: 4px;
+}
+.profitToolbar > div span,
+.profitToolbar label {
+  color: #8294aa;
+  font-size: 12px;
+}
+.profitToolbar label {
+  display: grid;
+  gap: 5px;
+}
+.profitToolbar select {
+  border: 1px solid #2b3d55;
+  border-radius: 9px;
+  background: #091321;
+  color: #eef5ff;
+  padding: 9px 30px 9px 10px;
+}
+.profitMetrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin: 14px 0;
+}
+.profitMetrics article span {
+  color: #8294aa;
+  font-size: 12px;
+}
+.profitMetrics article strong {
+  display: block;
+  margin-top: 9px;
+  font-size: 25px;
+  letter-spacing: -0.03em;
+}
+.sourcePanel {
+  margin-bottom: 14px;
+}
+.sourcePanel h2,
+.productProfit h2 {
+  margin: 0;
+}
+.sourcePanel p,
+.productProfit p {
+  color: #8294aa;
+  font-size: 12px;
+}
+.sourceGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 9px;
+  margin: 16px 0;
+}
+.sourceGrid > div {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 8px;
+  align-items: center;
+  border: 1px solid #25364b;
+  border-radius: 11px;
+  padding: 12px;
+}
+.sourceGrid svg {
+  grid-row: 1/3;
+}
+.sourceGrid span {
+  font-size: 12px;
+}
+.sourceGrid b {
+  font-size: 10px;
+  text-transform: uppercase;
+}
+.sourceGrid .ready {
+  color: #7ee2b8;
+  border-color: rgba(66, 231, 164, 0.24);
+}
+.sourceGrid .missing {
+  color: #d8b978;
+  border-color: rgba(247, 198, 93, 0.2);
+}
+.formulaLine {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-top: 1px solid #1c2a3f;
+  padding-top: 14px;
+  color: #9fb1c5;
+  font-size: 12px;
+}
+.sourcePanel > small {
+  display: block;
+  color: #d8b978;
+  margin-top: 10px;
+}
+.profitTableHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+.profitTableHead > span {
+  color: #7e92aa;
+  font-size: 11px;
+}
+.profitRows {
+  margin-top: 10px;
+}
+.profitRows article {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.5fr) 0.7fr 0.25fr 0.7fr 0.55fr auto;
+  gap: 10px;
+  align-items: center;
+  border-top: 1px solid #1b2a3d;
+  padding: 14px 0;
+}
+.profitRows article > div > span,
+.costConfirm span {
+  display: block;
+  color: #7f92a9;
+  font-size: 10px;
+}
+.profitRows article > div > b {
+  font-size: 13px;
+}
+.profitIdentity span {
+  display: block;
+  margin-top: 4px;
+  color: #708299;
+  font-size: 10px;
+}
+.profitRows input[type="number"] {
+  width: 100%;
+  border: 1px solid #26364d;
+  border-radius: 8px;
+  background: #091321;
+  color: #fff;
+  padding: 8px;
+}
+.costConfirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.costConfirm input {
+  accent-color: #79b9ff;
+}
+.costSave {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #315071;
+  border-radius: 8px;
+  background: #102238;
+  color: #bdddff;
+  padding: 8px 10px;
+}
+.costSave:disabled {
+  opacity: 0.45;
+}
+.contribution {
+  grid-column: 2/-1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.contribution b {
+  color: #7ee2b8;
+}
+.profitEmpty {
+  min-height: 160px;
+  display: grid;
+  place-items: center;
+  color: #667b93;
+  text-align: center;
+}
+@media (max-width: 1050px) {
+  .profitMetrics,
+  .sourceGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .profitRows article {
+    grid-template-columns: 1fr 1fr 80px;
+  }
+  .profitIdentity {
+    grid-column: 1/-1;
+  }
+  .contribution {
+    grid-column: 1/-1;
+  }
+}
+@media (max-width: 680px) {
+  .profitToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .profitToolbar > div {
+    margin-right: 0;
+  }
+  .profitMetrics,
+  .sourceGrid {
+    grid-template-columns: 1fr;
+  }
+  .profitRows article {
+    grid-template-columns: 1fr 1fr;
+  }
+  .profitIdentity,
+  .contribution {
+    grid-column: 1/-1;
+  }
+}

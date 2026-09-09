@@ -1,3 +1,6 @@
-import Link from 'next/link'
-import StudioSection from '../../components/StudioSection'
-export default function Page(){return <><StudioSection eyebrow="ФИНАНСЫ" title="Profit Center" description="Юнит-экономика по товарам: выручка, комиссии, логистика, реклама, себестоимость, маржа и прибыль." primary="Рассчитать прибыль" cards={[{title:'P&L по SKU',text:'Показывает прибыль и убыток по каждой позиции после всех основных расходов.',action:'Открыть P&L'},{title:'Маржа',text:'Поиск товаров, где маржа просела ниже безопасного уровня.',action:'Проверить маржу'},{title:'Реклама и прибыль',text:'Связь расходов на рекламу с реальной прибылью, а не только с выручкой.',action:'Проверить ДРР'}]}/><div style={{position:'fixed',right:24,bottom:24,zIndex:20}}><Link className="primaryBtn" href="/profitability">Калькулятор рентабельности</Link></div></>}
+import ProfitCenterWorkspace from '../../components/ProfitCenterWorkspace'
+import './profit-center.css'
+
+export default function Page(){
+  return <ProfitCenterWorkspace/>
+}

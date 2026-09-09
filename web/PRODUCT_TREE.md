@@ -46,7 +46,7 @@ AI coordinates the loop. Deterministic services remain authoritative for facts, 
 | Products | **live foundation** | catalog + stock + velocity | Provenance and cross-source identity |
 | AI Card Factory | **live foundation** | facts + AI persistence | Production observation of text and media writes |
 | Beginner Studio | **active** | trial + facts + Card Factory | Reuse stored visuals and publication pipeline |
-| Profit Center | **planned next** | settlements + costs + reconciliation | Source-based unit and store profit |
+| Profit Center | **active** | WB financial ledger + confirmed COGS | Ads, tax and source reconciliation for final profit |
 | AI Director | **planned P1** | healthy sources + Profit Center | Evidence-ranked recommendation queue |
 | SEO, advertising, reviews | **planned P1** | Director + marketplace readers | Read-only insight before writes |
 | Reports and autopilot | **planned P1/P2** | audit + approvals + measurement | Bounded policies and rollback evidence |

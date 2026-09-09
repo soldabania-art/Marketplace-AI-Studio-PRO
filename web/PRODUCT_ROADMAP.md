@@ -173,7 +173,7 @@ The web product and future Android app use the same versioned API, permissions a
 | Beginner Studio | Photo analysis, confirmed facts, draft and saved project implemented | Durable image assets and publication |
 | Trial | 3 days / 5 successful cards enforced server-side | Billing transition and entitlement tests |
 | Card Factory | Grounded copy, saved versions, confirmed WB text and append-only media submission, post-write live verification | Production observation and failure telemetry |
-| Profit Center | WB source ledger, cursor sync, confirmed COGS and partial P&L by SKU/store | Ads, tax and reconciliation for final net profit |
+| Profit Center | WB finance + advertising ledgers, confirmed COGS + tax, complete/partial P&L by SKU/store | Production reconciliation and accounting-source COGS/tax |
 | AI Director | Product architecture defined | Evidence-backed recommendation queue |
 | Advertising, reviews, claims | Planned | Read-only insights before approved writes |
 | Integration Hub | Architecture accepted | Canonical schema and 1C/MoySklad adapters |
@@ -187,7 +187,7 @@ The web product and future Android app use the same versioned API, permissions a
 1. Finish one store-scoped Card Factory using real catalog facts.
 2. Persist generated images and generation metadata. **Implemented for Card Factory; Beginner Studio reuse remains.**
 3. Add validation preview and confirmed WB publication. **Implemented for title/description and separately approved image upload, each with post-write verification and no automatic retry.**
-4. Complete source-based Profit Center reconciliation. **WB financial lines, deduplication, confirmed COGS and partial contribution are implemented; ads, tax and final reconciliation remain.**
+4. Complete source-based Profit Center reconciliation. **Implemented foundation: WB finance and advertising lines, deduplication, confirmed COGS and tax profile, double-charge protection and completeness-gated profit. Production reconciliation remains an observation gate.**
 5. Add billing entitlements and trial-to-paid transition.
 
 ### P1 — make AI Director operational
@@ -243,3 +243,6 @@ A feature is done only when all applicable gates pass:
 - WB image publication is isolated from text publication, bound to one stored AI asset and SHA-256, and requires the separate phrase `ОПУБЛИКОВАТЬ ФОТО`. TROVENDI uses direct upload to the next free position so the existing photo set is not replaced, validates WB file requirements, blocks on concurrent media changes and verifies the resulting count/order without automatic retry.
 - Profit Center imports the current WB Finance detailed realization report into an auditable, store-scoped ledger. Cursor pages run through the WB one-request-per-minute limiter and source lines are deduplicated by WB `rrdId`.
 - Profit Center labels the available result as contribution before tax and advertising. Final profit remains unavailable until WB finance coverage is complete and confirmed COGS, advertising and tax sources are connected; missing values are never replaced by AI guesses or demo money.
+- WB advertising costs use the current read-only `GET /adv/v3/fullstats` path. Campaigns are processed in batches of up to 50 and date ranges in chunks of up to 31 days through the shared per-token limiter; every stored daily SKU line retains source evidence.
+- A tax value enters Profit Center only after an owner/admin confirms the rate and whether its base is gross WB sales or WB payout. It is labelled a management reserve and never presented as a filed tax calculation.
+- Profit Center reconciles advertising costs against finance-report deductions marked as advertising so the store total does not subtract the same WB promotion charge twice. A complete profit is exposed only when finance, advertising, COGS and tax gates are all complete.

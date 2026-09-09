@@ -47,6 +47,46 @@
 .sourcePanel {
   margin-bottom: 14px;
 }
+.taxEditor {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.35fr) 1fr 0.55fr 1fr auto auto;
+  gap: 12px;
+  align-items: flex-end;
+  margin-bottom: 14px;
+}
+.taxEditor h2 {
+  margin: 5px 0;
+}
+.taxEditor p {
+  color: #8294aa;
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 0;
+}
+.taxEditor label {
+  display: grid;
+  gap: 5px;
+  color: #8294aa;
+  font-size: 11px;
+}
+.taxEditor input,
+.taxEditor select {
+  min-width: 0;
+  border: 1px solid #26364d;
+  border-radius: 8px;
+  background: #091321;
+  color: #fff;
+  padding: 9px;
+}
+.taxEditor .taxConfirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 9px;
+}
+.taxConfirm input {
+  accent-color: #79b9ff;
+}
 .sourcePanel h2,
 .productProfit h2 {
   margin: 0;
@@ -198,6 +238,12 @@
   .contribution {
     grid-column: 1/-1;
   }
+  .taxEditor {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .taxEditor > div {
+    grid-column: 1/-1;
+  }
 }
 @media (max-width: 680px) {
   .profitToolbar {
@@ -217,5 +263,11 @@
   .profitIdentity,
   .contribution {
     grid-column: 1/-1;
+  }
+  .taxEditor {
+    grid-template-columns: 1fr;
+  }
+  .taxEditor > div {
+    grid-column: auto;
   }
 }

@@ -3,12 +3,13 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from typing import Literal
 from sqlalchemy.orm import Session
 
 from .db import get_db
 from .job_queue import enqueue
 from .marketplace_sync import latest_snapshot
-from .models import MarketplaceConnection, MarketplaceFinancialLine, ProductCostProfile, User
+from .models import MarketplaceAdvertisingLine, MarketplaceConnection, MarketplaceFinancialLine, ProductCostProfile, StoreTaxProfile, User
 from .security import get_current_user
 from .store_access import require_store_admin, resolve_store
 
@@ -23,6 +24,14 @@ class ProfitSyncRequest(BaseModel):
 class ProductCostRequest(BaseModel):
     store_id: str = Field(min_length=1, max_length=36)
     cogs_rub: Decimal = Field(ge=Decimal('0.01'), le=Decimal('100000000'))
+    confirmed: bool
+
+
+class TaxProfileRequest(BaseModel):
+    store_id: str = Field(min_length=1, max_length=36)
+    basis: Literal['gross_sales','wb_payout']
+    rate_percent: Decimal = Field(ge=Decimal('0'), le=Decimal('100'))
+    note: str = Field(default='', max_length=500)
     confirmed: bool
 
 
@@ -52,6 +61,11 @@ def _line_in_period(row: MarketplaceFinancialLine, date_from: str, date_to: str)
     return bool(value and date_from <= value <= date_to)
 
 
+def _is_advertising_deduction(row: MarketplaceFinancialLine) -> bool:
+    text=f'{getattr(row,"operation","") or ""} {getattr(row,"document_type","") or ""}'.lower()
+    return any(marker in text for marker in ('реклам','продвиж','advert'))
+
+
 def _totals(rows: list[MarketplaceFinancialLine]) -> dict:
     keys = (
         'gross_kopecks', 'payout_kopecks', 'commission_kopecks', 'logistics_kopecks',
@@ -59,6 +73,7 @@ def _totals(rows: list[MarketplaceFinancialLine]) -> dict:
         'penalty_kopecks', 'deduction_kopecks', 'additional_payment_kopecks',
     )
     result = {key: sum(int(getattr(row, key) or 0) for row in rows) for key in keys}
+    result['advertising_deduction_kopecks']=sum(int(row.deduction_kopecks or 0) for row in rows if _is_advertising_deduction(row))
     result['net_units'] = sum(int(row.quantity or 0) for row in rows)
     result['wb_net_kopecks'] = (
         result['payout_kopecks']
@@ -77,13 +92,19 @@ def _public_amounts(totals: dict) -> dict:
     return {key.removesuffix('_kopecks'): _rubles(value) if key.endswith('_kopecks') else value for key, value in totals.items()}
 
 
+def _tax_kopecks(totals: dict, profile: StoreTaxProfile | None) -> int | None:
+    if profile is None: return None
+    basis=totals['gross_kopecks'] if profile.basis=='gross_sales' else totals['payout_kopecks']
+    return max(0,int(basis))*int(profile.rate_bps)//10000
+
+
 @router.post('/sync', status_code=202)
 def start_profit_sync(payload: ProfitSyncRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     store = resolve_store(db, user, payload.store_id)
     _connection(db, store.id)
     date_from, date_to = _period(payload.period_days)
     run_id = f'{date_from}:{date_to}:{datetime.now(timezone.utc).strftime("%Y%m%d%H")}'
-    job = enqueue(
+    finance_job = enqueue(
         db,
         job_type='marketplace.wb.finance.sync',
         idempotency_key=f'wb-finance:{store.id}:{run_id}:start',
@@ -93,7 +114,22 @@ def start_profit_sync(payload: ProfitSyncRequest, user: User = Depends(get_curre
         priority=45,
         max_attempts=5,
     )
-    return {'job_id': job.id, 'status': job.status.value, 'date_from': date_from, 'date_to': date_to, 'message': 'Финансовый отчёт поставлен в безопасную фоновую очередь.'}
+    advertising_job = enqueue(
+        db,
+        job_type='marketplace.wb.advertising.sync',
+        idempotency_key=f'wb-ads:{store.id}:{run_id}:start',
+        payload={'store_id':store.id,'date_from':date_from,'date_to':date_to,'run_id':run_id},
+        workspace_id=store.workspace_id,
+        store_id=store.id,
+        priority=46,
+        max_attempts=5,
+    )
+    return {
+        'job_id':finance_job.id,
+        'jobs':{'finance':finance_job.id,'advertising':advertising_job.id},
+        'status':'queued','date_from':date_from,'date_to':date_to,
+        'message':'Финансы и рекламная статистика WB поставлены в безопасную фоновую очередь.',
+    }
 
 
 @router.patch('/costs/{nm_id}')
@@ -128,25 +164,56 @@ def save_product_cost(nm_id: int, payload: ProductCostRequest, user: User = Depe
     return {'nm_id': row.nm_id, 'cogs_rub': _rubles(row.cogs_kopecks), 'source': row.source, 'confirmed_at': row.confirmed_at}
 
 
+@router.patch('/tax')
+def save_tax_profile(payload: TaxProfileRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not payload.confirmed:
+        raise HTTPException(422,'Подтвердите налоговую базу и ставку по данным бухгалтера или налогового учёта.')
+    store=resolve_store(db,user,payload.store_id)
+    require_store_admin(db,user,store)
+    _connection(db,store.id)
+    rate_bps=int((payload.rate_percent*100).quantize(Decimal('1'),rounding=ROUND_HALF_UP))
+    row=db.query(StoreTaxProfile).filter(StoreTaxProfile.store_id==store.id,StoreTaxProfile.marketplace=='wildberries').first()
+    now=datetime.now(timezone.utc)
+    if row is None:
+        row=StoreTaxProfile(store_id=store.id,marketplace='wildberries',basis=payload.basis,rate_bps=rate_bps,note=payload.note.strip(),confirmed_by_user_id=user.id,confirmed_at=now)
+        db.add(row)
+    else:
+        row.basis=payload.basis; row.rate_bps=rate_bps; row.note=payload.note.strip(); row.confirmed_by_user_id=user.id; row.confirmed_at=now
+    db.commit(); db.refresh(row)
+    return {'basis':row.basis,'rate_percent':f'{Decimal(row.rate_bps)/100:.2f}','note':row.note,'confirmed_at':row.confirmed_at}
+
+
 @router.get('')
 def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     store = resolve_store(db, user, store_id)
     _connection(db, store.id)
     days = max(7, min(90, int(period_days)))
     date_from, date_to = _period(days)
-    sync = latest_snapshot(db, store_id=store.id, marketplace='wildberries', snapshot_type='finance_realization_sync')
-    sync_payload = dict(sync.payload or {}) if sync else {}
-    coverage_matches = sync_payload.get('date_from') == date_from and sync_payload.get('date_to') == date_to
+    finance_sync = latest_snapshot(db, store_id=store.id, marketplace='wildberries', snapshot_type='finance_realization_sync')
+    finance_payload = dict(finance_sync.payload or {}) if finance_sync else {}
+    finance_matches = finance_payload.get('date_from') == date_from and finance_payload.get('date_to') == date_to
+    advertising_sync = latest_snapshot(db, store_id=store.id, marketplace='wildberries', snapshot_type='advertising_sync')
+    advertising_payload = dict(advertising_sync.payload or {}) if advertising_sync else {}
+    advertising_matches = advertising_payload.get('date_from') == date_from and advertising_payload.get('date_to') == date_to
     all_lines = db.query(MarketplaceFinancialLine).filter(
         MarketplaceFinancialLine.store_id == store.id,
         MarketplaceFinancialLine.marketplace == 'wildberries',
     ).all()
     lines = [row for row in all_lines if _line_in_period(row, date_from, date_to)]
+    advertising_lines = db.query(MarketplaceAdvertisingLine).filter(
+        MarketplaceAdvertisingLine.store_id == store.id,
+        MarketplaceAdvertisingLine.marketplace == 'wildberries',
+    ).all()
+    advertising_lines = [row for row in advertising_lines if date_from <= str(row.event_date or '')[:10] <= date_to]
     costs = db.query(ProductCostProfile).filter(
         ProductCostProfile.store_id == store.id,
         ProductCostProfile.marketplace == 'wildberries',
     ).all()
     cost_by_nm = {row.nm_id: row for row in costs}
+    tax_profile = db.query(StoreTaxProfile).filter(
+        StoreTaxProfile.store_id == store.id,
+        StoreTaxProfile.marketplace == 'wildberries',
+    ).first()
     catalog = latest_snapshot(db, store_id=store.id, marketplace='wildberries', snapshot_type='catalog')
     cards = {(item.get('nm_id')): item for item in ((catalog.payload or {}).get('items') or [])} if catalog else {}
     by_nm: dict[int, list[MarketplaceFinancialLine]] = {}
@@ -156,6 +223,13 @@ def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get
             by_nm.setdefault(int(row.nm_id), []).append(row)
         else:
             unallocated.append(row)
+    ads_by_nm: dict[int, list[MarketplaceAdvertisingLine]] = {}
+    unallocated_ads=[]
+    for row in advertising_lines:
+        if row.nm_id: ads_by_nm.setdefault(int(row.nm_id),[]).append(row)
+        else: unallocated_ads.append(row)
+    finance_complete=bool(finance_matches and finance_payload.get('complete'))
+    advertising_complete=bool(advertising_matches and advertising_payload.get('complete'))
     products = []
     confirmed_products = 0
     for nm_id, product_lines in by_nm.items():
@@ -164,6 +238,10 @@ def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get
         net_units = max(0, int(values['net_units']))
         cogs_total = int(cost.cogs_kopecks) * net_units if cost else None
         contribution = values['wb_net_kopecks'] - cogs_total if cogs_total is not None else None
+        product_ads=sum(int(row.spend_kopecks or 0) for row in ads_by_nm.get(nm_id,[]))
+        ads_adjustment=max(0,product_ads-values['advertising_deduction_kopecks'])
+        product_tax=_tax_kopecks(values,tax_profile)
+        final_profit=(contribution-ads_adjustment-product_tax) if contribution is not None and finance_complete and advertising_complete and product_tax is not None else None
         if cost:
             confirmed_products += 1
         card = cards.get(nm_id) or {}
@@ -175,40 +253,50 @@ def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get
             'cogs_per_unit': _rubles(cost.cogs_kopecks) if cost else None,
             'cogs_total': _rubles(cogs_total) if cogs_total is not None else None,
             'contribution_before_tax_ads': _rubles(contribution) if contribution is not None else None,
+            'advertising_spend':_rubles(product_ads) if advertising_complete else None,
+            'advertising_already_in_finance':_rubles(values['advertising_deduction_kopecks']),
+            'tax_reserve':_rubles(product_tax) if product_tax is not None else None,
+            'final_profit':_rubles(final_profit) if final_profit is not None else None,
             'cost_confirmed_at': cost.confirmed_at if cost else None,
         })
-    products.sort(key=lambda item: (item['contribution_before_tax_ads'] is None, Decimal(item['contribution_before_tax_ads'] or '0'), item['nm_id']))
+    products.sort(key=lambda item: (item['final_profit'] is None, Decimal(item['final_profit'] or item['contribution_before_tax_ads'] or '0'), item['nm_id']))
     totals = _totals(lines)
     total_cogs = sum(int(cost_by_nm[nm_id].cogs_kopecks) * max(0, _totals(rows)['net_units']) for nm_id, rows in by_nm.items() if nm_id in cost_by_nm)
     all_costs_known = bool(by_nm) and confirmed_products == len(by_nm)
     contribution = totals['wb_net_kopecks'] - total_cogs if all_costs_known else None
+    advertising_spend=sum(int(row.spend_kopecks or 0) for row in advertising_lines)
+    advertising_revenue=sum(int(row.attributed_revenue_kopecks or 0) for row in advertising_lines)
+    advertising_adjustment=max(0,advertising_spend-totals['advertising_deduction_kopecks'])
+    tax_reserve=_tax_kopecks(totals,tax_profile)
+    complete=finance_complete and all_costs_known and advertising_complete and tax_profile is not None
+    final_profit=(contribution-advertising_adjustment-tax_reserve) if complete else None
     return {
         'store_id': store.id,
         'store_name': store.name,
         'marketplace': 'wildberries',
         'period': {'days': days, 'date_from': date_from, 'date_to': date_to},
         'sync': {
-            'started': bool(sync),
-            'coverage_matches': coverage_matches,
-            'complete': bool(coverage_matches and sync_payload.get('complete')),
-            'page_number': sync_payload.get('page_number'),
-            'last_snapshot_at': sync.created_at if sync else None,
-            'next_rrd_id': sync_payload.get('rrd_id'),
+            'finance':{'started':bool(finance_sync),'coverage_matches':finance_matches,'complete':finance_complete,'page_number':finance_payload.get('page_number'),'last_snapshot_at':finance_sync.created_at if finance_sync else None,'next_rrd_id':finance_payload.get('rrd_id')},
+            'advertising':{'started':bool(advertising_sync),'coverage_matches':advertising_matches,'complete':advertising_complete,'page_number':advertising_payload.get('page_number'),'last_snapshot_at':advertising_sync.created_at if advertising_sync else None,'campaign_count':advertising_payload.get('campaign_count')},
         },
         'source_line_count': len(lines),
+        'advertising_line_count':len(advertising_lines),
         'amounts': _public_amounts(totals),
         'cogs_total': _rubles(total_cogs) if all_costs_known else None,
         'contribution_before_tax_ads': _rubles(contribution) if contribution is not None else None,
-        'profit_status': 'partial',
-        'final_profit': None,
+        'advertising':{'spend':_rubles(advertising_spend) if advertising_complete else None,'attributed_revenue':_rubles(advertising_revenue) if advertising_complete else None,'already_in_finance_deductions':_rubles(totals['advertising_deduction_kopecks']),'additional_adjustment':_rubles(advertising_adjustment) if advertising_complete else None},
+        'tax':{'basis':tax_profile.basis if tax_profile else None,'rate_percent':f'{Decimal(tax_profile.rate_bps)/100:.2f}' if tax_profile else None,'reserve':_rubles(tax_reserve) if tax_reserve is not None else None,'note':tax_profile.note if tax_profile else '','confirmed_at':tax_profile.confirmed_at if tax_profile else None},
+        'profit_status': 'complete' if complete else 'partial',
+        'final_profit': _rubles(final_profit) if final_profit is not None else None,
         'completeness': {
-            'wb_finance': bool(coverage_matches and sync_payload.get('complete')),
+            'wb_finance': finance_complete,
             'cogs': all_costs_known,
-            'advertising': False,
-            'tax': False,
+            'advertising': advertising_complete,
+            'tax': tax_profile is not None,
             'unallocated_financial_lines': len(unallocated),
+            'unallocated_advertising_lines':len(unallocated_ads),
         },
-        'formula': 'WB к перечислению − логистика − эквайринг − хранение − приёмка − штрафы − удержания + доплаты − подтверждённая себестоимость',
-        'warning': 'Это вклад до налогов и рекламы, а не окончательная чистая прибыль.',
+        'formula': 'WB к перечислению − расходы WB − подтверждённая себестоимость − реклама (без двойного списания удержаний) − подтверждённый налоговый резерв',
+        'warning': 'Управленческий расчёт по подключённым источникам. Он не заменяет бухгалтерский и налоговый учёт.' if complete else 'Расчёт неполный: отсутствующие источники не заменяются прогнозами AI.',
         'products': products,
     }

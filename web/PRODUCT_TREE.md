@@ -23,7 +23,7 @@ flowchart TD
 ## 1. Entry journeys
 
 - **Beginner — live foundation:** photo analysis → confirmed facts → card draft → economics → preview → approved publication → hand-off to AI Director. Trial: 72 hours from first successful analysis, five successful cards, one user, one store.
-- **Existing seller — live foundation:** connect store → catalog/stocks/sales snapshots → products → Card Factory. Profit reconciliation and recommendation queue are next.
+- **Existing seller — live foundation:** connect store → catalog/stocks/sales snapshots → Profit Center → evidence-ranked Daily Director → Card Factory or operational action.
 - **Agency — planned:** organizations → clients → stores → roles → approvals → portfolio reporting → white label.
 
 ## 2. Core operating loop
@@ -47,7 +47,7 @@ AI coordinates the loop. Deterministic services remain authoritative for facts, 
 | AI Card Factory | **live foundation** | facts + AI persistence | Production observation of text and media writes |
 | Beginner Studio | **active** | trial + facts + Card Factory | Reuse stored visuals and publication pipeline |
 | Profit Center | **live foundation** | WB finance + advertising ledgers, confirmed COGS + tax | Production reconciliation and accounting-source costs |
-| AI Director | **planned P1** | healthy sources + Profit Center | Evidence-ranked recommendation queue |
+| AI Director | **live foundation** | healthy sources + Profit Center | Approval inbox, execution audit and measurement |
 | SEO, advertising, reviews | **planned P1** | Director + marketplace readers | Read-only insight before writes |
 | Reports and autopilot | **planned P1/P2** | audit + approvals + measurement | Bounded policies and rollback evidence |
 | Integration Hub | **planned P2** | canonical commerce model | 1C and MoySklad first |

@@ -174,7 +174,7 @@ The web product and future Android app use the same versioned API, permissions a
 | Trial and billing | Server entitlements, 3 days / 5 cards, store cap, paid-period lifecycle and idempotent provider-event core | Select RF/CIS payment provider and add its verified checkout/webhook adapter |
 | Card Factory | Grounded copy, saved versions, confirmed WB text and append-only media submission, post-write live verification | Production observation and failure telemetry |
 | Profit Center | WB finance + advertising ledgers, confirmed COGS + tax, complete/partial P&L by SKU/store | Production reconciliation and accounting-source COGS/tax |
-| AI Director | Product architecture defined | Evidence-backed recommendation queue |
+| AI Director | Deterministic evidence-backed queue implemented for WB profit, stock, content and source health | Approval inbox, execution audit and result measurement |
 | Advertising, reviews, claims | Planned | Read-only insights before approved writes |
 | Integration Hub | Architecture accepted | Canonical schema and 1C/MoySklad adapters |
 | Ozon and other marketplaces | Planned | Start after WB write path is safe |
@@ -194,6 +194,7 @@ The web product and future Android app use the same versioned API, permissions a
 
 1. Freshness/health monitoring for all data sources.
 2. Ranked profit, stock, content and operational recommendations.
+   **Implemented foundation:** store-scoped queue of up to ten actions, transparent priority formula, source freshness, observed-loss labelling, zero-cost rules provider and proposal-only safety mode.
 3. Approval inbox, bounded policies, audit and rollback measurement.
 4. Reviews, marketplace-condition changes, penalties and claims in read-only mode first.
 
@@ -249,3 +250,4 @@ A feature is done only when all applicable gates pass:
 - Trial grants one store and five successful grounded text cards for 72 hours from the first successful analysis. It excludes AI image generation, marketplace publication and autonomous writes. Expired projects and reports remain readable.
 - All capabilities are resolved by the backend from the latest subscription and period status. A browser redirect never activates paid access; only a signature-verified provider adapter or explicit platform-admin override may apply a paid transition. Provider events must be idempotent and auditable.
 - TROVENDI visual direction is deep graphite plus brand emerald. Gold is reserved for Premium, green/red/amber remain semantic, and AI glow is subtle and separate from the brand. The operating workspace is dark; beginner onboarding may use a lighter surface; Android follows the shared tokens and system theme.
+- Daily AI Director starts with a deterministic `Rules · Free` layer: it ranks only evidence present in WB snapshots and Profit Center, attributes zero AI cost, never invents expected revenue and never performs a marketplace write. Each action exposes urgency, confidence, risk, source and whether owner approval will be required. LLM interpretation is a later, budget-controlled layer over the same immutable evidence.

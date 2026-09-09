@@ -1,2 +1,4 @@
-import StudioSection from '../../components/StudioSection'
-export default function Page(){return <StudioSection eyebrow="AI DIRECTOR" title="План действий AI" description="Приоритеты по прибыли, рискам, SEO, рекламе и запасам. До подключения магазина здесь показываются только безопасные демо-сценарии." primary="Собрать план действий" cards={[{title:'Критические риски',text:'Убыточные SKU, резкий рост рекламных расходов и дефицит товара.',action:'Показать риски'},{title:'Рост прибыли',text:'Товары с достаточной маржой и запасом для безопасного масштабирования.',action:'Найти рост'},{title:'Контент и SEO',text:'Карточки, где улучшение текста и структуры может дать дополнительный трафик.',action:'Найти точки роста'}]}/>}
+import DailyDirectorWorkspace from '../../components/DailyDirectorWorkspace'
+import './director.css'
+
+export default function Page(){return <DailyDirectorWorkspace/>}

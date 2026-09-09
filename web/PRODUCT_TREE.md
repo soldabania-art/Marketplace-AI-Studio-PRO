@@ -52,6 +52,7 @@ AI coordinates the loop. Deterministic services remain authoritative for facts, 
 | Beginner Studio | **active** | trial + facts + Card Factory | Reuse stored visuals and publication pipeline |
 | Profit Center | **live foundation** | WB finance + advertising ledgers, confirmed COGS + tax | Production reconciliation and accounting-source costs |
 | AI Director | **live foundation** | healthy sources + Profit Center | Previewed marketplace-write executors and verified rollback |
+| AI Support Agent | **planned P1** | audit, store context + versioned knowledge | Incident intake and deterministic escalation first |
 | SEO, advertising, reviews | **planned P1** | Director + marketplace readers | Read-only insight before writes |
 | Reports and autopilot | **planned P1/P2** | audit + approvals + measurement | Bounded policies and rollback evidence |
 | Integration Hub | **planned P2** | canonical commerce model | 1C and MoySklad first |
@@ -78,9 +79,9 @@ AI coordinates the loop. Deterministic services remain authoritative for facts, 
 ## 5. Delivery spine
 
 1. **P0:** one safe WB vertical is implemented through provider-neutral billing entitlements; production observation and the selected payment adapter remain launch gates.
-2. **P1:** operational AI Director, health monitoring, approval inbox and read-only risk modules.
+2. **P1:** operational AI Director, health monitoring, approval inbox, incident-safe Support Agent and read-only risk modules.
 3. **P2:** Integration Hub, 1C/MoySklad, Ozon, Android and agency roles.
 4. **P3:** Kazakhstan cross-border pilot, Manufacturer OS foundation, omnichannel and wholesale workflows.
 5. **P4:** broader CIS routes, connector SDK, professional network/community and enterprise scale.
 
-This file is the hierarchy view. [`PRODUCT_ROADMAP.md`](./PRODUCT_ROADMAP.md) remains the delivery source of truth; [`EXPANSION_STRATEGY.md`](./EXPANSION_STRATEGY.md) defines the accepted discovery architecture.
+This file is the hierarchy view. [`PRODUCT_ROADMAP.md`](./PRODUCT_ROADMAP.md) remains the delivery source of truth; [`SUPPORT_AGENT_ARCHITECTURE.md`](./SUPPORT_AGENT_ARCHITECTURE.md) defines support safety; [`EXPANSION_STRATEGY.md`](./EXPANSION_STRATEGY.md) defines the accepted discovery architecture.

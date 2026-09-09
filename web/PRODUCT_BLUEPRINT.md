@@ -58,6 +58,8 @@ Beginner language must avoid marketplace jargon or explain it at the point of us
 16. Settings
 17. Agency — visible for agency workspaces
 
+AI Support is available contextually from every module rather than occupying a primary operating-navigation slot. High-risk incident intake and emergency controls remain visually distinct from ordinary help chat.
+
 ## Global Store Context
 All seller-facing modules operate against an explicit selected Store. A Store belongs to a Workspace/Organization and can have multiple marketplace connections.
 

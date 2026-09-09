@@ -175,6 +175,7 @@ The web product and future Android app use the same versioned API, permissions a
 | Card Factory | Grounded copy, saved versions, confirmed WB text and append-only media submission, post-write live verification | Production observation and failure telemetry |
 | Profit Center | WB finance + advertising ledgers, confirmed COGS + tax, complete/partial P&L by SKU/store | Production reconciliation and accounting-source COGS/tax |
 | AI Director | Evidence queue, durable decisions, audit, STOP, read-only executors and source-based measurement implemented | Bounded marketplace-write executors and verified rollback |
+| AI Support Agent | Architecture accepted | Incident intake, forced escalation and evidence bundle before general chat |
 | Advertising, reviews, claims | Planned | Read-only insights before approved writes |
 | Integration Hub | Architecture accepted | Canonical schema and 1C/MoySklad adapters |
 | Ozon and other marketplaces | Planned | Start after WB write path is safe |
@@ -203,6 +204,7 @@ The web product and future Android app use the same versioned API, permissions a
    **Implemented foundation:** immutable recommendation runs, owner/admin approve-or-reject decisions, operational audit events and store-level emergency STOP. Approval is deliberately separated from execution. Marketplace-write executors and verified rollback remain the next gate.
    **Implemented safe executor:** only allowlisted WB read synchronizations can run from Director. Profit, stock and content recommendations expose structured baselines and can be measured again only against fresh compatible sources. Marketplace writes remain blocked; a missing recommendation is reported as “no longer detected” without inventing a numeric result.
 4. Reviews, marketplace-condition changes, penalties and claims in read-only mode first.
+5. Incident-safe AI Support Agent: deterministic escalation, idempotent ticket, redacted evidence and authenticated emergency STOP entry point before product-help RAG.
 
 ### P2 — expand the operating system
 
@@ -271,3 +273,5 @@ A feature is done only when all applicable gates pass:
 - Cross-border CIS, Manufacturer OS, omnichannel wholesale and professional community are accepted expansion directions, not current production claims. Their architecture and validation gates are recorded in `EXPANSION_STRATEGY.md`; the safe WB vertical and Integration Hub remain prerequisites.
 - Kazakhstan read-only economics is the first cross-border candidate. It becomes an MVP commitment only after seller eligibility, partner contracts, official/contracted data access, tax/customs treatment and reconciliation documents are verified. AI never authors legal or tax rules.
 - The partner seller-of-record network, wholesale sales Hub and professional community are separate security domains and products. Store economics or matching data may enter community features only through granular opt-in and protected aggregation.
+- AI Support Agent is separate from Daily AI Director and receives no marketplace-write permissions. Financial-loss, unexpected-write, security, personal-data, refund and legal cases are forced into an idempotent human-review ticket; an LLM may never downgrade this route.
+- Support answers use approved, versioned and expiring knowledge with visible citations. Conversations do not automatically train a model or become shared knowledge, and the product never invents an SLA, marketplace rule or currently unavailable TROVENDI capability.

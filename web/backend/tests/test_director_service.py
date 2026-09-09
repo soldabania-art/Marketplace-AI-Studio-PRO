@@ -1,4 +1,4 @@
-from app.director_service import action, build_director
+from app.director_service import action, build_director, compare_measurement
 
 
 def live_sources():
@@ -47,3 +47,18 @@ def test_missing_sources_become_explainable_actions_without_ai_guessing():
     assert len(result['actions']) == 7
     assert all(item['provider']['label'] == 'Rules · Free' for item in result['actions'])
     assert result['automation']['writes_enabled'] is False
+    source_action = next(item for item in result['actions'] if item['id'] == 'source:stocks')
+    assert source_action['can_execute'] is True
+    assert source_action['execution_type'] == 'read_sync'
+
+
+def test_measurement_compares_same_metric_without_inventing_resolved_value():
+    improved = compare_measurement(
+        {'metric': 'profit_kopecks', 'baseline': -20000, 'better_when': 'higher'},
+        {'metric': 'profit_kopecks', 'baseline': -5000, 'better_when': 'higher'},
+    )
+    assert improved['outcome'] == 'improved'
+    assert improved['delta'] == 15000
+    resolved = compare_measurement({'metric': 'content_issue_count', 'baseline': 2, 'better_when': 'lower'}, None)
+    assert resolved['outcome'] == 'no_longer_detected'
+    assert resolved['current'] is None

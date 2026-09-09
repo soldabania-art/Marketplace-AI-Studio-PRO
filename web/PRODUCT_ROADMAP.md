@@ -174,7 +174,7 @@ The web product and future Android app use the same versioned API, permissions a
 | Trial and billing | Server entitlements, 3 days / 5 cards, store cap, paid-period lifecycle and idempotent provider-event core | Select RF/CIS payment provider and add its verified checkout/webhook adapter |
 | Card Factory | Grounded copy, saved versions, confirmed WB text and append-only media submission, post-write live verification | Production observation and failure telemetry |
 | Profit Center | WB finance + advertising ledgers, confirmed COGS + tax, complete/partial P&L by SKU/store | Production reconciliation and accounting-source COGS/tax |
-| AI Director | Evidence-backed queue, durable decisions, audit and global STOP implemented | Bounded executors, automatic measurement and rollback |
+| AI Director | Evidence queue, durable decisions, audit, STOP, read-only executors and source-based measurement implemented | Bounded marketplace-write executors and verified rollback |
 | Advertising, reviews, claims | Planned | Read-only insights before approved writes |
 | Integration Hub | Architecture accepted | Canonical schema and 1C/MoySklad adapters |
 | Ozon and other marketplaces | Planned | Start after WB write path is safe |
@@ -196,7 +196,8 @@ The web product and future Android app use the same versioned API, permissions a
 2. Ranked profit, stock, content and operational recommendations.
    **Implemented foundation:** store-scoped queue of up to ten actions, transparent priority formula, source freshness, observed-loss labelling, zero-cost rules provider and proposal-only safety mode.
 3. Approval inbox, bounded policies, audit and rollback measurement.
-   **Implemented foundation:** immutable recommendation runs, owner/admin approve-or-reject decisions, operational audit events and store-level emergency STOP. Approval is deliberately separated from execution. Executors, automated outcome measurement and rollback remain the next gate.
+   **Implemented foundation:** immutable recommendation runs, owner/admin approve-or-reject decisions, operational audit events and store-level emergency STOP. Approval is deliberately separated from execution. Marketplace-write executors and verified rollback remain the next gate.
+   **Implemented safe executor:** only allowlisted WB read synchronizations can run from Director. Profit, stock and content recommendations expose structured baselines and can be measured again only against fresh compatible sources. Marketplace writes remain blocked; a missing recommendation is reported as “no longer detected” without inventing a numeric result.
 4. Reviews, marketplace-condition changes, penalties and claims in read-only mode first.
 
 ### P2 — expand the operating system
@@ -253,3 +254,4 @@ A feature is done only when all applicable gates pass:
 - TROVENDI visual direction is deep graphite plus brand emerald. Gold is reserved for Premium, green/red/amber remain semantic, and AI glow is subtle and separate from the brand. The operating workspace is dark; beginner onboarding may use a lighter surface; Android follows the shared tokens and system theme.
 - Daily AI Director starts with a deterministic `Rules · Free` layer: it ranks only evidence present in WB snapshots and Profit Center, attributes zero AI cost, never invents expected revenue and never performs a marketplace write. Each action exposes urgency, confidence, risk, source and whether owner approval will be required. LLM interpretation is a later, budget-controlled layer over the same immutable evidence.
 - Director recommendations are persisted by source-and-action fingerprint so refreshing the screen does not create duplicate decisions. An owner/admin decision is append-only for that recommendation run and records an audit event; it never starts an external write. Store-level STOP is immediate and reversible only with an explicit `ВОЗОБНОВИТЬ TROVENDI` confirmation. Every future executor must re-check this control before writing.
+- The first Director executor is intentionally read-only and allowlisted to WB analytics, finance and advertising synchronization jobs. It records job IDs and audit evidence. Outcome measurement compares the original structured metric with a fresh metric of the same type; incompatible or stale sources block measurement. No rollback is offered for read-only work because no marketplace state was changed.

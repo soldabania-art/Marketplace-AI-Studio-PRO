@@ -21,11 +21,34 @@ def _impact_weight(observed_effect_kopecks: int | None) -> int:
     return 10 if amount > 0 else 0
 
 
+def compare_measurement(baseline: dict | None, current: dict | None) -> dict:
+    if not baseline:
+        raise ValueError('У рекомендации нет измеримой исходной метрики.')
+    if current is None:
+        return {'metric': baseline['metric'], 'baseline': baseline.get('baseline'), 'current': None,
+                'delta': None, 'outcome': 'no_longer_detected',
+                'explanation': 'Проблема больше не определяется актуальными правилами. Числовой эффект не выдумывается.'}
+    if baseline.get('metric') != current.get('metric'):
+        raise ValueError('Текущая метрика несовместима с исходной рекомендацией.')
+    before, after, direction = baseline.get('baseline'), current.get('baseline'), baseline.get('better_when')
+    if baseline['metric'] == 'source_state':
+        improved = after == direction and before != after
+        return {'metric': baseline['metric'], 'baseline': before, 'current': after, 'delta': None,
+                'outcome': 'improved' if improved else ('unchanged' if before == after else 'changed'),
+                'explanation': 'Источник актуален.' if improved else 'Состояние источника ещё не стало актуальным.'}
+    delta = after - before
+    improved = delta > 0 if direction == 'higher' else delta < 0
+    return {'metric': baseline['metric'], 'baseline': before, 'current': after, 'delta': delta,
+            'outcome': 'improved' if improved else ('unchanged' if delta == 0 else 'worse'),
+            'explanation': 'Метрика улучшилась.' if improved else ('Метрика не изменилась.' if delta == 0 else 'Метрика ухудшилась.')}
+
+
 def action(*, action_id: str, kind: str, title: str, reason: str, evidence: str,
            href: str, urgency: str = 'medium', confidence: str = 'high',
            risk: str = 'low', requires_approval: bool = False,
            observed_effect_kopecks: int | None = None, effect_scope: str = 'not_calculated',
-           source_refs: list[str] | None = None) -> dict[str, Any]:
+           source_refs: list[str] | None = None, can_execute: bool = False,
+           execution_type: str | None = None, measurement: dict | None = None) -> dict[str, Any]:
     score = max(0, min(100, URGENCY_WEIGHT[urgency] + CONFIDENCE_WEIGHT[confidence]
                        + _impact_weight(observed_effect_kopecks) - RISK_PENALTY[risk]))
     return {
@@ -33,9 +56,11 @@ def action(*, action_id: str, kind: str, title: str, reason: str, evidence: str,
         'evidence': evidence, 'href': href, 'priority_score': score,
         'priority_reason': f'Срочность {urgency} · уверенность {confidence} · риск {risk}',
         'urgency': urgency, 'confidence': confidence, 'risk': risk,
-        'requires_approval': requires_approval, 'can_execute': False,
+        'requires_approval': requires_approval, 'can_execute': can_execute,
+        'execution_type': execution_type,
         'status': 'proposed', 'observed_effect_kopecks': observed_effect_kopecks,
         'effect_scope': effect_scope, 'source_refs': source_refs or [],
+        'measurement': measurement,
         'provider': {'tier': 'free', 'label': 'Rules · Free', 'estimated_cost_microusd': 0},
     }
 
@@ -61,7 +86,8 @@ def build_director(*, store_id: str, store_name: str, sources: list[dict],
                 reason='Без этого источника директор не подменяет факты прогнозом.',
                 evidence=state_label, href=href,
                 urgency='high' if name in {'stocks', 'finance_realization_sync'} else 'medium',
-                source_refs=[name],
+                source_refs=[name], can_execute=True, execution_type='read_sync',
+                measurement={'metric': 'source_state', 'baseline': source['state'], 'better_when': 'live'},
             ))
     completeness = profit.get('completeness') or {}
     if not completeness.get('cogs'):
@@ -91,6 +117,7 @@ def build_director(*, store_id: str, store_name: str, sources: list[dict],
                 href='/profit', urgency='critical', confidence='high' if complete else 'medium',
                 risk='medium', requires_approval=True, observed_effect_kopecks=value,
                 effect_scope='observed_final_profit_30d' if complete else 'observed_partial_contribution_30d',
+                measurement={'metric': 'profit_kopecks', 'baseline': value, 'better_when': 'higher'},
                 source_refs=['finance_realization_sync', 'product_cost_profiles'],
             ))
     for fact in supply_facts:
@@ -106,6 +133,7 @@ def build_director(*, store_id: str, store_name: str, sources: list[dict],
                 evidence=f"Остаток {stock} шт. · средний спрос {velocity:.2f} шт./день · запас {days_left:.1f} дн.",
                 href='/products', urgency='critical' if stock == 0 else 'high',
                 risk='medium', requires_approval=True, source_refs=['stocks', 'sales_velocity_7d'],
+                measurement={'metric': 'days_of_supply', 'baseline': round(days_left, 3), 'better_when': 'higher'},
             ))
     for card in catalog_items:
         nm_id = int(card.get('nm_id') or 0); issues = []
@@ -119,6 +147,7 @@ def build_director(*, store_id: str, store_name: str, sources: list[dict],
                 reason='Заполните только подтверждённые факты карточки перед генерацией и публикацией.',
                 evidence='; '.join(issues).capitalize() + '.', href=f'/card-factory?nm_id={nm_id}',
                 risk='medium', requires_approval=True, source_refs=['catalog'],
+                measurement={'metric': 'content_issue_count', 'baseline': len(issues), 'better_when': 'lower'},
             ))
     actions.sort(key=lambda item: (-item['priority_score'], item['id'])); actions = actions[:10]
     source_states = {item['state'] for item in sources}

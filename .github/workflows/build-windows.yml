@@ -4,6 +4,13 @@ on:
   workflow_dispatch:
   push:
     branches: [ main ]
+    paths:
+      - '*.py'
+      - '*.iss'
+      - 'requirements.txt'
+      - 'studio/**'
+      - 'tests/**'
+      - '.github/workflows/build-windows.yml'
 
 permissions:
   contents: write
@@ -14,10 +21,10 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: 'pip'
@@ -88,7 +95,7 @@ jobs:
           if (!(Test-Path 'installer-output/Marketplace_AI_Studio_PRO_Setup.exe')) { throw 'Installer was not created' }
 
       - name: Upload ready installer artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Marketplace_AI_Studio_PRO_Setup
           path: installer-output/Marketplace_AI_Studio_PRO_Setup.exe

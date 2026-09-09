@@ -228,6 +228,7 @@ A feature is done only when all applicable gates pass:
 - Database migration works from the previous production schema.
 - Production build and automated tests pass.
 - After every GitHub upload, Vercel deployment status is checked, changed routes are opened, and failures are corrected before the work is reported complete.
+- CI uses current Node.js 24-compatible official GitHub Actions. Web changes run Web Cloud; the Windows installer runs only for desktop source, dependency, installer or workflow changes, and remains manually runnable.
 
 ## 12. Product decision log
 
@@ -255,3 +256,4 @@ A feature is done only when all applicable gates pass:
 - Daily AI Director starts with a deterministic `Rules · Free` layer: it ranks only evidence present in WB snapshots and Profit Center, attributes zero AI cost, never invents expected revenue and never performs a marketplace write. Each action exposes urgency, confidence, risk, source and whether owner approval will be required. LLM interpretation is a later, budget-controlled layer over the same immutable evidence.
 - Director recommendations are persisted by source-and-action fingerprint so refreshing the screen does not create duplicate decisions. An owner/admin decision is append-only for that recommendation run and records an audit event; it never starts an external write. Store-level STOP is immediate and reversible only with an explicit `ВОЗОБНОВИТЬ TROVENDI` confirmation. Every future executor must re-check this control before writing.
 - The first Director executor is intentionally read-only and allowlisted to WB analytics, finance and advertising synchronization jobs. It records job IDs and audit evidence. Outcome measurement compares the original structured metric with a fresh metric of the same type; incompatible or stale sources block measurement. No rollback is offered for read-only work because no marketplace state was changed.
+- Windows installer CI is path-scoped to the desktop application (`app.py`, `studio`, desktop tests, requirements and installer definition). Web-only and documentation-only commits do not spend a Windows runner; `workflow_dispatch` remains available for an explicit release build.

@@ -15,9 +15,13 @@ flowchart TD
     C --> P["Profit and products"]
     C --> F["Card Factory and SEO"]
     C --> O["Ads, reviews, stock, reports"]
+    C --> X["Expansion platform"]
     I --> WB["Wildberries first"]
     I --> AC["Accounting RF/CIS"]
     I --> OZ["Ozon and other marketplaces"]
+    X --> CB["Cross-border CIS"]
+    X --> MF["Manufacturer OS"]
+    X --> NW["Wholesale and community"]
 ```
 
 ## 1. Entry journeys
@@ -52,6 +56,10 @@ AI coordinates the loop. Deterministic services remain authoritative for facts, 
 | Reports and autopilot | **planned P1/P2** | audit + approvals + measurement | Bounded policies and rollback evidence |
 | Integration Hub | **planned P2** | canonical commerce model | 1C and MoySklad first |
 | Android/PWA | **foundation** | versioned API + event model | Alerts, camera, approve/reject, emergency stop |
+| Cross-border CIS | **discovery** | Integration Hub + reconciled Profit Center | Kazakhstan read-only economics pilot |
+| Manufacturer OS | **planned P3** | canonical products + accounting sources | Versioned BOM and production costing |
+| Omnichannel / Wholesale | **planned P3** | inventory ledger + channel connectors | Reservation-safe stock and quote MVP |
+| Professional community | **planned P4** | active verified users + moderation | Guides, verified profiles and partnership requests |
 
 ## 4. Integration tree
 
@@ -72,6 +80,7 @@ AI coordinates the loop. Deterministic services remain authoritative for facts, 
 1. **P0:** one safe WB vertical is implemented through provider-neutral billing entitlements; production observation and the selected payment adapter remain launch gates.
 2. **P1:** operational AI Director, health monitoring, approval inbox and read-only risk modules.
 3. **P2:** Integration Hub, 1C/MoySklad, Ozon, Android and agency roles.
-4. **P3:** CIS breadth, connector SDK, more marketplaces and enterprise scale.
+4. **P3:** Kazakhstan cross-border pilot, Manufacturer OS foundation, omnichannel and wholesale workflows.
+5. **P4:** broader CIS routes, connector SDK, professional network/community and enterprise scale.
 
-This file is the hierarchy view. [`PRODUCT_ROADMAP.md`](./PRODUCT_ROADMAP.md) remains the delivery source of truth.
+This file is the hierarchy view. [`PRODUCT_ROADMAP.md`](./PRODUCT_ROADMAP.md) remains the delivery source of truth; [`EXPANSION_STRATEGY.md`](./EXPANSION_STRATEGY.md) defines the accepted discovery architecture.

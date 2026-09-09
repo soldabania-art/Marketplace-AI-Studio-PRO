@@ -179,6 +179,10 @@ The web product and future Android app use the same versioned API, permissions a
 | Integration Hub | Architecture accepted | Canonical schema and 1C/MoySklad adapters |
 | Ozon and other marketplaces | Planned | Start after WB write path is safe |
 | Android and push | API/event foundation required now | Native approval and alert MVP |
+| Cross-border CIS | Accepted for discovery | Validate Kazakhstan partner/API/legal route, then read-only economics MVP |
+| Manufacturer OS | Planned P3 | Versioned BOM, production costing and accounting-source boundaries |
+| Omnichannel / Wholesale | Planned P3 | Canonical offer, reservation-safe inventory and quote MVP |
+| Professional community | Planned P4 | Launch only with verified users, moderation and privacy controls |
 
 ## 10. Delivery order
 
@@ -208,12 +212,19 @@ The web product and future Android app use the same versioned API, permissions a
 4. Push service and Android approval/alert MVP.
 5. Agency portfolio and client permissions.
 
-### P3 — broad coverage and scale
+### P3 — expansion pilots
 
-1. BAS/localized 1C and demand-led CIS connectors.
+1. Kazakhstan cross-border discovery and read-only multi-currency economics pilot.
+2. Manufacturer BOM and production-cost foundation over canonical products.
+3. Reservation-safe omnichannel inventory and wholesale quote MVP.
+4. BAS/localized 1C and demand-led CIS connectors.
+
+### P4 — network and enterprise scale
+
+1. Additional verified cross-border routes and marketplaces.
 2. Universal connector SDK and partner certification.
-3. Additional marketplaces and enterprise accounting systems.
-4. Advanced experiments, external traffic and white-label automation.
+3. Verified manufacturer/distributor network and moderated professional community.
+4. Advanced experiments, external traffic, white-label and enterprise accounting systems.
 
 ## 11. Definition of done
 
@@ -257,3 +268,6 @@ A feature is done only when all applicable gates pass:
 - Director recommendations are persisted by source-and-action fingerprint so refreshing the screen does not create duplicate decisions. An owner/admin decision is append-only for that recommendation run and records an audit event; it never starts an external write. Store-level STOP is immediate and reversible only with an explicit `ВОЗОБНОВИТЬ TROVENDI` confirmation. Every future executor must re-check this control before writing.
 - The first Director executor is intentionally read-only and allowlisted to WB analytics, finance and advertising synchronization jobs. It records job IDs and audit evidence. Outcome measurement compares the original structured metric with a fresh metric of the same type; incompatible or stale sources block measurement. No rollback is offered for read-only work because no marketplace state was changed.
 - Windows installer CI is path-scoped to the desktop application (`app.py`, `studio`, desktop tests, requirements and installer definition). Web-only and documentation-only commits do not spend a Windows runner; `workflow_dispatch` remains available for an explicit release build.
+- Cross-border CIS, Manufacturer OS, omnichannel wholesale and professional community are accepted expansion directions, not current production claims. Their architecture and validation gates are recorded in `EXPANSION_STRATEGY.md`; the safe WB vertical and Integration Hub remain prerequisites.
+- Kazakhstan read-only economics is the first cross-border candidate. It becomes an MVP commitment only after seller eligibility, partner contracts, official/contracted data access, tax/customs treatment and reconciliation documents are verified. AI never authors legal or tax rules.
+- The partner seller-of-record network, wholesale sales Hub and professional community are separate security domains and products. Store economics or matching data may enter community features only through granular opt-in and protected aggregation.

@@ -1,6 +1,8 @@
 # TROVENDI — AI Commerce OS
 
 > Living execution map: [`PRODUCT_ROADMAP.md`](./PRODUCT_ROADMAP.md). Every accepted product decision, integration and delivery gate must be recorded there before implementation is considered planned.
+>
+> Expansion architecture: [`EXPANSION_STRATEGY.md`](./EXPANSION_STRATEGY.md) records the discovery gates for cross-border CIS, Manufacturer OS, omnichannel wholesale and the professional network.
 
 ## Product direction
 TROVENDI is a web-first AI operating system for marketplace sellers, starting with Wildberries and Ozon and designed for later expansion to Yandex Market, Megamarket, AliExpress and other verified integrations.

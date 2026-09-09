@@ -52,10 +52,10 @@ AI coordinates the work, but deterministic services remain authoritative for mon
 - Failed AI calls do not consume a card and do not start the clock.
 - Existing projects remain readable after expiration; new AI work becomes read-only.
 - No advertising autopilot, automatic price changes, automatic publication or bulk external writes.
-- Target package: one complete showcase card with an image pack plus four standard cards. Image-pack entitlement activates only when durable generated-image storage is ready.
+- Trial includes photo analysis, grounded copy, SEO, visual plan and unit economics. AI image generation, marketplace publication and autonomous writes require a paid entitlement.
 - Paid subscription removes trial limits according to the selected plan.
 
-Current implementation includes the 72-hour clock, five-success quota, store-bound signed analysis, persisted projects and read-only enforcement. Durable public image storage is connected for Card Factory; Beginner Studio reuse and official publication remain delivery gates.
+Current implementation includes the 72-hour clock, five-success quota, store-bound signed analysis, persisted projects, read-only enforcement and a central server entitlement snapshot. Durable public image storage is connected for paid Card Factory access; Beginner Studio reuse remains a delivery gate.
 
 ## 4. Seller and agency journeys
 
@@ -171,7 +171,7 @@ The web product and future Android app use the same versioned API, permissions a
 | WB snapshots | Catalog, stocks and sales velocity implemented | Reconciliation, freshness SLO and failure UI |
 | Products | Reads real WB catalog facts | Provenance and cross-source identity mapping |
 | Beginner Studio | Photo analysis, confirmed facts, draft and saved project implemented | Durable image assets and publication |
-| Trial | 3 days / 5 successful cards enforced server-side | Billing transition and entitlement tests |
+| Trial and billing | Server entitlements, 3 days / 5 cards, store cap, paid-period lifecycle and idempotent provider-event core | Select RF/CIS payment provider and add its verified checkout/webhook adapter |
 | Card Factory | Grounded copy, saved versions, confirmed WB text and append-only media submission, post-write live verification | Production observation and failure telemetry |
 | Profit Center | WB finance + advertising ledgers, confirmed COGS + tax, complete/partial P&L by SKU/store | Production reconciliation and accounting-source COGS/tax |
 | AI Director | Product architecture defined | Evidence-backed recommendation queue |
@@ -188,7 +188,7 @@ The web product and future Android app use the same versioned API, permissions a
 2. Persist generated images and generation metadata. **Implemented for Card Factory; Beginner Studio reuse remains.**
 3. Add validation preview and confirmed WB publication. **Implemented for title/description and separately approved image upload, each with post-write verification and no automatic retry.**
 4. Complete source-based Profit Center reconciliation. **Implemented foundation: WB finance and advertising lines, deduplication, confirmed COGS and tax profile, double-charge protection and completeness-gated profit. Production reconciliation remains an observation gate.**
-5. Add billing entitlements and trial-to-paid transition.
+5. Add billing entitlements and trial-to-paid transition. **Implemented provider-neutral foundation: server capabilities, trial/paid/read-only states, period end, cancellation intent, store cap and idempotent verified-event application. Provider checkout/webhook adapter remains blocked until the RF/CIS provider is selected and contracted.**
 
 ### P1 — make AI Director operational
 
@@ -246,3 +246,6 @@ A feature is done only when all applicable gates pass:
 - WB advertising costs use the current read-only `GET /adv/v3/fullstats` path. Campaigns are processed in batches of up to 50 and date ranges in chunks of up to 31 days through the shared per-token limiter; every stored daily SKU line retains source evidence.
 - A tax value enters Profit Center only after an owner/admin confirms the rate and whether its base is gross WB sales or WB payout. It is labelled a management reserve and never presented as a filed tax calculation.
 - Profit Center reconciles advertising costs against finance-report deductions marked as advertising so the store total does not subtract the same WB promotion charge twice. A complete profit is exposed only when finance, advertising, COGS and tax gates are all complete.
+- Trial grants one store and five successful grounded text cards for 72 hours from the first successful analysis. It excludes AI image generation, marketplace publication and autonomous writes. Expired projects and reports remain readable.
+- All capabilities are resolved by the backend from the latest subscription and period status. A browser redirect never activates paid access; only a signature-verified provider adapter or explicit platform-admin override may apply a paid transition. Provider events must be idempotent and auditable.
+- TROVENDI visual direction is deep graphite plus brand emerald. Gold is reserved for Premium, green/red/amber remain semantic, and AI glow is subtle and separate from the brand. The operating workspace is dark; beginner onboarding may use a lighter surface; Android follows the shared tokens and system theme.

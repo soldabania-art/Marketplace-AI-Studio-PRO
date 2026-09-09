@@ -62,6 +62,32 @@ def test_register_login_and_me_contract():
     assert login.json()["access_token"]
 
 
+def test_trial_subscription_exposes_server_entitlements_and_blocks_second_store():
+    _, _, token = _register_user()
+    headers = {"Authorization": f"Bearer {token}"}
+    stores = client.get("/api/v1/stores", headers=headers).json()
+    workspace_id = stores["workspaces"][0]["id"]
+    billing = client.get("/api/v1/billing/subscription", headers=headers)
+    assert billing.status_code == 200
+    assert billing.json()["entitlements"]["stores_limit"] == 1
+    assert billing.json()["entitlements"]["marketplace_publication"] is False
+    second = client.post("/api/v1/stores", headers=headers, json={"workspace_id": workspace_id, "name": "Второй магазин"})
+    assert second.status_code == 402
+
+
+def test_checkout_never_activates_access_without_server_provider_confirmation():
+    _, _, token = _register_user()
+    response = client.post(
+        "/api/v1/billing/checkout",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"plan_code": "pro", "accepted_terms": True},
+    )
+    assert response.status_code == 503
+    billing = client.get("/api/v1/billing/subscription", headers={"Authorization": f"Bearer {token}"}).json()
+    assert billing["plan"] == "trial"
+    assert billing["subscription_status"] == "trial"
+
+
 def test_session_can_be_listed_and_revoked():
     _, _, token = _register_user()
     headers = {"Authorization":f"Bearer {token}"}

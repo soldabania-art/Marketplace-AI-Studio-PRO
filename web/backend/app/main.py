@@ -34,19 +34,19 @@ async def lifespan(app:FastAPI):
     finally:
         if stop_event is not None and monitor_task is not None: stop_event.set(); await monitor_task
 
-app=FastAPI(title=settings.app_name,version='0.19.0',description='TROVENDI backend',lifespan=lifespan)
+app=FastAPI(title=settings.app_name,version='0.20.0',description='TROVENDI backend',lifespan=lifespan)
 allowed_origins={'http://localhost:3000','https://trovendi.ru','https://www.trovendi.ru','https://marketplace-ai-studio-pro.vercel.app',settings.frontend_url.rstrip('/')}
 app.add_middleware(CORSMiddleware,allow_origins=sorted(x for x in allowed_origins if x),allow_credentials=True,allow_methods=['GET','POST','PATCH','DELETE'],allow_headers=['*'])
 
 @app.get('/health',tags=['system'])
-def health(): return {'status':'ok','service':'marketplace-ai-studio-api','version':'0.19.0','environment':settings.environment,'embedded_fbo_monitor':settings.run_fbo_monitor_in_api}
+def health(): return {'status':'ok','service':'marketplace-ai-studio-api','version':'0.20.0','environment':settings.environment,'embedded_fbo_monitor':settings.run_fbo_monitor_in_api}
 
 @app.get('/ready',tags=['system'])
 def ready():
     try:
         with engine.connect() as connection: connection.execute(text('SELECT 1'))
     except Exception as exc: raise HTTPException(status_code=503,detail='Database is not ready') from exc
-    return {'status':'ready','database':'ok','version':'0.19.0'}
+    return {'status':'ready','database':'ok','version':'0.20.0'}
 
 app.include_router(account_router,prefix='/api/v1',tags=['account'])
 app.include_router(admin_router,prefix='/api/v1',tags=['admin'])

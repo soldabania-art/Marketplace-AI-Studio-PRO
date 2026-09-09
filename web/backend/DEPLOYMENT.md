@@ -30,6 +30,7 @@ TROVENDI uses one container image with separate process roles.
 - `MARKETPLACE_JWT_SECRET` — long random secret, never committed
 - `MARKETPLACE_MARKETPLACE_TOKEN_KEY` — temporary Fernet provider key until managed SecretProvider/KMS rollout
 - `MARKETPLACE_FRONTEND_URL`
+- `MARKETPLACE_BILLING_PROVIDER` — remains `not_configured` until a contracted RF/CIS provider adapter verifies checkout and webhook events server-side
 - `MARKETPLACE_OPENAI_API_KEY` — server-only key for AI Card Factory; never expose it to the frontend
 - `MARKETPLACE_OPENAI_MODEL` — optional model override (defaults to `gpt-5.6-terra`)
 - `MARKETPLACE_OPENAI_IMAGE_MODEL` — image editor (defaults to economical `gpt-image-1-mini`)

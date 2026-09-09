@@ -1,10 +1,10 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Subscription, SubscriptionStatus
+from .billing_service import entitlement_snapshot, latest_subscription
+from .models import Subscription
 
 TRIAL_DAYS = 3
 
@@ -16,39 +16,15 @@ def _utc(value):
 
 
 def workspace_subscription(db: Session, workspace_id: str, lock: bool = False) -> Subscription:
-    statement = select(Subscription).where(Subscription.workspace_id == workspace_id).order_by(Subscription.created_at.desc())
-    if lock:
-        statement = statement.with_for_update()
-    subscription = db.scalar(statement)
-    if subscription is None:
-        raise HTTPException(402, "Для рабочего пространства не найден тариф.")
-    return subscription
+    return latest_subscription(db, workspace_id, lock=lock)
 
 
 def trial_snapshot(subscription: Subscription) -> dict:
-    if subscription.status == SubscriptionStatus.active and subscription.plan_code != "trial":
-        return {"plan": subscription.plan_code, "status": "active", "unlimited": True}
-    now = datetime.now(timezone.utc)
-    started = _utc(subscription.trial_started_at)
-    expires = _utc(subscription.trial_expires_at)
-    used = subscription.trial_ai_cards_used or 0
-    limit = subscription.trial_ai_cards_limit or 5
-    status = "not_started"
-    if started:
-        status = "expired" if expires and expires <= now else "active"
-    if used >= limit and status != "expired":
-        status = "exhausted"
+    snapshot = entitlement_snapshot(subscription)
     return {
-        "plan": "trial",
-        "status": status,
-        "unlimited": False,
-        "started_at": started,
-        "expires_at": expires,
-        "cards_used": used,
-        "cards_limit": limit,
-        "cards_remaining": max(0, limit - used),
-        "duration_days": TRIAL_DAYS,
-        "read_only": status in {"expired", "exhausted"},
+        **snapshot,
+        "status": snapshot["access_status"],
+        "unlimited": snapshot["plan"] != "trial" and not snapshot["read_only"],
     }
 
 

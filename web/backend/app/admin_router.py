@@ -2,13 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .account_router import PLANS
+from .billing_service import PLAN_CATALOG
+from .config import get_settings
 from .db import get_db
 from .models import Membership, Subscription, SubscriptionStatus, User, Workspace
 from .security import require_platform_admin
 
 router = APIRouter()
-VALID_PLANS = {plan["code"] for plan in PLANS}
+VALID_PLANS = set(PLAN_CATALOG)
 
 
 def _latest_subscription(db: Session, workspace_id: str) -> Subscription | None:
@@ -36,7 +37,7 @@ def summary(_: User = Depends(require_platform_admin), db: Session = Depends(get
         "workspaces": workspaces,
         "active_subscriptions": active_subscriptions,
         "trial_subscriptions": trial_subscriptions,
-        "billing_provider": "not_configured",
+        "billing_provider": get_settings().billing_provider,
     }
 
 
@@ -92,5 +93,9 @@ def set_workspace_plan(workspace_id: str, plan_code: str, _: User = Depends(requ
         subscription.plan_code = plan_code
         subscription.status = target_status
         subscription.provider = subscription.provider or "admin_override"
+    subscription.current_period_started_at = None
+    subscription.current_period_expires_at = None
+    subscription.cancel_at_period_end = False
+    subscription.canceled_at = None
     db.commit()
     return {"workspace_id": workspace_id, "plan_code": plan_code, "status": target_status.value}

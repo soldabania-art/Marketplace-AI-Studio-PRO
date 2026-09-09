@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from .ai_card_factory import build_fact_set, generate_grounded_copy, generate_product_visual
 from .ai_generation_service import begin_generation, complete_generation, fail_generation, public_generation, stable_hash
+from .billing_service import require_entitlement
 from .config import get_settings
 from .db import get_db
 from .marketplace_connections import decrypt_connection
@@ -285,7 +286,7 @@ def generate(payload: GenerateCardRequest, user: User = Depends(get_current_user
 @router.post("/generate-visual")
 def generate_visual(payload: GenerateVisualRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     store = _resolve_connected_store(db, user, payload.store_id)
-    ensure_ai_access(db, store.workspace_id, allow_exhausted=True)
+    require_entitlement(db, store.workspace_id, "card_visual_generation")
     source, snapshot = _load_card(db, store.id, payload.nm_id)
     fact_set = build_fact_set(source)
     copy = db.query(AIGeneration).filter(
@@ -353,6 +354,7 @@ def generations(store_id: str, nm_id: int | None = None, user: User = Depends(ge
 @router.post("/publications/prepare", status_code=201)
 def prepare_publication(payload: PreparePublicationRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     store = _resolve_connected_store(db, user, payload.store_id)
+    require_entitlement(db, store.workspace_id, "marketplace_publication")
     source, snapshot = _load_card(db, store.id, payload.nm_id)
     fact_set = build_fact_set(source)
     generation = db.query(AIGeneration).filter(
@@ -412,6 +414,7 @@ def prepare_publication(payload: PreparePublicationRequest, user: User = Depends
 @router.post("/publications/{publication_id}/publish")
 async def publish_card(publication_id: str, payload: ConfirmPublicationRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     store = _resolve_connected_store(db, user, payload.store_id)
+    require_entitlement(db, store.workspace_id, "marketplace_publication")
     require_store_admin(db, user, store)
     publication = db.query(CardPublication).filter(
         CardPublication.id == publication_id,
@@ -572,6 +575,7 @@ def publications(store_id: str, nm_id: int | None = None, user: User = Depends(g
 @router.post("/media-publications/prepare", status_code=201)
 def prepare_media_publication(payload: PrepareMediaPublicationRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     store = _resolve_connected_store(db, user, payload.store_id)
+    require_entitlement(db, store.workspace_id, "marketplace_publication")
     source, snapshot = _load_card(db, store.id, payload.nm_id)
     fact_set = build_fact_set(source)
     generation = db.query(AIGeneration).filter(
@@ -631,6 +635,7 @@ def prepare_media_publication(payload: PrepareMediaPublicationRequest, user: Use
 @router.post("/media-publications/{publication_id}/publish")
 async def publish_media(publication_id: str, payload: ConfirmPublicationRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     store = _resolve_connected_store(db, user, payload.store_id)
+    require_entitlement(db, store.workspace_id, "marketplace_publication")
     require_store_admin(db, user, store)
     publication = db.query(MediaPublication).filter(
         MediaPublication.id == publication_id,

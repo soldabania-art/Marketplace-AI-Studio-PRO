@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .db import get_db
+from .billing_service import entitlement_snapshot, latest_subscription
 from .models import Membership, MembershipRole, Store, User, Workspace
 from .security import get_current_user
 from .store_access import list_accessible_stores
@@ -60,6 +61,11 @@ def create_store(body: StoreCreateBody, user: User = Depends(get_current_user), 
         raise HTTPException(404, 'Рабочее пространство не найдено.')
     if membership.role not in {MembershipRole.owner, MembershipRole.admin}:
         raise HTTPException(403, 'Недостаточно прав для создания магазина.')
+    billing = entitlement_snapshot(latest_subscription(db, body.workspace_id))
+    store_limit = int(billing['entitlements']['stores_limit'])
+    current_stores = db.scalar(select(func.count(Store.id)).where(Store.workspace_id == body.workspace_id, Store.is_active.is_(True))) or 0
+    if current_stores >= store_limit:
+        raise HTTPException(402, f'Тариф {billing["plan"].upper()} позволяет подключить магазинов: {store_limit}.')
     name = body.name.strip()
     exists = db.scalar(select(Store.id).where(Store.workspace_id == body.workspace_id, Store.name == name))
     if exists:

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     password_reset_minutes: int = 30
     frontend_url: str = "http://localhost:3000"
     admin_emails: str = ""
+    billing_provider: str = "not_configured"
     vapid_public_key: str = ""
     vapid_private_key: str = ""
     vapid_subject: str = ""
@@ -71,6 +72,10 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment.strip().lower() in {"production", "prod"}
+
+    @property
+    def billing_is_configured(self) -> bool:
+        return self.billing_provider.strip().lower() not in {"", "none", "not_configured"}
 
 @lru_cache
 def get_settings() -> Settings:

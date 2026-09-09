@@ -110,6 +110,7 @@ def test_publish_requires_exact_confirmation_before_any_wb_call(monkeypatch):
     store=SimpleNamespace(id='s1',workspace_id='w1')
     monkeypatch.setattr('app.card_factory_router._resolve_connected_store',lambda db,user,store_id:store)
     monkeypatch.setattr('app.card_factory_router.require_store_admin',lambda db,user,store:None)
+    monkeypatch.setattr('app.card_factory_router.require_entitlement',lambda db,workspace_id,entitlement:None)
     with pytest.raises(HTTPException) as error:
         asyncio.run(publish_card(
             'p1',
@@ -131,6 +132,7 @@ def test_media_publish_requires_separate_exact_confirmation(monkeypatch):
     store=SimpleNamespace(id='s1',workspace_id='w1')
     monkeypatch.setattr('app.card_factory_router._resolve_connected_store',lambda db,user,store_id:store)
     monkeypatch.setattr('app.card_factory_router.require_store_admin',lambda db,user,store:None)
+    monkeypatch.setattr('app.card_factory_router.require_entitlement',lambda db,workspace_id,entitlement:None)
     with pytest.raises(HTTPException) as error:
         asyncio.run(publish_media(
             'p2',

@@ -3,10 +3,12 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from .config import get_settings
+from .billing_service import entitlement_snapshot, latest_subscription, public_plans
 from .db import get_db
 from .models import (
     AccountActionToken,
@@ -39,12 +41,6 @@ from .security import (
 )
 
 router = APIRouter()
-
-PLANS = [
-    {"code": "trial", "name": "Пробный запуск", "price_monthly_rub": 0, "stores": 1, "users": 1, "duration_days": 3, "ai_cards": 5, "ai_generation": "five_cards", "autopilot": "disabled"},
-    {"code": "pro", "name": "PRO", "price_monthly_rub": 4990, "stores": 3, "users": 3, "ai_generation": "extended", "autopilot": "assisted"},
-    {"code": "business", "name": "Business", "price_monthly_rub": 12990, "stores": 10, "users": 10, "ai_generation": "priority", "autopilot": "advanced"},
-]
 
 
 def _token_hash(raw_token: str) -> str:
@@ -149,7 +145,45 @@ def _delivery_response(raw_token: str, purpose: str) -> dict:
 
 @router.get("/billing/plans")
 def plans():
-    return {"currency": "RUB", "provider": "not_configured", "plans": PLANS}
+    settings = get_settings()
+    return {"currency": "RUB", "provider": settings.billing_provider, "checkout_available": settings.billing_is_configured, "plans": public_plans()}
+
+
+@router.get("/billing/subscription")
+def billing_subscription(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    membership = db.scalar(select(Membership).where(Membership.user_id == current_user.id))
+    if membership is None:
+        raise HTTPException(status_code=409, detail="Workspace membership is missing")
+    subscription = latest_subscription(db, membership.workspace_id)
+    settings = get_settings()
+    return {
+        "workspace_id": membership.workspace_id,
+        "provider": subscription.provider or settings.billing_provider,
+        "checkout_available": settings.billing_is_configured,
+        **entitlement_snapshot(subscription),
+    }
+
+
+class CheckoutRequest(BaseModel):
+    plan_code: str
+    accepted_terms: bool = False
+
+
+@router.post("/billing/checkout")
+def create_billing_checkout(payload: CheckoutRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if payload.plan_code not in {"pro", "business"}:
+        raise HTTPException(status_code=422, detail="Выберите платный тариф PRO или Business.")
+    if not payload.accepted_terms:
+        raise HTTPException(status_code=422, detail="Подтвердите условия подписки и автоматического продления.")
+    membership = db.scalar(select(Membership).where(Membership.user_id == current_user.id))
+    if membership is None:
+        raise HTTPException(status_code=409, detail="Workspace membership is missing")
+    if membership.role != MembershipRole.owner:
+        raise HTTPException(status_code=403, detail="Оформить подписку может только владелец рабочего пространства.")
+    settings = get_settings()
+    if not settings.billing_is_configured:
+        raise HTTPException(status_code=503, detail="Платёжный провайдер ещё не подключён. Trial продолжает работать без привязки карты.")
+    raise HTTPException(status_code=503, detail="Адаптер выбранного платёжного провайдера ещё не активирован.")
 
 
 @router.post("/auth/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)

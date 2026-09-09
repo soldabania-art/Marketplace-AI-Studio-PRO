@@ -41,7 +41,7 @@ AI coordinates the loop. Deterministic services remain authoritative for facts, 
 
 | Branch | Status | Depends on | Next gate |
 | --- | --- | --- | --- |
-| Accounts, stores, trial | **live foundation** | PostgreSQL, auth | Complete RBAC and billing transition |
+| Accounts, stores, trial | **live foundation** | PostgreSQL, auth, server entitlements | RF/CIS payment checkout and verified webhook adapter |
 | WB snapshots | **live foundation** | encrypted token, worker | Reconciliation and freshness SLO |
 | Products | **live foundation** | catalog + stock + velocity | Provenance and cross-source identity |
 | AI Card Factory | **live foundation** | facts + AI persistence | Production observation of text and media writes |
@@ -69,7 +69,7 @@ AI coordinates the loop. Deterministic services remain authoritative for facts, 
 
 ## 5. Delivery spine
 
-1. **P0:** finish one safe WB vertical: facts → generation → storage → approval → write → verification → profit → billing.
+1. **P0:** one safe WB vertical is implemented through provider-neutral billing entitlements; production observation and the selected payment adapter remain launch gates.
 2. **P1:** operational AI Director, health monitoring, approval inbox and read-only risk modules.
 3. **P2:** Integration Hub, 1C/MoySklad, Ozon, Android and agency roles.
 4. **P3:** CIS breadth, connector SDK, more marketplaces and enterprise scale.

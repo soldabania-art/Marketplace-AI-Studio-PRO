@@ -14,6 +14,7 @@ const fmt = (value) => value ? new Date(value).toLocaleString('ru-RU') : '—'
 export default function AccountPage() {
   const router = useRouter()
   const [account, setAccount] = useState(null)
+  const [billing,setBilling]=useState(null)
   const [security, setSecurity] = useState({ sessions: [], events: [] })
   const [storesData,setStoresData]=useState({stores:[],workspaces:[]})
   const [selectedStoreId,setSelectedStoreId]=useState('')
@@ -57,6 +58,7 @@ export default function AccountPage() {
     let active = true
     Promise.all([
       fetch('/api/auth/me', { cache:'no-store' }).then(async r => { const p=await r.json(); if(!r.ok) throw new Error(p.error || 'Не удалось загрузить аккаунт'); if(active) setAccount(p) }),
+      fetch('/api/billing/subscription', { cache:'no-store' }).then(async r => { const p=await r.json(); if(!r.ok) throw new Error(p.error || 'Не удалось загрузить тариф'); if(active) setBilling(p) }),
       loadSecurity(),
       loadStores().then(id=>id?loadWb(id):null),
     ]).catch(e => { if(active){ setError(e.message); if(e.message === 'Требуется вход') router.replace('/login') } }).finally(() => active && setLoading(false))
@@ -143,7 +145,7 @@ export default function AccountPage() {
     <div className={styles.grid}>
       <article className={styles.card}><div className={styles.icon}><UserRound size={20}/></div><span className="eyebrow">ПРОФИЛЬ</span><h3>{account.full_name}</h3><p>{account.email}</p><small>{account.email_verified?'Email подтверждён':'Email ожидает подтверждения'}</small>{!account.email_verified&&<button className={styles.action} onClick={requestVerification} disabled={verifyLoading}><MailCheck size={15}/> {verifyLoading?'Подготавливаем…':'Подтвердить email'}</button>}{verifyMessage&&<small className={styles.message}>{verifyMessage}</small>}</article>
       <article className={styles.card}><div className={styles.icon}><Building2 size={20}/></div><span className="eyebrow">РАБОЧЕЕ ПРОСТРАНСТВО</span><h3>{account.workspace_name}</h3><p>Роль: {account.role}</p><small>Магазинов доступно: {storesData.stores.length}</small></article>
-      <article className={`${styles.card} ${styles.plan}`}><div className={styles.icon}><CreditCard size={20}/></div><span className="eyebrow">ТАРИФ</span><h3>{String(account.plan_code).toUpperCase()}</h3><p>Статус: {account.subscription_status}</p><Link href="/pricing" className={styles.action}>Управлять тарифом</Link></article>
+      <article className={`${styles.card} ${styles.plan}`}><div className={styles.icon}><CreditCard size={20}/></div><span className="eyebrow">ТАРИФ</span><h3>{String(billing?.plan||account.plan_code).toUpperCase()}</h3><p>{!billing?'Загружаем статус тарифа…':billing.plan==='trial'?(billing.access_status==='not_started'?'3 дня начнутся с первой успешной карточки':`Осталось карточек: ${billing.cards_remaining} из ${billing.cards_limit}`):billing.read_only?'Подписка завершена · режим просмотра':billing.cancel_at_period_end?'Активен до конца оплаченного периода':'Подписка активна'}</p><small>{!billing?'Проверяем серверные права':billing.expires_at?`Доступ до: ${fmt(billing.expires_at)}`:billing.checkout_available?'Платёжный провайдер подключён':'Оплата пока не подключена — Trial работает без карты'}</small><Link href="/pricing" className={styles.action}>Управлять тарифом</Link></article>
       <article className={styles.card}><div className={styles.icon}><ShieldCheck size={20}/></div><span className="eyebrow">ЗАЩИТА</span><h3>Серверные сессии</h3><p>Каждый вход имеет отдельную отзывную серверную сессию. После смены пароля все устройства отключаются.</p><small>IP хранится только в виде приватного хэша</small></article>
     </div>
     <section className={styles.securitySection}><div className={styles.sectionHead}><div><span className="eyebrow">УСТРОЙСТВА</span><h2>Активные сессии</h2></div><Laptop size={22}/></div><div className={styles.list}>{security.sessions.map(s=><div className={styles.row} key={s.id}><div><strong>{s.current?'Это устройство':'Другое устройство'} {s.revoked&&'· завершена'}</strong><span>{s.user_agent || 'Браузер не определён'}</span><small>Последняя активность: {fmt(s.last_seen_at)} · истекает: {fmt(s.expires_at)}</small></div>{!s.revoked&&<button className={styles.danger} onClick={()=>revoke(s.id,s.current)}>{s.current?'Выйти здесь':'Завершить'}</button>}</div>)}</div></section>

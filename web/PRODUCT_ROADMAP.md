@@ -172,7 +172,7 @@ The web product and future Android app use the same versioned API, permissions a
 | Products | Reads real WB catalog facts | Provenance and cross-source identity mapping |
 | Beginner Studio | Photo analysis, confirmed facts, draft and saved project implemented | Durable image assets and publication |
 | Trial | 3 days / 5 successful cards enforced server-side | Billing transition and entitlement tests |
-| Card Factory | Grounded copy, saved versions, before/after review, confirmed WB text submission and post-write live verification | Separately approved media publication |
+| Card Factory | Grounded copy, saved versions, confirmed WB text and append-only media submission, post-write live verification | Production observation and failure telemetry |
 | Profit Center | Product shell/foundation | Full settlement and cost reconciliation |
 | AI Director | Product architecture defined | Evidence-backed recommendation queue |
 | Advertising, reviews, claims | Planned | Read-only insights before approved writes |
@@ -186,7 +186,7 @@ The web product and future Android app use the same versioned API, permissions a
 
 1. Finish one store-scoped Card Factory using real catalog facts.
 2. Persist generated images and generation metadata. **Implemented for Card Factory; Beginner Studio reuse remains.**
-3. Add validation preview and confirmed WB publication. **Implemented for title/description submission and post-write verification; media publication remains.**
+3. Add validation preview and confirmed WB publication. **Implemented for title/description and separately approved image upload, each with post-write verification and no automatic retry.**
 4. Complete source-based Profit Center reconciliation.
 5. Add billing entitlements and trial-to-paid transition.
 
@@ -240,3 +240,4 @@ A feature is done only when all applicable gates pass:
 - A public FRA1 Vercel Blob store is connected to `marketplace-ai-studio-pro` through rotating OIDC credentials; no long-lived read-write token is enabled.
 - WB text publication is bound to one saved AI generation and payload hash, requires an owner/admin confirmation, re-reads the live card before writing, and records the provider response without claiming moderation is complete.
 - Post-write WB verification is a separate read action with persisted `pending`, `applied`, `mismatch` or `error` state; TROVENDI never retries a write merely because WB moderation is delayed.
+- WB image publication is isolated from text publication, bound to one stored AI asset and SHA-256, and requires the separate phrase `ОПУБЛИКОВАТЬ ФОТО`. TROVENDI uses direct upload to the next free position so the existing photo set is not replaced, validates WB file requirements, blocks on concurrent media changes and verifies the resulting count/order without automatic retry.

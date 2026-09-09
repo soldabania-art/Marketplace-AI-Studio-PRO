@@ -44,7 +44,7 @@ AI coordinates the loop. Deterministic services remain authoritative for facts, 
 | Accounts, stores, trial | **live foundation** | PostgreSQL, auth | Complete RBAC and billing transition |
 | WB snapshots | **live foundation** | encrypted token, worker | Reconciliation and freshness SLO |
 | Products | **live foundation** | catalog + stock + velocity | Provenance and cross-source identity |
-| AI Card Factory | **live foundation** | facts + AI persistence | Separately approved media write |
+| AI Card Factory | **live foundation** | facts + AI persistence | Production observation of text and media writes |
 | Beginner Studio | **active** | trial + facts + Card Factory | Reuse stored visuals and publication pipeline |
 | Profit Center | **planned next** | settlements + costs + reconciliation | Source-based unit and store profit |
 | AI Director | **planned P1** | healthy sources + Profit Center | Evidence-ranked recommendation queue |
@@ -56,7 +56,7 @@ AI coordinates the loop. Deterministic services remain authoritative for facts, 
 ## 4. Integration tree
 
 - Marketplaces
-  - Wildberries: catalog → stocks → sales velocity → content text → verification → media → economics → ads/reviews/claims.
+  - Wildberries: catalog → stocks → sales velocity → confirmed content text → verified append-only media → economics → ads/reviews/claims.
   - Ozon: begins after the complete WB write path is production-safe.
   - Yandex Market, Megamarket and others: use the same canonical model and connector contract.
 - Accounting RF/CIS

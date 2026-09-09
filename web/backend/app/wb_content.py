@@ -9,6 +9,7 @@ from .rate_limit import wait_marketplace_slot
 
 WB_CARDS_LIST_URL='https://content-api.wildberries.ru/content/v2/get/cards/list'
 WB_CARDS_UPDATE_URL='https://content-api.wildberries.ru/content/v2/cards/update'
+WB_MEDIA_FILE_URL='https://content-api.wildberries.ru/content/v3/media/file'
 
 
 def normalize_card(card:dict)->dict:
@@ -78,6 +79,23 @@ async def update_wb_card(token:str,payload:dict)->dict:
         body=response.json()
     except ValueError:
         body={'message':response.text[:1000]}
+    return {'accepted':True,'status_code':response.status_code,'response':body}
+
+
+async def upload_wb_media_file(token:str,*,nm_id:int,photo_number:int,raw:bytes,content_type:str)->dict:
+    """Append one explicitly approved image without replacing the existing media set."""
+    await wait_marketplace_slot('wildberries',token,'content-media-file',min_interval_seconds=0.6)
+    headers={'Authorization':token,'X-Nm-Id':str(nm_id),'X-Photo-Number':str(photo_number)}
+    files={'uploadfile':(f'trovendi-{nm_id}-{photo_number}.webp',raw,content_type)}
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        response=await client.post(WB_MEDIA_FILE_URL,headers=headers,files=files)
+    response.raise_for_status()
+    try:
+        body=response.json() if response.content else {}
+    except ValueError:
+        body={'message':response.text[:1000]}
+    if isinstance(body,dict) and body.get('error'):
+        raise ValueError(str(body.get('errorText') or 'WB отклонил изображение.'))
     return {'accepted':True,'status_code':response.status_code,'response':body}
 
 

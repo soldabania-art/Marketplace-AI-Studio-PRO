@@ -1,6 +1,6 @@
 import asyncio
 
-from app.wb_content import build_card_update, fetch_wb_card, normalize_card, update_wb_card
+from app.wb_content import build_card_update, fetch_wb_card, normalize_card, update_wb_card, upload_wb_media_file
 
 
 def test_normalize_card_keeps_real_content_fields():
@@ -85,3 +85,30 @@ def test_live_preflight_reads_only_matching_vendor_card(monkeypatch):
     assert card['title']=='Right'
     assert sent['json']['settings']['filter']['textSearch']=='SKU-1'
     assert sent['json']['settings']['cursor']['limit']==100
+
+
+def test_media_upload_appends_one_file_at_explicit_position(monkeypatch):
+    sent={}
+
+    async def wait(*args,**kwargs): sent['wait']=(args,kwargs)
+
+    class Response:
+        content=b'{"error":false}'
+        status_code=200
+        request=object()
+        def raise_for_status(self): return None
+        def json(self): return {'error':False}
+
+    class Client:
+        async def __aenter__(self): return self
+        async def __aexit__(self,*args): return None
+        async def post(self,url,**kwargs): sent['url']=url; sent['kwargs']=kwargs; return Response()
+
+    monkeypatch.setattr('app.wb_content.wait_marketplace_slot',wait)
+    monkeypatch.setattr('app.wb_content.httpx.AsyncClient',lambda **kwargs:Client())
+    result=asyncio.run(upload_wb_media_file('secret-token',nm_id=123,photo_number=4,raw=b'webp-bytes',content_type='image/webp'))
+    assert result['accepted'] is True
+    assert sent['url'].endswith('/content/v3/media/file')
+    assert sent['kwargs']['headers']=={'Authorization':'secret-token','X-Nm-Id':'123','X-Photo-Number':'4'}
+    assert sent['kwargs']['files']['uploadfile'][1:]==(b'webp-bytes','image/webp')
+    assert sent['wait'][0][2]=='content-media-file'

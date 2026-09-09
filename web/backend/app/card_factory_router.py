@@ -1,9 +1,12 @@
+import hashlib
 import json
+from io import BytesIO
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
+from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -13,11 +16,11 @@ from .config import get_settings
 from .db import get_db
 from .marketplace_connections import decrypt_connection
 from .marketplace_sync import latest_snapshot
-from .models import AIGeneration, CardPublication, GenerationStatus, MarketplaceConnection, PublicationStatus, User
+from .models import AIGeneration, CardPublication, GenerationStatus, MarketplaceConnection, MediaPublication, PublicationStatus, User
 from .security import get_current_user
 from .store_access import require_store_admin, resolve_store
 from .trial_service import ensure_ai_access, refund_trial_card, reserve_trial_card
-from .wb_content import build_card_update, fetch_wb_card, update_wb_card
+from .wb_content import build_card_update, fetch_wb_card, update_wb_card, upload_wb_media_file
 
 router = APIRouter(prefix="/card-factory", tags=["card-factory"])
 
@@ -53,6 +56,10 @@ class ConfirmPublicationRequest(BaseModel):
 
 class VerifyPublicationRequest(BaseModel):
     store_id: str = Field(min_length=1, max_length=36)
+
+
+class PrepareMediaPublicationRequest(GenerateCardRequest):
+    generation_id: str = Field(min_length=36, max_length=36)
 
 
 def _load_card(db: Session, store_id: str, nm_id: int) -> tuple[dict, object]:
@@ -133,6 +140,83 @@ def _verification_result(publication: CardPublication, live: dict) -> tuple[str,
     else:
         status = "mismatch"
     return status, {"fields": fields, "live_card_updated_at": live.get("updated_at")}
+
+
+def _photo_urls(card: dict) -> list[str]:
+    return [str(photo.get("big") or "") for photo in (card.get("photos") or []) if photo.get("big")]
+
+
+def _media_publication_payload(row: MediaPublication) -> dict:
+    asset = row.asset_payload or {}
+    return {
+        "id": row.id,
+        "generation_id": row.generation_id,
+        "store_id": row.store_id,
+        "nm_id": int(row.subject_id),
+        "marketplace": row.marketplace,
+        "status": row.status.value,
+        "payload_sha256": row.payload_sha256,
+        "diff": row.diff_payload,
+        "asset": {key: asset.get(key) for key in ("url", "sha256", "content_type", "bytes")},
+        "attempt_count": row.attempt_count,
+        "verification_status": row.verification_status,
+        "verification": row.verification_payload or {},
+        "verification_attempt_count": row.verification_attempt_count,
+        "last_verified_at": row.last_verified_at,
+        "verified_at": row.verified_at,
+        "error": row.error,
+        "approved_at": row.approved_at,
+        "submitted_at": row.submitted_at,
+        "created_at": row.created_at,
+    }
+
+
+def _media_verification_result(publication: MediaPublication, live: dict) -> tuple[str, dict]:
+    source_urls = list((publication.source_payload or {}).get("photo_urls") or [])
+    live_urls = _photo_urls(live)
+    target_position = int((publication.diff_payload or {}).get("target_position") or (len(source_urls) + 1))
+    prefix_matches = live_urls[:len(source_urls)] == source_urls
+    if prefix_matches and len(live_urls) >= target_position:
+        status = "applied"
+    elif live_urls == source_urls:
+        status = "pending"
+    else:
+        status = "mismatch"
+    return status, {
+        "source_photo_count": len(source_urls),
+        "live_photo_count": len(live_urls),
+        "target_position": target_position,
+        "existing_photos_unchanged": prefix_matches,
+        "live_card_updated_at": live.get("updated_at"),
+    }
+
+
+async def _download_and_validate_asset(asset: dict) -> tuple[bytes, str, dict]:
+    parsed = urlparse(str(asset.get("url") or ""))
+    if parsed.scheme != "https" or not (parsed.hostname or "").endswith(".blob.vercel-storage.com"):
+        raise HTTPException(409, "Сохранённый визуал находится вне защищённого хранилища TROVENDI.")
+    async with httpx.AsyncClient(timeout=45.0, follow_redirects=False) as client:
+        response = await client.get(str(asset["url"]))
+    response.raise_for_status()
+    raw = response.content
+    if not raw or len(raw) > 32_000_000:
+        raise HTTPException(422, "Изображение должно быть меньше 32 МБ.")
+    expected_sha256 = str(asset.get("sha256") or "")
+    if not expected_sha256 or hashlib.sha256(raw).hexdigest() != expected_sha256:
+        raise HTTPException(409, "Сохранённый визуал изменился после подготовки публикации.")
+    try:
+        with Image.open(BytesIO(raw)) as image:
+            image_format = str(image.format or "").upper()
+            width, height = image.size
+            image.verify()
+    except (UnidentifiedImageError, OSError) as exc:
+        raise HTTPException(422, "Файл не является корректным изображением.") from exc
+    if image_format not in {"WEBP", "JPEG", "PNG", "BMP", "GIF"}:
+        raise HTTPException(422, "Формат изображения не поддерживается Wildberries.")
+    if width < 700 or height < 900:
+        raise HTTPException(422, "Wildberries требует изображение не меньше 700×900 пикселей.")
+    content_type = {"WEBP": "image/webp", "JPEG": "image/jpeg", "PNG": "image/png", "BMP": "image/bmp", "GIF": "image/gif"}[image_format]
+    return raw, content_type, {"width": width, "height": height, "format": image_format}
 
 
 @router.get("/cards/{nm_id}")
@@ -483,3 +567,201 @@ def publications(store_id: str, nm_id: int | None = None, user: User = Depends(g
         query = query.filter(CardPublication.subject_id == str(nm_id))
     rows = query.order_by(CardPublication.created_at.desc()).limit(30).all()
     return {"items": [_publication_payload(row) for row in rows]}
+
+
+@router.post("/media-publications/prepare", status_code=201)
+def prepare_media_publication(payload: PrepareMediaPublicationRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = _resolve_connected_store(db, user, payload.store_id)
+    source, snapshot = _load_card(db, store.id, payload.nm_id)
+    fact_set = build_fact_set(source)
+    generation = db.query(AIGeneration).filter(
+        AIGeneration.id == payload.generation_id,
+        AIGeneration.store_id == store.id,
+        AIGeneration.feature == "card_factory_visual",
+        AIGeneration.subject_id == str(payload.nm_id),
+        AIGeneration.status == GenerationStatus.completed,
+    ).first()
+    if not generation:
+        raise HTTPException(404, "Сохранённая версия изображения не найдена.")
+    asset = generation.result_payload or {}
+    if asset.get("storage_status") != "stored" or not asset.get("url") or not asset.get("sha256"):
+        raise HTTPException(409, "Сначала сохраните AI-визуал в постоянном хранилище.")
+    if generation.fact_set_sha256 != fact_set["sha256"]:
+        raise HTTPException(409, "Карточка изменилась после генерации визуала. Создайте новую версию.")
+    source_urls = _photo_urls(source)
+    if len(source_urls) >= 30:
+        raise HTTPException(409, "В карточке уже 30 изображений — это предел Wildberries.")
+    source_payload = {"nm_id": payload.nm_id, "vendor_code": source.get("vendor_code") or "", "photo_urls": source_urls}
+    proposed = {"generation_id": generation.id, "asset_sha256": asset["sha256"], "target_position": len(source_urls) + 1}
+    payload_sha256 = stable_hash(proposed)
+    existing = db.query(MediaPublication).filter(
+        MediaPublication.store_id == store.id,
+        MediaPublication.generation_id == generation.id,
+        MediaPublication.payload_sha256 == payload_sha256,
+        MediaPublication.status == PublicationStatus.prepared,
+    ).order_by(MediaPublication.created_at.desc()).first()
+    if existing:
+        return _media_publication_payload(existing)
+    publication = MediaPublication(
+        workspace_id=store.workspace_id,
+        store_id=store.id,
+        user_id=user.id,
+        generation_id=generation.id,
+        subject_id=str(payload.nm_id),
+        fact_set_sha256=fact_set["sha256"],
+        source_card_sha256=stable_hash(source_payload),
+        payload_sha256=payload_sha256,
+        source_payload=source_payload,
+        asset_payload={key: asset.get(key) for key in ("url", "pathname", "sha256", "content_type", "bytes")},
+        diff_payload={
+            "before_photo_count": len(source_urls),
+            "after_photo_count": len(source_urls) + 1,
+            "target_position": len(source_urls) + 1,
+            "existing_photos_unchanged": True,
+            "catalog_snapshot_created_at": snapshot.created_at.isoformat() if snapshot.created_at else None,
+        },
+        status=PublicationStatus.prepared,
+    )
+    db.add(publication)
+    db.commit()
+    db.refresh(publication)
+    return _media_publication_payload(publication)
+
+
+@router.post("/media-publications/{publication_id}/publish")
+async def publish_media(publication_id: str, payload: ConfirmPublicationRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = _resolve_connected_store(db, user, payload.store_id)
+    require_store_admin(db, user, store)
+    publication = db.query(MediaPublication).filter(
+        MediaPublication.id == publication_id,
+        MediaPublication.store_id == store.id,
+    ).with_for_update().first()
+    if not publication:
+        raise HTTPException(404, "Подготовленная публикация изображения не найдена.")
+    if publication.status == PublicationStatus.submitted:
+        return _media_publication_payload(publication)
+    if publication.status == PublicationStatus.submitting:
+        raise HTTPException(409, "Это изображение уже отправляется в Wildberries.")
+    if publication.status == PublicationStatus.stale:
+        raise HTTPException(409, "Набор изображений WB изменился. Подготовьте проверку заново.")
+    if payload.payload_sha256 != publication.payload_sha256:
+        raise HTTPException(409, "Подтверждение относится к другой версии изображения.")
+    if payload.confirmation.strip().upper() != "ОПУБЛИКОВАТЬ ФОТО":
+        raise HTTPException(422, "Для публикации введите ОПУБЛИКОВАТЬ ФОТО.")
+
+    connection = _connection(db, store.id)
+    token = decrypt_connection(connection)
+    source = publication.source_payload or {}
+    try:
+        live = await fetch_wb_card(token, nm_id=int(publication.subject_id), vendor_code=source.get("vendor_code") or "")
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code if exc.response is not None else 502
+        if status in {401, 403}:
+            raise HTTPException(409, "WB-токен не разрешает редактировать медиа карточки.") from exc
+        if status == 429:
+            raise HTTPException(429, "WB ограничил частоту проверки. Повторите позже.") from exc
+        raise HTTPException(502, "Не удалось получить свежую карточку WB.") from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(502, "Не удалось связаться с WB для контрольной проверки.") from exc
+    if not live or _photo_urls(live) != list(source.get("photo_urls") or []):
+        publication.status = PublicationStatus.stale
+        publication.error = "Фотографии карточки изменились после подготовки. Отправка заблокирована."
+        db.commit()
+        raise HTTPException(409, publication.error)
+
+    try:
+        raw, content_type, dimensions = await _download_and_validate_asset(publication.asset_payload or {})
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, "Не удалось получить сохранённый визуал TROVENDI.") from exc
+    publication.status = PublicationStatus.submitting
+    publication.attempt_count += 1
+    publication.approved_at = datetime.now(timezone.utc)
+    db.commit()
+    try:
+        response = await upload_wb_media_file(
+            token,
+            nm_id=int(publication.subject_id),
+            photo_number=int((publication.diff_payload or {}).get("target_position") or 1),
+            raw=raw,
+            content_type=content_type,
+        )
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code if exc.response is not None else 502
+        publication.status = PublicationStatus.failed
+        publication.error = f"WB отклонил изображение (HTTP {status})."
+        db.commit()
+        if status in {401, 403}:
+            raise HTTPException(409, "WB-токен не разрешает загрузку медиа.") from exc
+        if status == 429:
+            raise HTTPException(429, "WB ограничил частоту загрузок. Повторите позже.") from exc
+        raise HTTPException(502, publication.error) from exc
+    except httpx.RequestError as exc:
+        publication.status = PublicationStatus.failed
+        publication.error = "Ответ WB не получен. Автоматическая повторная загрузка отключена."
+        db.commit()
+        raise HTTPException(502, publication.error) from exc
+    except ValueError as exc:
+        publication.status = PublicationStatus.failed
+        publication.error = f"WB отклонил изображение: {str(exc)[:500]}"
+        db.commit()
+        raise HTTPException(502, publication.error) from exc
+    publication.status = PublicationStatus.submitted
+    publication.provider_response = {**response, "validated_image": dimensions}
+    publication.submitted_at = datetime.now(timezone.utc)
+    publication.verification_status = "pending"
+    publication.verification_payload = {}
+    publication.error = ""
+    db.commit()
+    return _media_publication_payload(publication)
+
+
+@router.post("/media-publications/{publication_id}/verify")
+async def verify_media_publication(publication_id: str, payload: VerifyPublicationRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = _resolve_connected_store(db, user, payload.store_id)
+    publication = db.query(MediaPublication).filter(
+        MediaPublication.id == publication_id,
+        MediaPublication.store_id == store.id,
+    ).with_for_update().first()
+    if not publication:
+        raise HTTPException(404, "Публикация изображения не найдена.")
+    if publication.status != PublicationStatus.submitted:
+        raise HTTPException(409, "Сначала отправьте подтверждённое изображение в Wildberries.")
+    token = decrypt_connection(_connection(db, store.id))
+    now = datetime.now(timezone.utc)
+    publication.verification_attempt_count += 1
+    publication.last_verified_at = now
+    try:
+        source = publication.source_payload or {}
+        live = await fetch_wb_card(token, nm_id=int(publication.subject_id), vendor_code=source.get("vendor_code") or "")
+    except httpx.HTTPStatusError as exc:
+        publication.verification_status = "error"
+        publication.verification_payload = {"message": "WB не разрешил контрольное чтение карточки."}
+        db.commit()
+        status = exc.response.status_code if exc.response is not None else 502
+        raise HTTPException(429 if status == 429 else 502, "Не удалось проверить изображение в WB.") from exc
+    except httpx.RequestError as exc:
+        publication.verification_status = "error"
+        publication.verification_payload = {"message": "WB временно недоступен для контрольного чтения."}
+        db.commit()
+        raise HTTPException(502, "Не удалось проверить изображение в WB.") from exc
+    if not live:
+        status, result = "mismatch", {"message": "Карточка отсутствует в свежем ответе WB."}
+    else:
+        status, result = _media_verification_result(publication, live)
+    publication.verification_status = status
+    publication.verification_payload = result
+    if status == "applied":
+        publication.verified_at = now
+    db.commit()
+    db.refresh(publication)
+    return _media_publication_payload(publication)
+
+
+@router.get("/media-publications")
+def media_publications(store_id: str, nm_id: int | None = None, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = resolve_store(db, user, store_id)
+    query = db.query(MediaPublication).filter(MediaPublication.store_id == store.id)
+    if nm_id:
+        query = query.filter(MediaPublication.subject_id == str(nm_id))
+    rows = query.order_by(MediaPublication.created_at.desc()).limit(30).all()
+    return {"items": [_media_publication_payload(row) for row in rows]}

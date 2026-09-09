@@ -15,6 +15,7 @@
 .assetGrid>div{border:1px solid #26364d;border-radius:12px;overflow:hidden;background:#091321}
 .assetGrid img{display:block;width:100%;height:auto}
 .assetGrid small{display:block;padding:8px 10px;color:#71849b}
+.assetGrid button{width:calc(100% - 16px);margin:0 8px 9px;border:1px solid #355276;border-radius:8px;background:#122640;color:#d6e9ff;padding:8px 9px}
 .versionList{display:grid;gap:8px;margin-top:22px}
 .versionList>button{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;text-align:left;border:1px solid #26364d;border-radius:10px;background:#0a1524;color:#c8d5e4;padding:10px 12px}
 .versionList>button.selected{border-color:#4a91e8;background:#102743}
@@ -50,5 +51,11 @@
 .verificationBox.applied .verificationIcon{background:rgba(66,231,164,.1);color:#42e7a4}
 .verificationBox.mismatch{border-color:rgba(255,107,120,.4)}
 .verificationBox.mismatch .verificationIcon{background:rgba(255,107,120,.1);color:#ff7f8a}
+.mediaReview{margin-top:16px}
+.mediaReview .reviewHeading img{width:112px;height:112px;object-fit:cover;border:1px solid #355276;border-radius:12px}
+.mediaDiff{display:grid;gap:7px;margin-top:16px;padding:14px;border:1px solid #294361;border-radius:12px;background:#0a1524}
+.mediaDiff span,.mediaDiff small{color:#8296ae}
+.mediaDiff strong{color:#edf6ff}
+.mediaReview>.verificationBox{margin-top:18px}
 @media(max-width:760px){.diffGrid{grid-template-columns:1fr}}
-@media(max-width:640px){.visualPlanRow{align-items:flex-start;flex-direction:column}.assetGrid{grid-template-columns:1fr}.versionList>button{flex-direction:column}.verificationBox{grid-template-columns:auto 1fr}.verificationBox button{grid-column:1/-1}}
+@media(max-width:640px){.visualPlanRow{align-items:flex-start;flex-direction:column}.assetGrid{grid-template-columns:1fr}.versionList>button{flex-direction:column}.verificationBox{grid-template-columns:auto 1fr}.verificationBox button{grid-column:1/-1}.mediaReview .reviewHeading{align-items:flex-start}.mediaReview .reviewHeading img{width:82px;height:82px}}

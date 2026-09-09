@@ -1,6 +1,6 @@
 # TROVENDI orchestration and scale architecture
 
-Status: **accepted product architecture; implementation is sequenced through P1–P3**.
+Status: **accepted product architecture; the deny-by-default registry and reviewed-learning foundation are implemented**.
 
 This document defines the first paying customer segment, business-model adaptation, self-service onboarding, privacy-safe network insights, scale path and bounded AI specialization.
 
@@ -184,6 +184,17 @@ Shared memory is structured, scoped state:
 
 A vector database is not the source of financial truth and is not used as a permission system.
 
+### Current security implementation
+
+- A code-reviewed registry declares Director, Finance, Content, Supply, Data Health, Support and independent Security Sentinel roles.
+- Unknown agents and undeclared capabilities are rejected server-side.
+- All marketplace writes and runtime self-modification are disabled in registry version 1.
+- Store-scoped feedback is redacted and saved as an idempotent learning candidate. Approval still cannot alter an agent until a separate evaluation and versioned release exists.
+- The registry version and SHA-256 checksum are visible in the authenticated Agent Control Plane.
+- Owner/admin work orders are idempotently assigned through enumerated goal routes and recorded with the exact policy checksum. Registry version 1 creates plans only; it does not execute external changes.
+
+The full authority, threat and release model is defined in [`SECURITY_MODEL.md`](./SECURITY_MODEL.md).
+
 ### Capability contract
 
 Every AI capability declares:
@@ -216,7 +227,7 @@ These are presentation and permission-policy modes over one platform. They are n
 
 1. Business-profile proposal and confirmation in self-service onboarding.
 2. Data-completeness gate and first trustworthy value screen.
-3. Typed capability registry for Director; no arbitrary SQL or tools.
+3. Typed capability registry for Director; no arbitrary SQL or tools. **Implemented foundation: deny-by-default registry, independent security veto and authenticated store-scoped control-plane view.**
 4. Transactional job/outbox foundation and observable rate-limit scheduling.
 
 ### P2
@@ -241,4 +252,3 @@ These are presentation and permission-policy modes over one platform. They are n
 - Adopting Kafka/microservices solely because the product targets 1,000 users.
 - Sharing or benchmarking customer data without separate consent and disclosure protection.
 - Giving beginners a weaker safety policy or promising automatic ranking growth.
-

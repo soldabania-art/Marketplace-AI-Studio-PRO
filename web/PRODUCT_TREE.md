@@ -6,6 +6,7 @@ Status legend: **live foundation** = real data/code exists; **active** = current
 flowchart TD
     T["TROVENDI · AI Commerce OS"] --> E["Entry journeys"]
     T --> D["AI Director"]
+    T --> G["Agent control and security"]
     T --> C["Commerce engines"]
     T --> I["Integration platform"]
     T --> M["Mobile and notifications"]
@@ -53,6 +54,7 @@ AI coordinates the loop. Deterministic services remain authoritative for facts, 
 | Beginner Studio | **active** | trial + facts + Card Factory | Reuse stored visuals and publication pipeline |
 | Profit Center | **live foundation** | WB finance + advertising ledgers, confirmed COGS + tax | Production reconciliation and accounting-source costs |
 | AI Director | **live foundation** | healthy sources + Profit Center | Previewed marketplace-write executors and verified rollback |
+| Agent network and Security Sentinel | **live foundation** | auth + store scope + audit | Offline eval artefacts, signed policy promotion and bounded executor gates |
 | AI Support Agent | **planned P1** | audit, store context + versioned knowledge | Incident intake and deterministic escalation first |
 | SEO, advertising, reviews | **planned P1** | Director + marketplace readers | Read-only insight before writes |
 | Reports and autopilot | **planned P1/P2** | audit + approvals + measurement | Bounded policies and rollback evidence |

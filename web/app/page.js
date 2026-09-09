@@ -2,13 +2,13 @@
 
 import Link from 'next/link'
 import { useEffect,useMemo,useState } from 'react'
-import { BarChart3,Bell,Bot,Boxes,BrainCircuit,CircleDollarSign,FileText,Gauge,Megaphone,PackageSearch,Rocket,Search,Settings,ShieldCheck,Sparkles,Star,TrendingDown,TrendingUp,WandSparkles } from 'lucide-react'
+import { BarChart3,Bell,Bot,Boxes,BrainCircuit,CircleDollarSign,FileText,Gauge,Megaphone,PackageSearch,Rocket,Search,Settings,ShieldCheck,Sparkles,Star,TrendingDown,TrendingUp,WandSparkles,Workflow } from 'lucide-react'
 import { useActiveStore } from '../lib/useActiveStore'
 import { makeDailyGreeting } from '../lib/dailyGreeting'
 import BrandLogo from '../components/BrandLogo'
 
 const dashboardActions=[{severity:'critical',icon:BrainCircuit,title:'Daily AI Director работает на фактах WB',text:'Прибыль, остатки, контент и здоровье источников собраны в одну объяснимую очередь.',effect:'live data',href:'/director',action:'Открыть план'},{severity:'warning',icon:TrendingDown,title:'Profit Center считает полный и частичный результат',text:'Финансы, реклама, себестоимость и налог сводятся без AI-догадок и двойного списания рекламы.',effect:'live data',href:'/profit',action:'Открыть прибыль'},{severity:'growth',icon:TrendingUp,title:'Smart FBO использует реальные снапшоты',text:'Остатки и скорость заказов WB сохраняются фоново и доступны для расчётов.',effect:'live data',href:'/products',action:'Открыть товары'}]
-const nav=[['Старт с нуля',Rocket,'/start'],['Обзор',Gauge,'/'],['AI Director',BrainCircuit,'/director'],['Profit Center',CircleDollarSign,'/profit'],['Товары',Boxes,'/products'],['AI Card Factory',WandSparkles,'/card-factory'],['SEO',Search,'/seo'],['Реклама',Megaphone,'/ads'],['Отзывы',Star,'/reviews'],['Остатки',PackageSearch,'/inventory'],['Отчёты',FileText,'/reports'],['Автопилот',Bot,'/autopilot']]
+const nav=[['Старт с нуля',Rocket,'/start'],['Обзор',Gauge,'/'],['AI Director',BrainCircuit,'/director'],['Сеть агентов',Workflow,'/agents'],['Profit Center',CircleDollarSign,'/profit'],['Товары',Boxes,'/products'],['AI Card Factory',WandSparkles,'/card-factory'],['SEO',Search,'/seo'],['Реклама',Megaphone,'/ads'],['Отзывы',Star,'/reviews'],['Остатки',PackageSearch,'/inventory'],['Отчёты',FileText,'/reports'],['Автопилот',Bot,'/autopilot']]
 
 export default function HomePage(){
  const [notice,setNotice]=useState(''); const [question,setQuestion]=useState(''); const [answer,setAnswer]=useState(''); const [fullName,setFullName]=useState(''); const [overview,setOverview]=useState(null); const [overviewError,setOverviewError]=useState('')

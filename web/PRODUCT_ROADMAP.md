@@ -89,6 +89,8 @@ AI Director is the coordinator, not an unrestricted autonomous bot.
 - Per-organization and per-feature budgets, model fallbacks and a kill switch are mandatory.
 - Each recommendation contains evidence, expected effect, confidence, risk, required permission and expiry.
 - Provider routing must allow managed models first and additional providers or customer keys later without changing product workflows.
+- A deny-by-default agent registry now declares the Director and specialist capabilities. An independent Security Sentinel has veto power, all external writes remain disabled in registry version 1, and the authenticated control plane exposes the policy checksum. Owner/admin work orders are routed only through enumerated goals, redacted, idempotent and stored with that checksum.
+- Agent feedback is stored only as a redacted, idempotent, store-scoped learning candidate. Review does not change production behavior; promotion requires separate offline evaluations and a versioned release.
 
 ## 6. Integration Hub: Russia and CIS accounting coverage
 
@@ -176,6 +178,7 @@ The web product and future Android app use the same versioned API, permissions a
 | Card Factory | Grounded copy, saved versions, confirmed WB text and append-only media submission, post-write live verification | Production observation and failure telemetry |
 | Profit Center | WB finance + advertising ledgers, confirmed COGS + tax, complete/partial P&L by SKU/store | Production reconciliation and accounting-source COGS/tax |
 | AI Director | Evidence queue, durable decisions, audit, STOP, read-only executors and source-based measurement implemented | Bounded marketplace-write executors and verified rollback |
+| Agent network and security | Director + five specialists, independent Security Sentinel, typed deny-by-default registry and reviewed-learning candidates implemented | Eval artefacts, signed policy versions, canary promotion and executor-level security gates |
 | AI Support Agent | Architecture accepted | Incident intake, forced escalation and evidence bundle before general chat |
 | Advertising, reviews, claims | Planned | Read-only insights before approved writes |
 | Integration Hub | Architecture accepted | Canonical schema and 1C/MoySklad adapters |
@@ -208,7 +211,7 @@ The web product and future Android app use the same versioned API, permissions a
 4. Reviews, marketplace-condition changes, penalties and claims in read-only mode first.
 5. Incident-safe AI Support Agent: deterministic escalation, idempotent ticket, redacted evidence and authenticated emergency STOP entry point before product-help RAG.
 6. Self-service onboarding: read-only capability test, resumable source import, user-confirmed business profile, completeness gate and first three evidence-backed actions.
-7. Introduce a typed AI capability registry and transactional job/outbox foundation before adding more autonomous executors.
+7. Typed AI capability registry is implemented as a deny-by-default foundation; add eval artefacts and transactional outbox promotion before more autonomous executors.
 
 ### P2 — expand the operating system
 

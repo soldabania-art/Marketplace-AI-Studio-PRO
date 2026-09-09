@@ -168,6 +168,7 @@ The web product and future Android app use the same versioned API, permissions a
 | Area | Current status | Next production gate |
 |---|---|---|
 | Accounts, organizations, stores | Implemented foundation | Complete RBAC and audit coverage |
+| Business profiles / onboarding | Architecture accepted | Self-service profile confirmation and trustworthy first-value screen |
 | WB snapshots | Catalog, stocks and sales velocity implemented | Reconciliation, freshness SLO and failure UI |
 | Products | Reads real WB catalog facts | Provenance and cross-source identity mapping |
 | Beginner Studio | Photo analysis, confirmed facts, draft and saved project implemented | Durable image assets and publication |
@@ -184,6 +185,7 @@ The web product and future Android app use the same versioned API, permissions a
 | Manufacturer OS | Planned P3 | Versioned BOM, production costing and accounting-source boundaries |
 | Omnichannel / Wholesale | Planned P3 | Canonical offer, reservation-safe inventory and quote MVP |
 | Professional community | Planned P4 | Launch only with verified users, moderation and privacy controls |
+| Network insights | Planned P3 | Consent, cohort protection and contractual data-use review before pilot |
 
 ## 10. Delivery order
 
@@ -205,6 +207,8 @@ The web product and future Android app use the same versioned API, permissions a
    **Implemented safe executor:** only allowlisted WB read synchronizations can run from Director. Profit, stock and content recommendations expose structured baselines and can be measured again only against fresh compatible sources. Marketplace writes remain blocked; a missing recommendation is reported as “no longer detected” without inventing a numeric result.
 4. Reviews, marketplace-condition changes, penalties and claims in read-only mode first.
 5. Incident-safe AI Support Agent: deterministic escalation, idempotent ticket, redacted evidence and authenticated emergency STOP entry point before product-help RAG.
+6. Self-service onboarding: read-only capability test, resumable source import, user-confirmed business profile, completeness gate and first three evidence-backed actions.
+7. Introduce a typed AI capability registry and transactional job/outbox foundation before adding more autonomous executors.
 
 ### P2 — expand the operating system
 
@@ -275,3 +279,8 @@ A feature is done only when all applicable gates pass:
 - The partner seller-of-record network, wholesale sales Hub and professional community are separate security domains and products. Store economics or matching data may enter community features only through granular opt-in and protected aggregation.
 - AI Support Agent is separate from Daily AI Director and receives no marketplace-write permissions. Financial-loss, unexpected-write, security, personal-data, refund and legal cases are forced into an idempotent human-review ticket; an LLM may never downgrade this route.
 - Support answers use approved, versioned and expiring knowledge with visible citations. Conversations do not automatically train a model or become shared knowledge, and the product never invents an SLA, marketplace rule or currently unavailable TROVENDI capability.
+- The first paying ICP is an owner-led small or medium seller/manufacturer with usable sales history, operational pain and fast decision access. Beginner Studio remains the acquisition path; enterprise depth follows after stronger RBAC, audit, SLA and connector gates.
+- Reseller/importer, manufacturer and distributor are versioned business operating profiles, not tenants. Profiles can differ by SKU and are proposed by AI but confirmed by a user before affecting financial calculations.
+- TROVENDI uses bounded AI capabilities behind typed domain services. Finance AI has no arbitrary production SQL, vector retrieval is not financial memory, and Guided mode never weakens approval or money-safety rules.
+- The near-term scale path is a modular application, PostgreSQL, transactional outbox, durable idempotent jobs, workload-specific workers and rate-limit backpressure. Kafka, ClickHouse or service extraction require measured workload evidence.
+- Cross-customer benchmarks and logistics radar require separate consent, contractual data-use rights, comparable cohorts, minimum cohort protection, uncertainty disclosure and access audit. Raw tenant data is never shared across retrieval contexts.

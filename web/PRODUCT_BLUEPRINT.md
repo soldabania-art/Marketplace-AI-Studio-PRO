@@ -13,6 +13,8 @@ The product is designed around one loop:
 
 The target UX is maximum automation: the seller connects stores, supplies product facts and business constraints, then AI Director continuously prioritizes work. AI creates card copy/SEO/visual concepts and, where generation is available, visual assets. Deterministic engines remain the source of business calculations.
 
+The initial paying core is an owner-led small or medium seller/manufacturer with usable transaction history and fragmented operations. Beginner Studio remains the low-friction acquisition path; enterprise requirements are added after the core operating loop is proven.
+
 ## Beginner Launch Studio — «Старт с нуля»
 This is a distinct product entry point for a person who has not sold on marketplaces before. It shares the same account, Store, Card Factory, Profit Center and AI Director architecture; it is not a disconnected second product.
 
@@ -38,6 +40,7 @@ Beginner language must avoid marketplace jargon or explain it at the point of us
 6. Claims & Disputes — penalties, deductions, lost goods and marketplace support claims.
 7. Agency Mode — portfolio, RBAC, client portal, white-label reporting and bulk actions.
 8. Notification layer — Web Push first, Telegram and native Android push later.
+9. Self-service and scale layer — business profiles, activation, bounded AI capabilities, durable jobs and privacy-safe network insights.
 
 ## Primary navigation
 1. AI Director

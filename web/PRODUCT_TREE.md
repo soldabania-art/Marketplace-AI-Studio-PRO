@@ -46,6 +46,7 @@ AI coordinates the loop. Deterministic services remain authoritative for facts, 
 | Branch | Status | Depends on | Next gate |
 | --- | --- | --- | --- |
 | Accounts, stores, trial | **live foundation** | PostgreSQL, auth, server entitlements | RF/CIS payment checkout and verified webhook adapter |
+| Business profiles / onboarding | **planned P1** | store context + source health | Confirmed profile and first trustworthy value |
 | WB snapshots | **live foundation** | encrypted token, worker | Reconciliation and freshness SLO |
 | Products | **live foundation** | catalog + stock + velocity | Provenance and cross-source identity |
 | AI Card Factory | **live foundation** | facts + AI persistence | Production observation of text and media writes |
@@ -61,6 +62,7 @@ AI coordinates the loop. Deterministic services remain authoritative for facts, 
 | Manufacturer OS | **planned P3** | canonical products + accounting sources | Versioned BOM and production costing |
 | Omnichannel / Wholesale | **planned P3** | inventory ledger + channel connectors | Reservation-safe stock and quote MVP |
 | Professional community | **planned P4** | active verified users + moderation | Guides, verified profiles and partnership requests |
+| Network insights | **planned P3** | consent + viable protected cohorts | Benchmark and logistics-radar pilots |
 
 ## 4. Integration tree
 
@@ -79,9 +81,9 @@ AI coordinates the loop. Deterministic services remain authoritative for facts, 
 ## 5. Delivery spine
 
 1. **P0:** one safe WB vertical is implemented through provider-neutral billing entitlements; production observation and the selected payment adapter remain launch gates.
-2. **P1:** operational AI Director, health monitoring, approval inbox, incident-safe Support Agent and read-only risk modules.
+2. **P1:** operational AI Director, self-service onboarding, typed AI capabilities, health monitoring, approval inbox, incident-safe Support Agent and read-only risk modules.
 3. **P2:** Integration Hub, 1C/MoySklad, Ozon, Android and agency roles.
 4. **P3:** Kazakhstan cross-border pilot, Manufacturer OS foundation, omnichannel and wholesale workflows.
 5. **P4:** broader CIS routes, connector SDK, professional network/community and enterprise scale.
 
-This file is the hierarchy view. [`PRODUCT_ROADMAP.md`](./PRODUCT_ROADMAP.md) remains the delivery source of truth; [`SUPPORT_AGENT_ARCHITECTURE.md`](./SUPPORT_AGENT_ARCHITECTURE.md) defines support safety; [`EXPANSION_STRATEGY.md`](./EXPANSION_STRATEGY.md) defines the accepted discovery architecture.
+This file is the hierarchy view. [`PRODUCT_ROADMAP.md`](./PRODUCT_ROADMAP.md) remains the delivery source of truth; [`AI_ORCHESTRATION_AND_SCALE.md`](./AI_ORCHESTRATION_AND_SCALE.md) defines onboarding, AI boundaries and scale; [`SUPPORT_AGENT_ARCHITECTURE.md`](./SUPPORT_AGENT_ARCHITECTURE.md) defines support safety; [`EXPANSION_STRATEGY.md`](./EXPANSION_STRATEGY.md) defines the accepted discovery architecture.

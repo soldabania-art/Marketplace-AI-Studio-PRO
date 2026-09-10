@@ -1,12 +1,18 @@
 from datetime import datetime, timezone
 
+import json
+
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from .db import get_db
+from .ai_generation_service import begin_generation, complete_generation, fail_generation, public_generation, stable_hash
+from .billing_service import require_entitlement
 from .job_queue import enqueue
 from .marketplace_sync import latest_snapshot
-from .models import MarketplaceConnection, User
+from .models import AIGeneration, GenerationStatus, MarketplaceConnection, User
+from .review_ai import build_review_fact_set, generate_review_analysis
 from .security import get_current_user
 from .store_access import resolve_store
 
@@ -39,3 +45,37 @@ def reviews(store_id: str | None = None, user: User = Depends(get_current_user),
         "average_rating": round(sum(ratings) / len(ratings), 2) if ratings else None,
     }
     return {"store_id": store.id, "store_name": store.name, "marketplace": "wildberries", "read_only": True, "sync_required": age > 3600, "refresh_job_id": refresh.id if refresh else None, "freshness": {"created_at": snapshot.created_at, "age_seconds": age}, "metrics": metrics, "reviews": items[:200]}
+
+
+@router.get("/analysis")
+def review_analysis(store_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = resolve_store(db, user, store_id)
+    rows = db.query(AIGeneration).filter(AIGeneration.store_id == store.id, AIGeneration.feature == "review_analysis").order_by(AIGeneration.created_at.desc()).limit(20).all()
+    return {"items": [public_generation(row) for row in rows], "automatic_reply_enabled": False}
+
+
+@router.post("/analysis", status_code=201)
+def create_review_analysis(store_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = resolve_store(db, user, store_id)
+    require_entitlement(db, store.workspace_id, "review_ai")
+    snapshot = latest_snapshot(db, store_id=store.id, marketplace="wildberries", snapshot_type="feedbacks")
+    if not snapshot:
+        raise HTTPException(409, "Сначала синхронизируйте отзывы Wildberries.")
+    fact_set = build_review_fact_set(list((snapshot.payload or {}).get("items") or []))
+    input_payload = {"feedback_snapshot_id": snapshot.id, "fact_set": fact_set}
+    input_hash = stable_hash(input_payload)
+    previous = db.query(AIGeneration).filter(AIGeneration.store_id == store.id, AIGeneration.feature == "review_analysis", AIGeneration.input_hash == input_hash, AIGeneration.status == GenerationStatus.completed).order_by(AIGeneration.created_at.desc()).first()
+    if previous:
+        return {"generation": public_generation(previous), "cached": True, "automatic_reply_enabled": False}
+    generation = begin_generation(db, store=store, user=user, feature="review_analysis", subject_id=snapshot.id, input_payload=input_payload, fact_set_sha256=fact_set["sha256"])
+    try:
+        result = generate_review_analysis(fact_set)
+        metadata = result.pop("_generation_metadata", {})
+        complete_generation(db, generation, result, metadata)
+    except RuntimeError as exc:
+        fail_generation(db, generation, exc); raise HTTPException(503, str(exc)) from exc
+    except (ValueError, json.JSONDecodeError) as exc:
+        fail_generation(db, generation, exc); raise HTTPException(502, f"AI-анализ не прошёл проверку доказательств: {exc}") from exc
+    except httpx.HTTPError as exc:
+        fail_generation(db, generation, exc); raise HTTPException(502, "AI-сервис временно не ответил.") from exc
+    return {"generation": public_generation(generation), "cached": False, "automatic_reply_enabled": False}

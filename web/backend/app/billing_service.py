@@ -25,6 +25,7 @@ PLAN_CATALOG = {
             "marketplace_publication": False,
             "profit_center": True,
             "community_access": False,
+            "review_ai": False,
             "autopilot_level": "disabled",
         },
     },
@@ -41,6 +42,7 @@ PLAN_CATALOG = {
             "marketplace_publication": True,
             "profit_center": True,
             "community_access": True,
+            "review_ai": True,
             "autopilot_level": "assisted",
         },
     },
@@ -57,6 +59,7 @@ PLAN_CATALOG = {
             "marketplace_publication": True,
             "profit_center": True,
             "community_access": True,
+            "review_ai": True,
             "autopilot_level": "advanced",
         },
     },
@@ -72,6 +75,7 @@ READ_ONLY_ENTITLEMENTS = {
     "marketplace_publication": False,
     "profit_center": True,
     "community_access": False,
+    "review_ai": False,
     "autopilot_level": "disabled",
 }
 

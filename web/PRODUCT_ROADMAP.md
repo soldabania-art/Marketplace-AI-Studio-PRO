@@ -183,7 +183,7 @@ The web product and future Android app use the same versioned API, permissions a
 | Agent network and security | Director + five specialists, independent Security Sentinel, typed deny-by-default registry and reviewed-learning candidates implemented | Eval artefacts, signed policy versions, canary promotion and executor-level security gates |
 | AI Support Agent | Architecture accepted | Incident intake, forced escalation and evidence bundle before general chat |
 | Advertising | Read-only source data connected | Reconciliation and bounded, approved writes |
-| Reviews | Read-only WB snapshot and privacy-minimised workspace connected | Grounded theme analysis and reviewable response drafts; no automatic replies |
+| Reviews | Read-only WB snapshot plus persisted grounded AI themes/drafts | Human review workflow; automatic replies remain disabled |
 | Claims | Planned | Read-only insights before approved writes |
 | Integration Hub | Architecture accepted | Canonical schema and 1C/MoySklad adapters |
 | Ozon and other marketplaces | Planned | Start after WB write path is safe |

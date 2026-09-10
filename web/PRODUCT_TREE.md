@@ -65,7 +65,7 @@ AI coordinates the loop. Deterministic services remain authoritative for facts, 
 | Agent network and Security Sentinel | **live foundation** | auth + store scope + audit | Offline eval artefacts, signed policy promotion and bounded executor gates |
 | AI Support Agent | **planned P1** | audit, store context + versioned knowledge | Incident intake and deterministic escalation first |
 | SEO and advertising | **P1 in progress** | Director + marketplace readers | Measured recommendations before bounded writes |
-| Reviews | **read-only WB snapshot connected** | feedback reader + store context | Grounded themes and drafts; replies remain human-approved |
+| Reviews | **snapshot + persisted grounded AI analysis** | feedback reader + fact hash + cost ledger | Human approval workflow; automatic replies remain disabled |
 | Integration Hub | **versioned catalog live** | tenant scope + connector capability contract | WB reconciliation, then Ozon/1C/MoySklad read adapters |
 | Reports and autopilot | **planned P1/P2** | audit + approvals + measurement | Bounded policies and rollback evidence |
 | Integration Hub | **planned P2** | canonical commerce model | 1C and MoySklad first |

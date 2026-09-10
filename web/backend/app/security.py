@@ -41,6 +41,15 @@ def is_platform_admin(user: User) -> bool:
     return user.email.lower().strip() in get_settings().admin_email_set
 
 
+def step_up_valid_until(session: UserSession) -> datetime | None:
+    verified_at = session.step_up_verified_at
+    if verified_at is None:
+        return None
+    if verified_at.tzinfo is None:
+        verified_at = verified_at.replace(tzinfo=timezone.utc)
+    return verified_at + timedelta(minutes=get_settings().step_up_minutes)
+
+
 def _decode_access_token(token: str) -> tuple[str, str]:
     settings = get_settings()
     try:
@@ -89,6 +98,16 @@ def get_current_session(
     return session
 
 
+def require_step_up_session(current_session: UserSession = Depends(get_current_session)) -> UserSession:
+    valid_until = step_up_valid_until(current_session)
+    if valid_until is None or valid_until <= datetime.now(timezone.utc):
+        raise HTTPException(
+            status_code=428,
+            detail="Подтвердите личность в разделе безопасности перед чувствительным действием",
+        )
+    return current_session
+
+
 def get_current_user(
     current_session: UserSession = Depends(get_current_session),
     db: Session = Depends(get_db),
@@ -108,4 +127,11 @@ def require_platform_admin(current_session: UserSession = Depends(get_current_se
     mfa = db.get(UserMfa, current_user.id)
     if mfa is None or not mfa.enabled or current_session.mfa_verified_at is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform administrator MFA is required")
+    return current_user
+
+
+def require_platform_admin_step_up(
+    current_user: User = Depends(require_platform_admin),
+    _: UserSession = Depends(require_step_up_session),
+) -> User:
     return current_user

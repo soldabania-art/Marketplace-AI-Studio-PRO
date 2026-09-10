@@ -5,9 +5,9 @@ from sqlalchemy.orm import Session
 
 from .db import get_db
 from .fbo_service import fetch_wb_slots
-from .models import MarketplaceConnection, User
+from .models import MarketplaceConnection, User, UserSession
 from .secret_provider import SecretProviderError, get_secret_provider
-from .security import get_current_user
+from .security import get_current_user, require_step_up_session
 from .store_access import require_store_admin, resolve_store
 
 router = APIRouter()
@@ -33,7 +33,7 @@ def decrypt_connection(row: MarketplaceConnection) -> str:
 
 
 @router.post('/integrations/wildberries')
-async def connect_wb(body: WbTokenBody, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def connect_wb(body: WbTokenBody, user: User = Depends(get_current_user), _: UserSession = Depends(require_step_up_session), db: Session = Depends(get_db)):
     store = resolve_store(db, user, body.store_id)
     require_store_admin(db, user, store)
     provider = secret_provider()
@@ -75,7 +75,7 @@ def wb_status(store_id: str | None = None, user: User = Depends(get_current_user
 
 
 @router.delete('/integrations/wildberries')
-def disconnect_wb(store_id: str | None = None, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def disconnect_wb(store_id: str | None = None, user: User = Depends(get_current_user), _: UserSession = Depends(require_step_up_session), db: Session = Depends(get_db)):
     store = resolve_store(db, user, store_id)
     require_store_admin(db, user, store)
     row = db.query(MarketplaceConnection).filter(MarketplaceConnection.store_id == store.id, MarketplaceConnection.marketplace == 'wildberries').first()

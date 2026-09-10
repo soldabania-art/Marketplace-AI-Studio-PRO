@@ -34,6 +34,7 @@ from .schemas import (
     MfaPasswordRequest,
     PasswordResetConfirmRequest,
     RegisterRequest,
+    StepUpRequest,
     TokenActionRequest,
     TokenResponse,
 )
@@ -53,6 +54,7 @@ from .security import (
     get_current_user,
     hash_password,
     is_platform_admin,
+    step_up_valid_until,
     verify_password,
 )
 
@@ -404,6 +406,7 @@ def confirm_mfa(payload: MfaCodeRequest, request: Request, current_user: User = 
     mfa.recovery_code_hashes = code_hashes
     mfa.confirmed_at = now
     current_session.mfa_verified_at = now
+    current_session.step_up_verified_at = None
     db.execute(update(UserSession).where(
         UserSession.user_id == current_user.id,
         UserSession.id != current_session.id,
@@ -428,6 +431,7 @@ def disable_mfa(payload: MfaDisableRequest, request: Request, current_user: User
     now = datetime.now(timezone.utc)
     db.delete(mfa)
     current_session.mfa_verified_at = None
+    current_session.step_up_verified_at = None
     db.execute(update(UserSession).where(
         UserSession.user_id == current_user.id,
         UserSession.id != current_session.id,
@@ -436,6 +440,39 @@ def disable_mfa(payload: MfaDisableRequest, request: Request, current_user: User
     _record_security_event(db, request, "mfa_disabled", True, user=current_user)
     db.commit()
     return {"ok": True, "enabled": False}
+
+
+@router.get("/auth/step-up/status")
+def step_up_status(current_user: User = Depends(get_current_user), current_session: UserSession = Depends(get_current_session), db: Session = Depends(get_db)):
+    valid_until = step_up_valid_until(current_session)
+    now = datetime.now(timezone.utc)
+    mfa = db.get(UserMfa, current_user.id)
+    return {
+        "verified": bool(valid_until and valid_until > now),
+        "valid_until": valid_until if valid_until and valid_until > now else None,
+        "mfa_required": bool(mfa and mfa.enabled),
+        "lifetime_minutes": get_settings().step_up_minutes,
+    }
+
+
+@router.post("/auth/step-up")
+def verify_step_up(payload: StepUpRequest, request: Request, current_user: User = Depends(get_current_user), current_session: UserSession = Depends(get_current_session), db: Session = Depends(get_db)):
+    if _account_action_is_limited(db, request, "step_up", current_user.email):
+        raise HTTPException(status_code=429, detail="Too many verification attempts. Try again later.")
+    mfa = db.get(UserMfa, current_user.id)
+    password_ok = verify_password(payload.password, current_user.password_hash)
+    second_factor_ok = False
+    if password_ok:
+        second_factor_ok = not (mfa and mfa.enabled) or bool(payload.code and _verify_mfa_code(mfa, payload.code))
+    if not password_ok or not second_factor_ok:
+        _record_security_event(db, request, "step_up", False, user=current_user, subject=current_user.email)
+        db.commit()
+        raise HTTPException(status_code=401, detail="Password or authentication code is invalid")
+    now = datetime.now(timezone.utc)
+    current_session.step_up_verified_at = now
+    _record_security_event(db, request, "step_up", True, user=current_user, subject=current_user.email)
+    db.commit()
+    return {"ok": True, "verified": True, "valid_until": step_up_valid_until(current_session)}
 
 
 @router.get("/auth/sessions")
@@ -450,6 +487,7 @@ def sessions(current_user: User = Depends(get_current_user), current_session: Us
         "expires_at": row.expires_at,
         "revoked": row.revoked_at is not None,
         "mfa_verified": row.mfa_verified_at is not None,
+        "step_up_verified": bool(step_up_valid_until(row) and step_up_valid_until(row) > datetime.now(timezone.utc)),
     } for row in rows]}
 
 

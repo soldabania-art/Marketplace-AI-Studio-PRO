@@ -61,6 +61,10 @@ class MfaDisableRequest(MfaCodeRequest, MfaPasswordRequest):
     pass
 
 
+class StepUpRequest(MfaPasswordRequest):
+    code: str = Field(default="", max_length=32)
+
+
 class AccountResponse(BaseModel):
     id: str
     email: EmailStr

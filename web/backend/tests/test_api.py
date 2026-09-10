@@ -146,6 +146,39 @@ def test_mfa_setup_login_recovery_and_single_use_challenge():
     assert reused.status_code == 401
 
 
+def test_sensitive_actions_require_short_lived_step_up():
+    _, password, token = _register_user()
+    headers = {"Authorization": f"Bearer {token}"}
+    initial = client.get("/api/v1/auth/step-up/status", headers=headers)
+    assert initial.status_code == 200
+    assert initial.json()["verified"] is False
+    blocked = client.post(
+        "/api/v1/integrations/wildberries",
+        headers=headers,
+        json={"store_id": None, "token": "x" * 40},
+    )
+    assert blocked.status_code == 428
+    assert client.post("/api/v1/auth/step-up", headers=headers, json={"password": "wrong"}).status_code == 401
+    verified = client.post("/api/v1/auth/step-up", headers=headers, json={"password": password})
+    assert verified.status_code == 200
+    assert verified.json()["verified"] is True
+    current = client.get("/api/v1/auth/step-up/status", headers=headers).json()
+    assert current["verified"] is True
+    sessions = client.get("/api/v1/auth/sessions", headers=headers).json()["sessions"]
+    assert next(row for row in sessions if row["current"])["step_up_verified"] is True
+
+
+def test_wrong_password_does_not_consume_mfa_code_during_step_up():
+    _, password, token = _register_user()
+    headers = {"Authorization": f"Bearer {token}"}
+    setup = client.post("/api/v1/auth/mfa/setup", headers=headers, json={"password": password}).json()
+    code = totp_code(setup["secret"])
+    assert client.post("/api/v1/auth/mfa/confirm", headers=headers, json={"code": code}).status_code == 200
+    assert client.post("/api/v1/auth/step-up", headers=headers, json={"password": "wrong", "code": code}).status_code == 401
+    verified = client.post("/api/v1/auth/step-up", headers=headers, json={"password": password, "code": code})
+    assert verified.status_code == 200
+
+
 def test_trial_subscription_exposes_server_entitlements_and_blocks_second_store():
     _, _, token = _register_user()
     headers = {"Authorization": f"Bearer {token}"}

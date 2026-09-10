@@ -169,7 +169,7 @@ The web product and future Android app use the same versioned API, permissions a
 
 | Area | Current status | Next production gate |
 |---|---|---|
-| Accounts, organizations, stores | Server sessions, TOTP MFA, one-time recovery codes and admin MFA gate implemented | Passkeys, step-up gates for exports/bulk writes, complete RBAC and audit coverage |
+| Accounts, organizations, stores | Server sessions, TOTP MFA, recovery codes, admin MFA gate and ten-minute step-up authorization implemented | Passkeys, export gates, complete RBAC and audit coverage |
 | Business profiles / onboarding | Architecture accepted | Self-service profile confirmation and trustworthy first-value screen |
 | WB snapshots | Catalog, stocks and sales velocity implemented | Reconciliation, freshness SLO and failure UI |
 | Products | Reads real WB catalog facts | Provenance and cross-source identity mapping |
@@ -194,7 +194,7 @@ The web product and future Android app use the same versioned API, permissions a
 
 ### P0 — complete the safe vertical product
 
-0. Complete the production security perimeter: private PostgreSQL connectivity, least-privilege runtime role, encrypted PITR/backups with restore drill, passkeys, step-up authorization for exports and bulk actions, observed Vercel WAF rules, and PostgreSQL RLS rollout. **Application baseline implemented:** production fails closed without PostgreSQL/TLS/HTTPS/secrets, API docs are disabled, auth/recovery limits and anti-cache headers are active, cross-tenant exfiltration probes run in tests, and TOTP MFA with single-use recovery codes protects accounts while platform administrators require an MFA-verified session. Infrastructure controls remain launch gates until verified in the providers.
+0. Complete the production security perimeter: private PostgreSQL connectivity, least-privilege runtime role, encrypted PITR/backups with restore drill, passkeys, export authorization gates, observed Vercel WAF rules, and PostgreSQL RLS rollout. **Application baseline implemented:** production fails closed without PostgreSQL/TLS/HTTPS/secrets, API docs are disabled, auth/recovery limits and anti-cache headers are active, cross-tenant exfiltration probes run in tests, TOTP MFA with single-use recovery codes protects accounts, and a ten-minute server-side step-up window gates marketplace credentials, marketplace publications and administrative mutations. Infrastructure controls remain launch gates until verified in the providers.
 1. Finish one store-scoped Card Factory using real catalog facts.
 2. Persist generated images and generation metadata. **Implemented for Card Factory; Beginner Studio reuse remains.**
 3. Add validation preview and confirmed WB publication. **Implemented for title/description and separately approved image upload, each with post-write verification and no automatic retry.**

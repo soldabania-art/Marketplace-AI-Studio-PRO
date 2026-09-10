@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     mfa_challenge_minutes: int = 5
     mfa_attempt_limit: int = 8
     mfa_setup_minutes: int = 10
+    step_up_minutes: int = 10
     frontend_url: str = "http://localhost:3000"
     admin_emails: str = ""
     billing_provider: str = "not_configured"

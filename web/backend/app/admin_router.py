@@ -6,7 +6,7 @@ from .billing_service import PLAN_CATALOG
 from .config import get_settings
 from .db import get_db
 from .models import Membership, Subscription, SubscriptionStatus, User, Workspace
-from .security import require_platform_admin
+from .security import require_platform_admin, require_platform_admin_step_up
 
 router = APIRouter()
 VALID_PLANS = set(PLAN_CATALOG)
@@ -66,7 +66,7 @@ def users(_: User = Depends(require_platform_admin), db: Session = Depends(get_d
 
 
 @router.patch("/admin/users/{user_id}/status")
-def set_user_status(user_id: str, active: bool, admin: User = Depends(require_platform_admin), db: Session = Depends(get_db)):
+def set_user_status(user_id: str, active: bool, admin: User = Depends(require_platform_admin_step_up), db: Session = Depends(get_db)):
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -78,7 +78,7 @@ def set_user_status(user_id: str, active: bool, admin: User = Depends(require_pl
 
 
 @router.patch("/admin/workspaces/{workspace_id}/plan")
-def set_workspace_plan(workspace_id: str, plan_code: str, _: User = Depends(require_platform_admin), db: Session = Depends(get_db)):
+def set_workspace_plan(workspace_id: str, plan_code: str, _: User = Depends(require_platform_admin_step_up), db: Session = Depends(get_db)):
     if plan_code not in VALID_PLANS:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unknown plan")
     workspace = db.get(Workspace, workspace_id)

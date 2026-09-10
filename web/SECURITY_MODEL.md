@@ -72,6 +72,7 @@ flowchart TD
 
 - Authentication sessions use `HttpOnly`, `Secure` in production and `SameSite=Lax` cookies.
 - Account MFA uses standard TOTP authenticators. TOTP secrets are encrypted with a dedicated key, recovery codes are keyed hashes shown once, login challenges are short-lived and single-use, and administrators must enter through an MFA-verified session.
+- A normal login does not permanently authorize high-impact operations. A short-lived step-up window requires the current password and, when enabled, a fresh MFA or recovery code before marketplace credential changes, marketplace publications and platform-administration mutations.
 - Marketplace and accounting credentials are encrypted at rest and are never returned after entry.
 - Authorization is performed server-side on every store-scoped request; a client-supplied `store_id` is never trusted alone.
 - Database migrations, backups and point-in-time recovery are tested. Restore tests matter more than the existence of a backup setting.
@@ -83,6 +84,7 @@ flowchart TD
 - API documentation is disabled in production, API responses are marked `no-store`, and browser/API security headers are set centrally.
 - Login throttling is evaluated by both privacy-preserving account hash and source IP hash; recovery and verification actions are bounded separately.
 - MFA setup, confirmation, disablement and login verification are rate-limited and audited without logging codes or secrets. Enabling or disabling MFA revokes the user's other active sessions.
+- Step-up grants live only on the current revocable server session, expire after ten minutes by default and are never represented by a browser-controlled flag.
 - A database dump is still sensitive business data. Storage encryption alone does not make a stolen logical dump unreadable; private networking, least-privilege roles, audited access, encrypted backups and selective envelope encryption are separate required controls.
 
 ## 6. Release gates

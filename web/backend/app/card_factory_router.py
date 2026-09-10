@@ -17,8 +17,8 @@ from .config import get_settings
 from .db import get_db
 from .marketplace_connections import decrypt_connection
 from .marketplace_sync import latest_snapshot
-from .models import AIGeneration, CardPublication, GenerationStatus, MarketplaceConnection, MediaPublication, PublicationStatus, User
-from .security import get_current_user
+from .models import AIGeneration, CardPublication, GenerationStatus, MarketplaceConnection, MediaPublication, PublicationStatus, User, UserSession
+from .security import get_current_user, require_step_up_session
 from .store_access import require_store_admin, resolve_store
 from .trial_service import ensure_ai_access, refund_trial_card, reserve_trial_card
 from .wb_content import build_card_update, fetch_wb_card, update_wb_card, upload_wb_media_file
@@ -412,7 +412,7 @@ def prepare_publication(payload: PreparePublicationRequest, user: User = Depends
 
 
 @router.post("/publications/{publication_id}/publish")
-async def publish_card(publication_id: str, payload: ConfirmPublicationRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def publish_card(publication_id: str, payload: ConfirmPublicationRequest, user: User = Depends(get_current_user), _: UserSession = Depends(require_step_up_session), db: Session = Depends(get_db)):
     store = _resolve_connected_store(db, user, payload.store_id)
     require_entitlement(db, store.workspace_id, "marketplace_publication")
     require_store_admin(db, user, store)
@@ -633,7 +633,7 @@ def prepare_media_publication(payload: PrepareMediaPublicationRequest, user: Use
 
 
 @router.post("/media-publications/{publication_id}/publish")
-async def publish_media(publication_id: str, payload: ConfirmPublicationRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def publish_media(publication_id: str, payload: ConfirmPublicationRequest, user: User = Depends(get_current_user), _: UserSession = Depends(require_step_up_session), db: Session = Depends(get_db)):
     store = _resolve_connected_store(db, user, payload.store_id)
     require_entitlement(db, store.workspace_id, "marketplace_publication")
     require_store_admin(db, user, store)

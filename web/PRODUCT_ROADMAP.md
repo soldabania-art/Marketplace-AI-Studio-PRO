@@ -248,7 +248,7 @@ A feature is done only when all applicable gates pass:
 - Risky writes have preview, confirmation, audit and recovery behavior.
 - Database migration works from the previous production schema.
 - Production build and automated tests pass.
-- After every GitHub upload, Vercel deployment status is checked, changed routes are opened, and failures are corrected before the work is reported complete.
+- Vercel deployment status is checked after every fifth GitHub upload as one controlled batch, then changed routes are opened and failures are corrected before that batch is reported complete. Local tests and a production build remain mandatory before every upload.
 - CI uses current Node.js 24-compatible official GitHub Actions. The active delivery target is the TROVENDI web/backend product; Windows installer builds are disabled.
 
 ## 12. Product decision log
@@ -288,4 +288,5 @@ A feature is done only when all applicable gates pass:
 - TROVENDI uses bounded AI capabilities behind typed domain services. Finance AI has no arbitrary production SQL, vector retrieval is not financial memory, and Guided mode never weakens approval or money-safety rules.
 - The near-term scale path is a modular application, PostgreSQL, transactional outbox, durable idempotent jobs, workload-specific workers and rate-limit backpressure. Kafka, ClickHouse or service extraction require measured workload evidence.
 - Security is a launch gate, not a marketing label. Current application controls do not make a stolen logical database dump harmless; private networking, minimal database roles, independent encrypted backups, monitored key access, PostgreSQL RLS and selective per-tenant envelope encryption follow `DATABASE_SECURITY_RUNBOOK.md` and must be verified before broad onboarding.
+- To conserve Vercel build quota, deployments are verified in batches after every five GitHub uploads. A failed fifth-build gate blocks the next batch until corrected; security-critical emergency fixes may be verified immediately.
 - Cross-customer benchmarks and logistics radar require separate consent, contractual data-use rights, comparable cohorts, minimum cohort protection, uncertainty disclosure and access audit. Raw tenant data is never shared across retrieval contexts.

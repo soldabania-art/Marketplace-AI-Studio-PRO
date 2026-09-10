@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app.profit_center_router import ProductCostRequest, TaxProfileRequest, _public_amounts, _tax_kopecks, _totals, _verified_cost, save_tax_profile
+from app.profit_center_router import ProductCostRequest, TaxProfileRequest, _public_amounts, _tax_kopecks, _totals, _validated_import_mapping, _verified_cost, save_tax_profile
 
 
 def line(**values):
@@ -103,3 +103,15 @@ def test_legacy_confirmed_total_remains_supported():
     payload=ProductCostRequest(store_id='store-1',cogs_rub='123.45',confirmed=True)
     total,model,components,sources,_=_verified_cost(payload,None)
     assert (total,model,components,sources)==(12345,'legacy_total',{'legacy_total':12345},{})
+
+
+def test_import_mapping_is_allowlisted_and_normalized():
+    assert _validated_import_mapping({'nm_id':' Артикул WB ','components':{'materials':' Сырьё '}})=={
+        'nm_id':'Артикул WB','operating_model':'','row_source':'','components':{'materials':'Сырьё'},
+    }
+
+
+def test_import_mapping_rejects_unknown_component():
+    with pytest.raises(HTTPException) as error:
+        _validated_import_mapping({'nm_id':'nmId','components':{'password':'Секрет'}})
+    assert error.value.status_code==422

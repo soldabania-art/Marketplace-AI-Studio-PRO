@@ -1,8 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import {useMemo,useState} from 'react'
-import {CheckCircle2,CircleAlert,FileSpreadsheet,LockKeyhole,Upload} from 'lucide-react'
+import {useEffect,useMemo,useState} from 'react'
+import {CheckCircle2,CircleAlert,FileSpreadsheet,LockKeyhole,Save,Trash2,Upload} from 'lucide-react'
 import {normalizeCostModel,normalizeMoney,parseCostCsv,suggestCostMapping} from '../lib/costImportCsv.mjs'
 
 const sourceOptions=[['csv','CSV (включая экспорт Excel)'],['1c','1С'],['moysklad','МойСклад'],['saby','Saby / СБИС'],['kontur','Контур'],['partner_api','Партнёрская система']]
@@ -18,14 +18,46 @@ export default function CostImportWorkspace({storeId,profile,onCommitted,onNotic
   const [errors,setErrors]=useState([])
   const [busy,setBusy]=useState(false)
   const [confirmed,setConfirmed]=useState(false)
+  const [presets,setPresets]=useState([])
+  const [presetName,setPresetName]=useState('')
+  const [selectedPresetId,setSelectedPresetId]=useState('')
 
   const componentCatalog=profile?.component_catalog||{}
   const allowedModels=profile?.allowed_sku_models||[]
   const componentKeys=useMemo(()=>[...new Set(allowedModels.flatMap(model=>Object.keys(componentCatalog[model]||{})))],[allowedModels,componentCatalog])
 
+  useEffect(()=>{if(!storeId)return;let active=true
+    fetch(`/api/profit-center/cost-import-mappings?store_id=${encodeURIComponent(storeId)}`).then(async response=>({response,payload:await response.json()})).then(({response,payload})=>{if(active&&response.ok)setPresets(payload.items||[])}).catch(()=>{})
+    return()=>{active=false}
+  },[storeId])
+
   function invalidate(){setPreview(null);setConfirmed(false);setErrors([])}
   function updateMapping(key,value){invalidate();setMapping(current=>({...current,[key]:value}))}
   function updateComponent(key,value){invalidate();setMapping(current=>({...current,components:{...current.components,[key]:value}}))}
+
+  function applyPreset(id){
+    setSelectedPresetId(id)
+    const preset=presets.find(item=>item.id===id);if(!preset||!parsed)return
+    const columns=new Set(parsed.headers);const next=preset.mapping
+    const required=[next.nm_id,next.operating_model,next.row_source,...Object.values(next.components||{})].filter(Boolean)
+    if(required.some(column=>!columns.has(column))){setErrors([{error:'В выбранном файле нет одной или нескольких колонок сохранённой схемы.'}]);return}
+    invalidate();setMapping(next);setSourceSystem(preset.source_system);setPresetName(preset.name)
+  }
+
+  async function savePreset(){
+    if(!mapping.nm_id||presetName.trim().length<2)return
+    setBusy(true);setErrors([])
+    try{const response=await fetch('/api/profit-center/cost-import-mappings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({store_id:storeId,name:presetName.trim(),source_system:sourceSystem,mapping})});const payload=await response.json();if(!response.ok)throw new Error(payload.error||'Не удалось сохранить схему.');setPresets(current=>[...current.filter(item=>item.id!==payload.id&&item.name!==payload.name),payload].sort((a,b)=>a.name.localeCompare(b.name,'ru')));onNotice?.('Схема сопоставления сохранена для этого магазина.')}
+    catch(error){setErrors([{error:error.message}])}finally{setBusy(false)}
+  }
+
+  async function deletePreset(){
+    const preset=presets.find(item=>item.id===selectedPresetId);if(!preset)return
+    if(!window.confirm(`Удалить схему «${preset.name}»? Это действие нельзя отменить.`))return
+    setBusy(true);setErrors([])
+    try{const response=await fetch(`/api/profit-center/cost-import-mappings/${encodeURIComponent(preset.id)}?store_id=${encodeURIComponent(storeId)}`,{method:'DELETE'});if(!response.ok){const payload=await response.json();throw new Error(payload.error||'Не удалось удалить схему.')}setPresets(current=>current.filter(item=>item.id!==preset.id));setPresetName('');setSelectedPresetId('');onNotice?.('Схема удалена.')}
+    catch(error){setErrors([{error:error.message}])}finally{setBusy(false)}
+  }
 
   async function selectFile(event){
     const file=event.target.files?.[0]; invalidate()
@@ -101,7 +133,7 @@ export default function CostImportWorkspace({storeId,profile,onCommitted,onNotic
 
   return <section className="workPanel costImportPanel"><div className="costImportTitle"><FileSpreadsheet size={22}/><div><span className="eyebrow">БЕЗОПАСНЫЙ ИМПОРТ</span><h2>Себестоимость из учётной системы</h2><p>До подтверждения данные не меняются. Максимум 500 строк и 2 МБ за одно превью.</p></div><button type="button" className="ghostBtn" onClick={downloadTemplate}>Скачать шаблон</button></div>
     <div className="costImportSetup"><label>Источник<select value={sourceSystem} onChange={event=>{invalidate();setSourceSystem(event.target.value)}}>{sourceOptions.map(([value,label])=><option value={value} key={value}>{label}</option>)}</select></label><label>Документ / выгрузка<input value={documentReference} maxLength={300} onChange={event=>{invalidate();setDocumentReference(event.target.value)}} placeholder="Например: 1С, расчёт №42 от 10.09.2026"/></label><label className="costFile"><Upload size={16}/><span>{fileName||'Выбрать CSV'}</span><input type="file" accept=".csv,.txt,text/csv,text/plain" onChange={selectFile}/></label></div>
-    {parsed&&<div className="costMapping"><div><b>Сопоставление колонок</b><span>{parsed.records.length} строк · разделитель {parsed.separator==='\t'?'табуляция':parsed.separator}</span></div><label>nmId<select value={mapping.nm_id} onChange={event=>updateMapping('nm_id',event.target.value)}><option value="">Не выбрано</option>{parsed.headers.map(header=><option key={header}>{header}</option>)}</select></label>{allowedModels.length>1&&<label>Модель SKU<select value={mapping.operating_model} onChange={event=>updateMapping('operating_model',event.target.value)}><option value="">Не выбрано</option>{parsed.headers.map(header=><option key={header}>{header}</option>)}</select></label>}<label>Источник строки<select value={mapping.row_source} onChange={event=>updateMapping('row_source',event.target.value)}><option value="">Общий документ</option>{parsed.headers.map(header=><option key={header}>{header}</option>)}</select></label>{componentKeys.map(key=><label key={key}>{componentCatalog[allowedModels.find(model=>componentCatalog[model]?.[key])]?.[key]||key}<select value={mapping.components[key]||''} onChange={event=>updateComponent(key,event.target.value)}><option value="">Не импортировать</option>{parsed.headers.map(header=><option key={header}>{header}</option>)}</select></label>)}</div>}
+    {parsed&&<><div className="costPresetBar"><label>Сохранённая схема<select value={selectedPresetId} onChange={event=>applyPreset(event.target.value)}><option value="">Выберите схему</option>{presets.map(item=><option value={item.id} key={item.id}>{item.name}</option>)}</select></label><label>Название схемы<input value={presetName} maxLength={80} onChange={event=>setPresetName(event.target.value)} placeholder="Например: Выгрузка 1С"/></label><button type="button" onClick={savePreset} disabled={busy||!mapping.nm_id||presetName.trim().length<2}><Save size={15}/>Сохранить</button><button type="button" className="dangerGhost" aria-label="Удалить выбранную схему" onClick={deletePreset} disabled={busy||!selectedPresetId}><Trash2 size={15}/></button></div><div className="costMapping"><div><b>Сопоставление колонок</b><span>{parsed.records.length} строк · разделитель {parsed.separator==='\t'?'табуляция':parsed.separator}</span></div><label>nmId<select value={mapping.nm_id} onChange={event=>updateMapping('nm_id',event.target.value)}><option value="">Не выбрано</option>{parsed.headers.map(header=><option key={header}>{header}</option>)}</select></label>{allowedModels.length>1&&<label>Модель SKU<select value={mapping.operating_model} onChange={event=>updateMapping('operating_model',event.target.value)}><option value="">Не выбрано</option>{parsed.headers.map(header=><option key={header}>{header}</option>)}</select></label>}<label>Источник строки<select value={mapping.row_source} onChange={event=>updateMapping('row_source',event.target.value)}><option value="">Общий документ</option>{parsed.headers.map(header=><option key={header}>{header}</option>)}</select></label>{componentKeys.map(key=><label key={key}>{componentCatalog[allowedModels.find(model=>componentCatalog[model]?.[key])]?.[key]||key}<select value={mapping.components[key]||''} onChange={event=>updateComponent(key,event.target.value)}><option value="">Не импортировать</option>{parsed.headers.map(header=><option key={header}>{header}</option>)}</select></label>)}</div></>}
     {errors.length>0&&<div className="costImportErrors" role="alert"><b><CircleAlert size={16}/> Найдены ошибки</b>{errors.slice(0,20).map((item,index)=><span key={`${item.row||0}-${index}`}>{item.row?`Строка ${item.row}, nmId ${item.nm_id}: `:''}{item.error}</span>)}{errors.length>20&&<span>Ещё ошибок: {errors.length-20}</span>}</div>}
     {parsed&&!preview&&<button type="button" className="primaryBtn costPreviewBtn" onClick={createPreview} disabled={busy||!mapping.nm_id}><LockKeyhole size={16}/>{busy?'Проверяем…':'Создать защищённое превью'}</button>}
     {preview&&<div className={`costPreview ${preview.status==='committed'?'committed':''}`} aria-live="polite"><div><CheckCircle2 size={18}/><b>{preview.status==='committed'?'Импорт применён':'Превью готово'}</b><span>{preview.row_count} строк · SHA {preview.preview_sha256.slice(0,12)}</span></div><div className="costPreviewRows">{preview.rows.slice(0,20).map(item=><span key={item.nm_id}><b>nmId {item.nm_id}</b><i>{modelLabels[item.operating_model]}</i><strong>{item.cogs_rub} ₽</strong></span>)}</div>{preview.status!=='committed'&&<div className="costCommit"><label><input type="checkbox" checked={confirmed} onChange={event=>setConfirmed(event.target.checked)}/><span>Я проверил источник, соответствие колонок и итоговые суммы</span></label><button type="button" className="costSave" disabled={!confirmed||busy} onClick={commitPreview}>{busy?'Применяем…':'Применить импорт'}</button></div>}</div>}

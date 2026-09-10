@@ -342,6 +342,13 @@
   cursor: pointer;
 }
 .costFile input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.costPresetBar { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 8px; align-items: end; margin-top: 14px; }
+.costPresetBar label { display: grid; gap: 5px; color: #8fa3ba; font-size: 11px; }
+.costPresetBar input,
+.costPresetBar select { min-width: 0; border: 1px solid #26364d; border-radius: 8px; background: #091321; color: #fff; padding: 9px; }
+.costPresetBar button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; border: 1px solid #34506f; border-radius: 8px; background: #10233a; color: #cfe7ff; padding: 0 12px; }
+.costPresetBar .dangerGhost { color: #ffafb7; border-color: #62383e; background: #1b1116; }
+.costPresetBar button:disabled { opacity: .45; cursor: not-allowed; }
 .costMapping {
   display: grid;
   grid-template-columns: repeat(3, minmax(150px, 1fr));
@@ -409,6 +416,7 @@
   .costImportSetup { grid-template-columns: 1fr 2fr; }
   .costFile { grid-column: 1/-1; }
   .costMapping { grid-template-columns: repeat(2,minmax(150px,1fr)); }
+  .costPresetBar { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 680px) {
   .profitToolbar {
@@ -441,7 +449,8 @@
   .costCommit { align-items: stretch; flex-direction: column; }
   .costComponent { grid-template-columns: 1fr; }
   .costImportSetup,
-  .costMapping { grid-template-columns: 1fr; }
+  .costMapping,
+  .costPresetBar { grid-template-columns: 1fr; }
   .costMapping > div { align-items: flex-start; flex-direction: column; gap: 4px; }
   .costPreview > div:first-child { flex-wrap: wrap; }
   .costPreview > div:first-child span { width: 100%; margin-left: 26px; }

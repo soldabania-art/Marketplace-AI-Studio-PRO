@@ -4,6 +4,8 @@
 >
 > Expansion architecture: [`EXPANSION_STRATEGY.md`](./EXPANSION_STRATEGY.md) records the discovery gates for cross-border CIS, Manufacturer OS, omnichannel wholesale and the professional network.
 
+> Profit Center import mappings are reusable store-scoped records, validated against an allowlist and audit-logged. A preset never bypasses the immutable preview and explicit commit boundary.
+
 ## Product direction
 TROVENDI is a web-first AI operating system for marketplace sellers, starting with Wildberries and Ozon and designed for later expansion to Yandex Market, Megamarket, AliExpress and other verified integrations.
 

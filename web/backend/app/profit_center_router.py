@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from .db import get_db
 from .job_queue import enqueue
 from .marketplace_sync import latest_snapshot
-from .models import BusinessOperatingProfile, CostImportBatch, MarketplaceAdvertisingLine, MarketplaceConnection, MarketplaceFinancialLine, OperationalAuditEvent, ProductCostProfile, StoreTaxProfile, User
+from .models import BusinessOperatingProfile, CostImportBatch, CostImportMapping, MarketplaceAdvertisingLine, MarketplaceConnection, MarketplaceFinancialLine, OperationalAuditEvent, ProductCostProfile, StoreTaxProfile, User
 from .security import get_current_user
 from .store_access import require_store_admin, resolve_store
 
@@ -86,6 +86,35 @@ class CostImportCommitRequest(BaseModel):
     store_id: str = Field(min_length=1, max_length=36)
     preview_sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
     confirmed: bool
+
+
+class CostImportMappingRequest(BaseModel):
+    store_id: str = Field(min_length=1, max_length=36)
+    name: str = Field(min_length=2, max_length=80)
+    source_system: Literal['csv', '1c', 'moysklad', 'saby', 'kontur', 'partner_api']
+    mapping: dict
+
+
+def _validated_import_mapping(value: dict) -> dict:
+    allowed = {'nm_id', 'operating_model', 'row_source', 'components'}
+    if not isinstance(value, dict) or set(value) - allowed or not isinstance(value.get('nm_id'), str) or not value['nm_id'].strip():
+        raise HTTPException(422, 'Схема сопоставления содержит недопустимые поля или не имеет nmId.')
+    components = value.get('components', {})
+    component_keys = {key for catalog in COST_COMPONENTS.values() for key in catalog}
+    if not isinstance(components, dict) or set(components) - component_keys:
+        raise HTTPException(422, 'Схема содержит неизвестные компоненты себестоимости.')
+    normalized = {}
+    for key in ('nm_id', 'operating_model', 'row_source'):
+        column = value.get(key, '')
+        if not isinstance(column, str) or len(column.strip()) > 160:
+            raise HTTPException(422, 'Некорректное имя колонки в схеме.')
+        normalized[key] = column.strip()
+    normalized['components'] = {}
+    for key, column in components.items():
+        if not isinstance(column, str) or len(column.strip()) > 160:
+            raise HTTPException(422, 'Некорректное имя колонки компонента.')
+        if column.strip(): normalized['components'][key] = column.strip()
+    return normalized
 
 
 class TaxProfileRequest(BaseModel):
@@ -328,6 +357,47 @@ def _public_import_batch(batch: CostImportBatch) -> dict:
             for item in (batch.rows or [])
         ],
     }
+
+
+def _public_import_mapping(row: CostImportMapping) -> dict:
+    return {'id': row.id, 'name': row.name, 'source_system': row.source_system,
+            'mapping': row.mapping or {}, 'created_at': row.created_at, 'updated_at': row.updated_at}
+
+
+@router.get('/cost-import-mappings')
+def list_cost_import_mappings(store_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = resolve_store(db, user, store_id); require_store_admin(db, user, store)
+    rows = db.query(CostImportMapping).filter(CostImportMapping.store_id == store.id).order_by(CostImportMapping.name.asc()).all()
+    return {'items': [_public_import_mapping(row) for row in rows]}
+
+
+@router.post('/cost-import-mappings', status_code=201)
+def save_cost_import_mapping(payload: CostImportMappingRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = resolve_store(db, user, payload.store_id); require_store_admin(db, user, store)
+    name = payload.name.strip(); mapping = _validated_import_mapping(payload.mapping)
+    row = db.query(CostImportMapping).filter(CostImportMapping.store_id == store.id, CostImportMapping.name == name).first()
+    if row is None:
+        row = CostImportMapping(workspace_id=store.workspace_id, store_id=store.id, created_by_user_id=user.id,
+            name=name, source_system=payload.source_system, mapping=mapping); db.add(row)
+    else:
+        row.source_system=payload.source_system; row.mapping=mapping; row.created_by_user_id=user.id
+    db.flush()
+    db.add(OperationalAuditEvent(workspace_id=store.workspace_id, store_id=store.id, user_id=user.id,
+        event_type='profit.cost_mapping.saved', entity_type='cost_mapping', entity_id=row.id,
+        payload={'source_system': row.source_system, 'name': row.name, 'component_keys': sorted(mapping['components'])}))
+    db.commit(); db.refresh(row)
+    return _public_import_mapping(row)
+
+
+@router.delete('/cost-import-mappings/{mapping_id}', status_code=204)
+def delete_cost_import_mapping(mapping_id: str, store_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = resolve_store(db, user, store_id); require_store_admin(db, user, store)
+    row = db.query(CostImportMapping).filter(CostImportMapping.id == mapping_id, CostImportMapping.store_id == store.id).first()
+    if row is None: raise HTTPException(404, 'Схема сопоставления не найдена.')
+    db.add(OperationalAuditEvent(workspace_id=store.workspace_id, store_id=store.id, user_id=user.id,
+        event_type='profit.cost_mapping.deleted', entity_type='cost_mapping', entity_id=row.id,
+        payload={'source_system': row.source_system, 'name': row.name}))
+    db.delete(row); db.commit()
 
 
 @router.post('/cost-imports/preview', status_code=201)

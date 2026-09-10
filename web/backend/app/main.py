@@ -18,6 +18,7 @@ from .director_router import router as director_router
 from .data_health_router import router as data_health_router
 from .fbo_monitor import monitor_forever
 from .legal_router import router as legal_router
+from .integration_router import router as integration_router
 from .marketplace_connections import router as marketplace_router
 from .onboarding_router import router as onboarding_router
 from .push_router import router as push_router
@@ -43,7 +44,7 @@ async def lifespan(app:FastAPI):
 
 app=FastAPI(
     title=settings.app_name,
-    version='0.31.0',
+    version='0.32.0',
     description='TROVENDI backend',
     lifespan=lifespan,
     docs_url=(None if settings.is_production else '/docs'),
@@ -79,14 +80,14 @@ async def security_boundary(request: Request, call_next):
     return response
 
 @app.get('/health',tags=['system'])
-def health(): return {'status':'ok','service':'trovendi-api','version':'0.31.0','environment':settings.environment,'embedded_fbo_monitor':settings.run_fbo_monitor_in_api}
+def health(): return {'status':'ok','service':'trovendi-api','version':'0.32.0','environment':settings.environment,'embedded_fbo_monitor':settings.run_fbo_monitor_in_api}
 
 @app.get('/ready',tags=['system'])
 def ready():
     try:
         with engine.connect() as connection: connection.execute(text('SELECT 1'))
     except Exception as exc: raise HTTPException(status_code=503,detail='Database is not ready') from exc
-    return {'status':'ready','database':'ok','version':'0.31.0'}
+    return {'status':'ready','database':'ok','version':'0.32.0'}
 
 app.include_router(account_router,prefix='/api/v1',tags=['account'])
 app.include_router(agent_router,prefix='/api/v1')
@@ -97,6 +98,7 @@ app.include_router(card_factory_router,prefix='/api/v1')
 app.include_router(director_router,prefix='/api/v1')
 app.include_router(data_health_router,prefix='/api/v1')
 app.include_router(legal_router,prefix='/api/v1',tags=['legal'])
+app.include_router(integration_router,prefix='/api/v1')
 app.include_router(push_router,prefix='/api/v1',tags=['push'])
 app.include_router(profit_center_router,prefix='/api/v1')
 app.include_router(reviews_router,prefix='/api/v1')

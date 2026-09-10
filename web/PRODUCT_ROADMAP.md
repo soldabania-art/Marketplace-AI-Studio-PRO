@@ -127,6 +127,8 @@ Every adapter must expose capabilities and use the same operational contract:
 - **Saby/SBIS:** catalog, stock, documents and relevant accounting operations through supported APIs.
 - **Kontur ecosystem:** Market plus Diadoc/Extern-related document flows where their APIs and customer permissions allow it.
 
+**Implemented Integration Hub foundation:** an authenticated, store-scoped, versioned connector catalog now declares marketplace, accounting and logistics adapters with explicit capabilities, delivery stage and shared production gates. Connected status comes only from enabled server connection records. Wildberries is marked read beta, CSV cost import is available, and every unimplemented connector remains visibly planned or discovery-only.
+
 ### CIS and enterprise expansion — Wave 2
 
 - BAS products through OData and supported integration interfaces.

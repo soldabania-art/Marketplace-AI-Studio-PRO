@@ -187,6 +187,7 @@ The web product and future Android app use the same versioned API, permissions a
 | Reviews | Read-only WB snapshot plus persisted grounded AI themes/drafts | Human review workflow; automatic replies remain disabled |
 | Claims | Planned | Read-only insights before approved writes |
 | Integration Hub | Versioned connector catalog plus scalable fulfillment partner/facility registry | Partner onboarding UI, first certified adapter and canonical inventory/shipment events |
+| Document Vault | Private tenant-scoped upload, metadata, SHA-256, quarantine and access-event foundation | Dedicated private store, malware scanning, authenticated download and jurisdiction retention policies |
 | Ozon and other marketplaces | Planned | Start after WB write path is safe |
 | Android and push | API/event foundation required now | Native approval and alert MVP |
 | Cross-border CIS | Accepted for discovery | Validate Kazakhstan partner/API/legal route, then read-only economics MVP |

@@ -315,7 +315,7 @@ def test_registration_persists_allowlisted_purchase_intent_without_granting_paid
         "requested_modules": ["profit", "director"],
     })
     assert register.status_code == 201
-    assert register.json()["next_path"] == "/checkout?plan=business&next=mfa"
+    assert register.json()["next_path"] == "/activation"
     headers = {"Authorization": f"Bearer {register.json()['access_token']}"}
     billing = client.get("/api/v1/billing/subscription", headers=headers).json()
     assert billing["plan"] == "trial"
@@ -342,6 +342,29 @@ def test_registration_persists_allowlisted_purchase_intent_without_granting_paid
     assert invalid.status_code == 422
 
 
+def test_activation_router_enforces_email_payment_and_mfa_order():
+    email = f"activation-{uuid.uuid4().hex}@example.com"
+    register = client.post("/api/v1/auth/register", json={
+        "email": email,
+        "password": "StrongPass123!",
+        "workspace_name": "Activation Store",
+        "requested_plan": "pro",
+        "active_channel": "wb",
+        "requested_stores": 3,
+        "requested_modules": ["cards", "profit"],
+    })
+    headers = {"Authorization": f"Bearer {register.json()['access_token']}"}
+    first = client.get("/api/v1/billing/activation", headers=headers)
+    assert first.status_code == 200
+    assert first.json()["stage"] == "verify_email"
+    assert client.post("/api/v1/billing/checkout", headers=headers, json={"plan_code": "pro", "accepted_terms": True}).status_code == 403
+    verification = client.post("/api/v1/auth/email-verification/request", headers=headers).json()
+    assert client.post("/api/v1/auth/email-verification/confirm", json={"token": verification["development_token"]}).status_code == 200
+    second = client.get("/api/v1/billing/activation", headers=headers)
+    assert second.json()["stage"] == "checkout"
+    assert second.json()["href"] == "/checkout?plan=pro"
+
+
 def test_mfa_setup_login_recovery_and_single_use_challenge():
     email, password, token = _register_user()
     headers = {"Authorization": f"Bearer {token}"}
@@ -355,6 +378,7 @@ def test_mfa_setup_login_recovery_and_single_use_challenge():
     status_response = client.get("/api/v1/auth/mfa/status", headers=headers)
     assert status_response.json()["enabled"] is True
     assert status_response.json()["current_session_verified"] is True
+    assert client.get("/api/v1/billing/activation", headers=headers).json()["stage"] == "connect_store"
 
     password_step = client.post("/api/v1/auth/login", json={"email": email, "password": password})
     assert password_step.status_code == 200
@@ -441,9 +465,12 @@ def test_trial_subscription_exposes_server_entitlements_and_blocks_second_store(
 
 def test_checkout_never_activates_access_without_server_provider_confirmation():
     _, _, token = _register_user()
+    headers = {"Authorization": f"Bearer {token}"}
+    verification = client.post("/api/v1/auth/email-verification/request", headers=headers).json()
+    assert client.post("/api/v1/auth/email-verification/confirm", json={"token": verification["development_token"]}).status_code == 200
     response = client.post(
         "/api/v1/billing/checkout",
-        headers={"Authorization": f"Bearer {token}"},
+        headers=headers,
         json={"plan_code": "pro", "accepted_terms": True},
     )
     assert response.status_code == 503

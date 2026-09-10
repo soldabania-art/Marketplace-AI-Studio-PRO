@@ -15,9 +15,11 @@ from .models import (
     AccountTokenPurpose,
     Membership,
     MembershipRole,
+    MarketplaceConnection,
     MfaLoginChallenge,
     PurchaseIntent,
     SecurityEvent,
+    Store,
     Subscription,
     SubscriptionStatus,
     User,
@@ -274,6 +276,39 @@ def billing_purchase_intent(current_user: User = Depends(get_current_user), db: 
     }}
 
 
+@router.get("/billing/activation")
+def billing_activation(
+    current_user: User = Depends(get_current_user),
+    current_session: UserSession = Depends(get_current_session),
+    db: Session = Depends(get_db),
+):
+    membership = db.scalar(select(Membership).where(Membership.user_id == current_user.id))
+    if membership is None:
+        raise HTTPException(status_code=409, detail="Workspace membership is missing")
+    subscription = latest_subscription(db, membership.workspace_id)
+    billing = entitlement_snapshot(subscription)
+    intent = db.scalar(select(PurchaseIntent).where(PurchaseIntent.workspace_id == membership.workspace_id))
+    requested_plan = intent.requested_plan if intent else "trial"
+    if requested_plan != "trial" and not current_user.email_verified:
+        return {"stage": "verify_email", "href": "/account?verify=email", "message": "Подтвердите email перед оплатой.", "ready": False}
+    if requested_plan != "trial" and (billing["read_only"] or billing["plan"] != requested_plan):
+        return {"stage": "checkout", "href": f"/checkout?plan={requested_plan}", "message": "Оплатите выбранный тариф на защищённой странице провайдера.", "ready": False}
+    mfa = db.get(UserMfa, current_user.id)
+    if mfa is None or not mfa.enabled:
+        return {"stage": "setup_mfa", "href": "/account?setup=mfa", "message": "Включите MFA перед подключением магазина.", "ready": False}
+    if current_session.mfa_verified_at is None:
+        return {"stage": "verify_mfa", "href": "/login", "message": "Войдите заново и подтвердите текущую сессию кодом MFA.", "ready": False}
+    connection = db.scalar(select(MarketplaceConnection.id).join(Store).where(
+        Store.workspace_id == membership.workspace_id,
+        MarketplaceConnection.marketplace == "wildberries",
+        MarketplaceConnection.enabled.is_(True),
+    ))
+    if connection is None:
+        return {"stage": "connect_store", "href": "/account?connect=wb", "message": "Подключите Wildberries в защищённом разделе аккаунта.", "ready": False}
+    destination = "/onboarding"
+    return {"stage": "ready", "href": destination, "message": "Защищённая настройка завершена.", "ready": True}
+
+
 class CheckoutRequest(BaseModel):
     plan_code: str
     accepted_terms: bool = False
@@ -285,6 +320,8 @@ def create_billing_checkout(payload: CheckoutRequest, current_user: User = Depen
         raise HTTPException(status_code=422, detail="Выберите платный тариф PRO или Business.")
     if not payload.accepted_terms:
         raise HTTPException(status_code=422, detail="Подтвердите условия подписки и автоматического продления.")
+    if not current_user.email_verified:
+        raise HTTPException(status_code=403, detail="Подтвердите email перед оплатой подписки.")
     membership = db.scalar(select(Membership).where(Membership.user_id == current_user.id))
     if membership is None:
         raise HTTPException(status_code=409, detail="Workspace membership is missing")
@@ -318,7 +355,7 @@ def register(payload: RegisterRequest, request: Request, db: Session = Depends(g
     ))
     _record_security_event(db, request, "registration", True, user=user, subject=email)
     db.commit()
-    next_path = "/account?setup=mfa" if payload.requested_plan == "trial" else f"/checkout?plan={payload.requested_plan}&next=mfa"
+    next_path = "/activation"
     return TokenResponse(access_token=_create_session(db, request, user), next_path=next_path)
 
 

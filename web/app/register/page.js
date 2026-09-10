@@ -46,7 +46,7 @@ function RegisterForm() {
       })
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.error || 'Не удалось создать аккаунт')
-      router.push(payload.next_path || '/account?setup=mfa')
+      router.push(payload.next_path || '/activation')
       router.refresh()
     } catch (e) {
       setError(e.message)

@@ -27,6 +27,7 @@ flowchart TD
 
 ## 1. Entry journeys
 
+- **Public entry — live foundation:** product promise → scenario/marketplace choice → security and trial boundaries → pricing → registration or login. The private dashboard renders only after session verification.
 - **Beginner — live foundation:** photo analysis → confirmed facts → card draft → economics → preview → approved publication → hand-off to AI Director. Trial: 72 hours from first successful analysis, five successful cards, one user, one store.
 - **Existing seller — live foundation:** connect store → catalog/stocks/sales snapshots → Profit Center → evidence-ranked Daily Director → Card Factory or operational action.
 - **Agency — planned:** organizations → clients → stores → roles → approvals → portfolio reporting → white label.

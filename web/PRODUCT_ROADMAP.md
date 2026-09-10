@@ -192,6 +192,8 @@ The web product and future Android app use the same versioned API, permissions a
 
 ## 10. Delivery order
 
+**Public entry experience:** `/` is session-aware. Anonymous visitors and the initial server render see a crawlable TROVENDI product surface with outcomes, marketplace/scenario choice, trial boundaries, pricing, security controls and clear register/login actions; authenticated users switch to the evidence-backed operating dashboard only after successful session verification. The internal dashboard is never the anonymous fallback. Conversion measurement and verified customer proof remain launch gates.
+
 ### P0 — complete the safe vertical product
 
 0. Complete the production security perimeter: private PostgreSQL connectivity, least-privilege runtime role, encrypted PITR/backups with restore drill, passkeys, export authorization gates, observed Vercel WAF rules, and PostgreSQL RLS rollout. **Application baseline implemented:** production fails closed without PostgreSQL/TLS/HTTPS/secrets, API docs are disabled, auth/recovery limits and anti-cache headers are active, cross-tenant exfiltration probes run in tests, TOTP MFA with single-use recovery codes protects accounts, and a ten-minute server-side step-up window gates marketplace credentials, marketplace publications and administrative mutations. Infrastructure controls remain launch gates until verified in the providers.

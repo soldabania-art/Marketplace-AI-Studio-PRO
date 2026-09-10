@@ -162,6 +162,8 @@ No hidden estimates: every derived metric carries its data source and confidence
 
 Per-SKU cost confirmation follows the selected operating model. Resellers record purchase, inbound logistics, customs, fulfillment and packaging; manufacturers record materials, direct labor, packaging, equipment/energy and allocated overhead; distributors record net purchase, fulfillment, packaging and documented brand fees. A mixed store selects one concrete model per SKU. Every non-zero component requires a source reference, totals are calculated in integer kopecks by deterministic backend code, and the canonical input is checksummed and audited. AI may point out a missing component but never supplies a monetary value.
 
+Accounting connectors never write costs directly. They normalize source rows into the same component contract, create an immutable preview bound to store, actor, source document and SHA-256, then wait for a separate confirmation. A commit rechecks current catalog ownership, expires after 24 hours, runs transactionally and is idempotent. This boundary is shared by 1C, MoySklad, Saby, Kontur, CSV and partner APIs; each concrete adapter must still pass its own mapping and reconciliation certification.
+
 ## Promo Economics
 Before a seller joins a marketplace promotion, recompute unit economics per SKU and scenario.
 

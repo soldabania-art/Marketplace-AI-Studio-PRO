@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from .db import get_db
 from .job_queue import enqueue
 from .marketplace_sync import latest_snapshot
-from .models import BusinessOperatingProfile, MarketplaceAdvertisingLine, MarketplaceConnection, MarketplaceFinancialLine, OperationalAuditEvent, ProductCostProfile, StoreTaxProfile, User
+from .models import BusinessOperatingProfile, CostImportBatch, MarketplaceAdvertisingLine, MarketplaceConnection, MarketplaceFinancialLine, OperationalAuditEvent, ProductCostProfile, StoreTaxProfile, User
 from .security import get_current_user
 from .store_access import require_store_admin, resolve_store
 
@@ -66,6 +66,26 @@ class ProductCostRequest(BaseModel):
         if breakdown and self.operating_model is None:
             raise ValueError('Для детализации выберите модель себестоимости.')
         return self
+
+
+class CostImportRow(BaseModel):
+    nm_id: int = Field(gt=0)
+    operating_model: CostingModel
+    components_rub: dict[str, Decimal]
+    source_references: dict[str, str]
+
+
+class CostImportPreviewRequest(BaseModel):
+    store_id: str = Field(min_length=1, max_length=36)
+    source_system: Literal['csv', '1c', 'moysklad', 'saby', 'kontur', 'partner_api']
+    source_document_reference: str = Field(min_length=2, max_length=300)
+    rows: list[CostImportRow] = Field(min_length=1, max_length=500)
+
+
+class CostImportCommitRequest(BaseModel):
+    store_id: str = Field(min_length=1, max_length=36)
+    preview_sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
+    confirmed: bool
 
 
 class TaxProfileRequest(BaseModel):
@@ -153,6 +173,36 @@ def _public_cost(row: ProductCostProfile | None) -> dict | None:
     }
 
 
+def _catalog_nm_ids(db: Session, store_id: str) -> set[int]:
+    catalog = latest_snapshot(db, store_id=store_id, marketplace='wildberries', snapshot_type='catalog')
+    if catalog is None:
+        raise HTTPException(409, 'Сначала загрузите каталог Wildberries для выбранного магазина.')
+    return {int(item['nm_id']) for item in ((catalog.payload or {}).get('items') or []) if item.get('nm_id')}
+
+
+def _upsert_cost(db: Session, *, store, user: User, nm_id: int, kopecks: int, operating_model: str,
+    components: dict, source_references: dict, calculation_sha256: str, source: str, now: datetime) -> ProductCostProfile:
+    row = db.query(ProductCostProfile).filter(
+        ProductCostProfile.store_id == store.id,
+        ProductCostProfile.marketplace == 'wildberries',
+        ProductCostProfile.nm_id == nm_id,
+    ).with_for_update().first()
+    if row is None:
+        row = ProductCostProfile(store_id=store.id, marketplace='wildberries', nm_id=nm_id,
+            cogs_kopecks=kopecks, confirmed_by_user_id=user.id, confirmed_at=now)
+        db.add(row)
+    row.cogs_kopecks = kopecks
+    row.operating_model = operating_model
+    row.components = components
+    row.source_references = source_references
+    row.calculation_sha256 = calculation_sha256
+    row.confirmed_by_user_id = user.id
+    row.source = source
+    row.confirmed_at = now
+    db.flush()
+    return row
+
+
 def _line_in_period(row: MarketplaceFinancialLine, date_from: str, date_to: str) -> bool:
     value = str(row.event_date or '')[:10]
     return bool(value and date_from <= value <= date_to)
@@ -236,6 +286,8 @@ def save_product_cost(nm_id: int, payload: ProductCostRequest, user: User = Depe
     store = resolve_store(db, user, payload.store_id)
     require_store_admin(db, user, store)
     _connection(db, store.id)
+    if nm_id not in _catalog_nm_ids(db, store.id):
+        raise HTTPException(404, 'Товар не найден в каталоге выбранного магазина.')
     profile = db.query(BusinessOperatingProfile).filter(
         BusinessOperatingProfile.store_id == store.id,
         BusinessOperatingProfile.marketplace == 'wildberries',
@@ -244,24 +296,11 @@ def save_product_cost(nm_id: int, payload: ProductCostRequest, user: User = Depe
         kopecks, operating_model, components, source_references, calculation_sha256 = _verified_cost(payload, profile)
     except InvalidOperation as exc:
         raise HTTPException(422, 'Некорректная себестоимость.') from exc
-    row = db.query(ProductCostProfile).filter(
-        ProductCostProfile.store_id == store.id,
-        ProductCostProfile.marketplace == 'wildberries',
-        ProductCostProfile.nm_id == nm_id,
-    ).first()
     now = datetime.now(timezone.utc)
-    if row is None:
-        row = ProductCostProfile(store_id=store.id, marketplace='wildberries', nm_id=nm_id, cogs_kopecks=kopecks, confirmed_by_user_id=user.id, confirmed_at=now)
-        db.add(row)
-    row.cogs_kopecks = kopecks
-    row.operating_model = operating_model
-    row.components = components
-    row.source_references = source_references
-    row.calculation_sha256 = calculation_sha256
-    row.confirmed_by_user_id = user.id
-    row.source = 'manual_breakdown' if operating_model != 'legacy_total' else 'manual_legacy'
-    row.confirmed_at = now
-    db.flush()
+    row = _upsert_cost(db, store=store, user=user, nm_id=nm_id, kopecks=kopecks,
+        operating_model=operating_model, components=components, source_references=source_references,
+        calculation_sha256=calculation_sha256,
+        source='manual_breakdown' if operating_model != 'legacy_total' else 'manual_legacy', now=now)
     db.add(OperationalAuditEvent(
         workspace_id=store.workspace_id, store_id=store.id, user_id=user.id,
         event_type='profit.cost.confirmed', entity_type='product_cost', entity_id=row.id,
@@ -271,6 +310,116 @@ def save_product_cost(nm_id: int, payload: ProductCostRequest, user: User = Depe
     db.commit()
     db.refresh(row)
     return {'nm_id': row.nm_id, 'cogs_rub': _rubles(row.cogs_kopecks), 'cost_profile': _public_cost(row)}
+
+
+def _public_import_batch(batch: CostImportBatch) -> dict:
+    return {
+        'id': batch.id,
+        'source_system': batch.source_system,
+        'source_document_reference': batch.source_document_reference,
+        'preview_sha256': batch.payload_sha256,
+        'status': batch.status,
+        'expires_at': batch.expires_at,
+        'committed_at': batch.committed_at,
+        'row_count': len(batch.rows or []),
+        'rows': [
+            {'nm_id': item['nm_id'], 'operating_model': item['operating_model'],
+             'cogs_rub': _rubles(int(item['cogs_kopecks'])), 'calculation_sha256': item['calculation_sha256']}
+            for item in (batch.rows or [])
+        ],
+    }
+
+
+@router.post('/cost-imports/preview', status_code=201)
+def preview_cost_import(payload: CostImportPreviewRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = resolve_store(db, user, payload.store_id); require_store_admin(db, user, store); _connection(db, store.id)
+    profile = db.query(BusinessOperatingProfile).filter(
+        BusinessOperatingProfile.store_id == store.id,
+        BusinessOperatingProfile.marketplace == 'wildberries',
+        BusinessOperatingProfile.status == 'confirmed',
+    ).first()
+    catalog_ids = _catalog_nm_ids(db, store.id)
+    incoming_ids = [item.nm_id for item in payload.rows]
+    if len(incoming_ids) != len(set(incoming_ids)):
+        raise HTTPException(422, {'message': 'Исправьте строки импорта.', 'row_errors': [
+            {'row': index + 1, 'nm_id': nm_id, 'error': 'nmId повторяется в этом импорте.'}
+            for index, nm_id in enumerate(incoming_ids) if incoming_ids.count(nm_id) > 1
+        ]})
+    normalized = []
+    row_errors = []
+    for index, item in enumerate(payload.rows):
+        if item.nm_id not in catalog_ids:
+            row_errors.append({'row': index + 1, 'nm_id': item.nm_id, 'error': 'Товар не принадлежит каталогу выбранного магазина.'})
+            continue
+        try:
+            request = ProductCostRequest(store_id=store.id, operating_model=item.operating_model,
+                components_rub=item.components_rub, source_references=item.source_references, confirmed=True)
+            total, model, components, sources, digest = _verified_cost(request, profile)
+        except HTTPException as exc:
+            row_errors.append({'row': index + 1, 'nm_id': item.nm_id, 'error': str(exc.detail)})
+            continue
+        normalized.append({'nm_id': item.nm_id, 'operating_model': model, 'cogs_kopecks': total,
+            'components': components, 'source_references': sources, 'calculation_sha256': digest})
+    if row_errors:
+        raise HTTPException(422, {'message': 'Исправьте строки импорта.', 'row_errors': row_errors})
+    normalized.sort(key=lambda item: item['nm_id'])
+    canonical = {'store_id': store.id, 'marketplace': 'wildberries', 'source_system': payload.source_system,
+        'source_document_reference': payload.source_document_reference.strip(), 'rows': normalized}
+    preview_sha256 = hashlib.sha256(json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    batch = db.query(CostImportBatch).filter(
+        CostImportBatch.store_id == store.id,
+        CostImportBatch.payload_sha256 == preview_sha256,
+    ).first()
+    if batch is None:
+        batch = CostImportBatch(workspace_id=store.workspace_id, store_id=store.id, created_by_user_id=user.id,
+            source_system=payload.source_system, source_document_reference=payload.source_document_reference.strip(),
+            rows=normalized, payload_sha256=preview_sha256, status='preview',
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=24))
+        db.add(batch); db.commit(); db.refresh(batch)
+    return _public_import_batch(batch)
+
+
+@router.post('/cost-imports/{batch_id}/commit')
+def commit_cost_import(batch_id: str, payload: CostImportCommitRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not payload.confirmed:
+        raise HTTPException(422, 'Подтвердите применение показанного превью.')
+    store = resolve_store(db, user, payload.store_id); require_store_admin(db, user, store); _connection(db, store.id)
+    batch = db.query(CostImportBatch).filter(
+        CostImportBatch.id == batch_id,
+        CostImportBatch.store_id == store.id,
+    ).with_for_update().first()
+    if batch is None:
+        raise HTTPException(404, 'Пакет импорта не найден.')
+    if batch.created_by_user_id != user.id:
+        raise HTTPException(403, 'Применить импорт может только пользователь, создавший превью.')
+    if batch.payload_sha256 != payload.preview_sha256:
+        raise HTTPException(409, 'Превью изменилось. Создайте его заново и повторно проверьте.')
+    if batch.status == 'committed':
+        return _public_import_batch(batch)
+    expires_at = batch.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at <= datetime.now(timezone.utc):
+        batch.status = 'expired'; db.commit()
+        raise HTTPException(409, 'Срок действия превью истёк. Создайте новое превью.')
+    if batch.status != 'preview':
+        raise HTTPException(409, 'Этот пакет нельзя применить.')
+    catalog_ids = _catalog_nm_ids(db, store.id)
+    if any(int(item['nm_id']) not in catalog_ids for item in (batch.rows or [])):
+        raise HTTPException(409, 'Каталог изменился: один или несколько товаров больше не доступны.')
+    now = datetime.now(timezone.utc)
+    for item in batch.rows or []:
+        _upsert_cost(db, store=store, user=user, nm_id=int(item['nm_id']), kopecks=int(item['cogs_kopecks']),
+            operating_model=item['operating_model'], components=dict(item['components']),
+            source_references=dict(item['source_references']), calculation_sha256=item['calculation_sha256'],
+            source=f'import_{batch.source_system}', now=now)
+    batch.status = 'committed'; batch.committed_at = now
+    db.add(OperationalAuditEvent(workspace_id=store.workspace_id, store_id=store.id, user_id=user.id,
+        event_type='profit.cost_import.committed', entity_type='cost_import', entity_id=batch.id,
+        payload={'marketplace': 'wildberries', 'source_system': batch.source_system,
+            'row_count': len(batch.rows or []), 'payload_sha256': batch.payload_sha256}))
+    db.commit(); db.refresh(batch)
+    return _public_import_batch(batch)
 
 
 @router.patch('/tax')

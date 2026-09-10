@@ -171,6 +171,8 @@ def test_onboarding_is_store_scoped_and_business_profile_requires_admin_confirma
         store = db.get(Store, store_id)
         owner_id = client.get("/api/v1/auth/me", headers=owner_headers).json()["id"]
         db.add(MarketplaceConnection(user_id=owner_id, store_id=store_id, marketplace="wildberries", encrypted_token="test", enabled=True))
+        db.add(MarketplaceSnapshot(store_id=store_id, marketplace="wildberries", snapshot_type="catalog",
+            payload={"items": [{"nm_id": 123456}, {"nm_id": 654321}]}))
         db.commit()
     cost_body = {
         "store_id": store_id,
@@ -193,6 +195,44 @@ def test_onboarding_is_store_scoped_and_business_profile_requires_admin_confirma
             OperationalAuditEvent.store_id == store_id,
             OperationalAuditEvent.event_type == "profit.cost.confirmed",
         ).count() == 1
+    import_body = {
+        "store_id": store_id,
+        "source_system": "1c",
+        "source_document_reference": "1C: документ расчёта себестоимости №42",
+        "rows": [
+            {"nm_id": 123456, "operating_model": "manufacturer", "components_rub": {"materials": "500"}, "source_references": {"materials": "Техкарта №42"}},
+            {"nm_id": 654321, "operating_model": "manufacturer", "components_rub": {"materials": "300", "packaging": "50"}, "source_references": {"materials": "Техкарта №43", "packaging": "Спецификация №8"}},
+        ],
+    }
+    preview_forbidden = client.post("/api/v1/profit-center/cost-imports/preview", headers=analyst_headers, json=import_body)
+    assert preview_forbidden.status_code == 403
+    preview = client.post("/api/v1/profit-center/cost-imports/preview", headers=owner_headers, json=import_body)
+    repeated_preview = client.post("/api/v1/profit-center/cost-imports/preview", headers=owner_headers, json=import_body)
+    assert preview.status_code == 201
+    assert repeated_preview.json()["id"] == preview.json()["id"]
+    assert preview.json()["row_count"] == 2
+    batch_id = preview.json()["id"]
+    preview_hash = preview.json()["preview_sha256"]
+    stale = client.post(f"/api/v1/profit-center/cost-imports/{batch_id}/commit", headers=owner_headers,
+        json={"store_id": store_id, "preview_sha256": "0" * 64, "confirmed": True})
+    assert stale.status_code == 409
+    committed = client.post(f"/api/v1/profit-center/cost-imports/{batch_id}/commit", headers=owner_headers,
+        json={"store_id": store_id, "preview_sha256": preview_hash, "confirmed": True})
+    repeated_commit = client.post(f"/api/v1/profit-center/cost-imports/{batch_id}/commit", headers=owner_headers,
+        json={"store_id": store_id, "preview_sha256": preview_hash, "confirmed": True})
+    assert committed.status_code == 200
+    assert repeated_commit.status_code == 200
+    assert committed.json()["status"] == "committed"
+    with SessionLocal() as db:
+        imported = db.query(ProductCostProfile).filter(ProductCostProfile.store_id == store_id).all()
+        assert {row.nm_id: row.cogs_kopecks for row in imported} == {123456: 50000, 654321: 35000}
+        assert db.query(OperationalAuditEvent).filter(
+            OperationalAuditEvent.store_id == store_id,
+            OperationalAuditEvent.event_type == "profit.cost_import.committed",
+        ).count() == 1
+    foreign_row = client.post("/api/v1/profit-center/cost-imports/preview", headers=owner_headers,
+        json={**import_body, "rows": [{**import_body["rows"][0], "nm_id": 999999}]})
+    assert foreign_row.status_code == 422
     started = client.post(f"/api/v1/onboarding/import?store_id={store_id}", headers=owner_headers)
     repeated_import = client.post(f"/api/v1/onboarding/import?store_id={store_id}", headers=owner_headers)
     assert started.status_code == 202

@@ -302,6 +302,46 @@ def test_register_login_and_me_contract():
     assert login.json()["access_token"]
 
 
+def test_registration_persists_allowlisted_purchase_intent_without_granting_paid_access():
+    email = f"intent-{uuid.uuid4().hex}@example.com"
+    register = client.post("/api/v1/auth/register", json={
+        "email": email,
+        "password": "StrongPass123!",
+        "workspace_name": "Intent Store",
+        "requested_plan": "business",
+        "active_channel": "wb",
+        "marketplace_interest": "kaspi",
+        "requested_stores": 10,
+        "requested_modules": ["profit", "director"],
+    })
+    assert register.status_code == 201
+    assert register.json()["next_path"] == "/checkout?plan=business&next=mfa"
+    headers = {"Authorization": f"Bearer {register.json()['access_token']}"}
+    billing = client.get("/api/v1/billing/subscription", headers=headers).json()
+    assert billing["plan"] == "trial"
+    assert billing["subscription_status"] == "trial"
+    intent = client.get("/api/v1/billing/purchase-intent", headers=headers).json()["intent"]
+    assert intent == {
+        "requested_plan": "business",
+        "active_channel": "wb",
+        "marketplace_interest": "kaspi",
+        "requested_stores": 10,
+        "requested_modules": ["profit", "director"],
+        "status": "captured",
+        "destination": "/onboarding",
+    }
+    invalid = client.post("/api/v1/auth/register", json={
+        "email": f"invalid-intent-{uuid.uuid4().hex}@example.com",
+        "password": "StrongPass123!",
+        "workspace_name": "Invalid Intent",
+        "requested_plan": "enterprise",
+        "active_channel": "kaspi",
+        "requested_stores": 999,
+        "requested_modules": ["database_export"],
+    })
+    assert invalid.status_code == 422
+
+
 def test_mfa_setup_login_recovery_and_single_use_challenge():
     email, password, token = _register_user()
     headers = {"Authorization": f"Bearer {token}"}

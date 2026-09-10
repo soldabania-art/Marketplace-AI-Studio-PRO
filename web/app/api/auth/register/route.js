@@ -16,7 +16,7 @@ export async function POST(request) {
       )
     }
 
-    const result = NextResponse.json({ ok: true }, { status: 201 })
+    const result = NextResponse.json({ ok: true, next_path: payload.next_path }, { status: 201 })
     result.cookies.set('mai_session', payload.access_token, sessionCookieOptions())
     return result
   } catch (error) {

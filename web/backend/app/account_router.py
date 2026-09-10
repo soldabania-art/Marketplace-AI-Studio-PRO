@@ -16,6 +16,7 @@ from .models import (
     Membership,
     MembershipRole,
     MfaLoginChallenge,
+    PurchaseIntent,
     SecurityEvent,
     Subscription,
     SubscriptionStatus,
@@ -254,6 +255,25 @@ def billing_subscription(current_user: User = Depends(get_current_user), db: Ses
     }
 
 
+@router.get("/billing/purchase-intent")
+def billing_purchase_intent(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    membership = db.scalar(select(Membership).where(Membership.user_id == current_user.id))
+    if membership is None:
+        raise HTTPException(status_code=409, detail="Workspace membership is missing")
+    intent = db.scalar(select(PurchaseIntent).where(PurchaseIntent.workspace_id == membership.workspace_id))
+    if intent is None:
+        return {"intent": None}
+    return {"intent": {
+        "requested_plan": intent.requested_plan,
+        "active_channel": intent.active_channel,
+        "marketplace_interest": intent.marketplace_interest,
+        "requested_stores": intent.requested_stores,
+        "requested_modules": list(intent.requested_modules or []),
+        "status": intent.status,
+        "destination": "/onboarding" if intent.active_channel in {"wb", "start"} else "/",
+    }}
+
+
 class CheckoutRequest(BaseModel):
     plan_code: str
     accepted_terms: bool = False
@@ -287,9 +307,19 @@ def register(payload: RegisterRequest, request: Request, db: Session = Depends(g
     db.flush()
     db.add(Membership(user_id=user.id, workspace_id=workspace.id, role=MembershipRole.owner))
     db.add(Subscription(workspace_id=workspace.id, plan_code="trial", status=SubscriptionStatus.trial))
+    db.add(PurchaseIntent(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        requested_plan=payload.requested_plan,
+        active_channel=payload.active_channel,
+        marketplace_interest=payload.marketplace_interest,
+        requested_stores=payload.requested_stores,
+        requested_modules=list(dict.fromkeys(payload.requested_modules)),
+    ))
     _record_security_event(db, request, "registration", True, user=user, subject=email)
     db.commit()
-    return TokenResponse(access_token=_create_session(db, request, user))
+    next_path = "/account?setup=mfa" if payload.requested_plan == "trial" else f"/checkout?plan={payload.requested_plan}&next=mfa"
+    return TokenResponse(access_token=_create_session(db, request, user), next_path=next_path)
 
 
 @router.post("/auth/login", response_model=TokenResponse)

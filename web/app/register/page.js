@@ -37,11 +37,16 @@ function RegisterForm() {
           workspace_name: form.get('workspace_name'),
           email: form.get('email'),
           password: form.get('password'),
+          requested_plan: plan,
+          active_channel: channel,
+          marketplace_interest: interest || null,
+          requested_stores: Number(stores),
+          requested_modules: selectedModules,
         }),
       })
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.error || 'Не удалось создать аккаунт')
-      router.push(plan==='trial'?'/account?setup=mfa':`/checkout?plan=${plan}&next=mfa`)
+      router.push(payload.next_path || '/account?setup=mfa')
       router.refresh()
     } catch (e) {
       setError(e.message)

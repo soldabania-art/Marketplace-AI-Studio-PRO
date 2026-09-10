@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .models import BillingEvent, Subscription, SubscriptionStatus
+from .models import BillingEvent, PurchaseIntent, Subscription, SubscriptionStatus
 
 
 PLAN_CATALOG = {
@@ -222,6 +222,11 @@ def apply_subscription_event(
     subscription.current_period_expires_at = period_expires_at
     subscription.cancel_at_period_end = cancel_at_period_end
     subscription.canceled_at = datetime.now(timezone.utc) if subscription_status == SubscriptionStatus.canceled else None
+    if subscription_status == SubscriptionStatus.active:
+        intent = db.scalar(select(PurchaseIntent).where(PurchaseIntent.workspace_id == workspace_id).with_for_update())
+        if intent is not None and intent.requested_plan == plan_code:
+            intent.status = "fulfilled"
+            intent.fulfilled_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(subscription)
     return subscription, True

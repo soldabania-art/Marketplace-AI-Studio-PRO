@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.billing_service import apply_subscription_event, entitlement_snapshot
 from app.db import Base
-from app.models import BillingEvent, Subscription, SubscriptionStatus, Workspace
+from app.models import BillingEvent, PurchaseIntent, Subscription, SubscriptionStatus, User, Workspace
 
 
 def subscription(**values):
@@ -50,9 +50,11 @@ def test_verified_provider_event_is_idempotent():
     Base.metadata.create_all(engine)
     with Session(engine) as db:
         workspace = Workspace(name="Billing QA")
-        db.add(workspace)
+        user = User(email="billing@example.com", password_hash="not-used")
+        db.add_all([workspace, user])
         db.flush()
         db.add(Subscription(workspace_id=workspace.id, plan_code="trial", status=SubscriptionStatus.trial))
+        db.add(PurchaseIntent(workspace_id=workspace.id, created_by_user_id=user.id, requested_plan="pro", active_channel="wb", requested_stores=3, requested_modules=["profit"]))
         db.commit()
         args = dict(
             provider="test_provider",
@@ -73,3 +75,6 @@ def test_verified_provider_event_is_idempotent():
         assert duplicated is False
         assert first.plan_code == second.plan_code == "pro"
         assert db.scalar(select(BillingEvent).where(BillingEvent.external_event_id == "event-1")) is not None
+        intent = db.scalar(select(PurchaseIntent).where(PurchaseIntent.workspace_id == workspace.id))
+        assert intent.status == "fulfilled"
+        assert intent.fulfilled_at is not None

@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
@@ -19,6 +21,18 @@ class RegisterRequest(StrongPasswordModel):
     password: str = Field(min_length=12, max_length=128)
     full_name: str = Field(default="", max_length=160)
     workspace_name: str = Field(default="Мой магазин", min_length=2, max_length=160)
+    requested_plan: Literal["trial", "pro", "business"] = "trial"
+    active_channel: Literal["start", "wb"] = "start"
+    marketplace_interest: Literal["ozon", "yandex", "kaspi", "uzum"] | None = None
+    requested_stores: Literal[1, 3, 10] = 1
+    requested_modules: list[Literal["cards", "profit", "director", "fbo"]] = Field(default_factory=list, max_length=4)
+
+    @field_validator("requested_modules")
+    @classmethod
+    def unique_modules(cls, value: list[str]) -> list[str]:
+        if len(value) != len(set(value)):
+            raise ValueError("Выбранные модули не должны повторяться")
+        return value
 
 
 class LoginRequest(BaseModel):
@@ -43,6 +57,7 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     mfa_required: bool = False
     mfa_challenge_token: str | None = None
+    next_path: str | None = None
 
 
 class MfaPasswordRequest(BaseModel):

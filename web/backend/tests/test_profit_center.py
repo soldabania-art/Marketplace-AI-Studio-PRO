@@ -139,3 +139,7 @@ def test_financial_risks_exclude_advertising_and_source_payload():
     assert result['deduction_total']=='12.00'
     assert result['items'][0]['source_line_id']=='penalty-1'
     assert all('source_payload' not in item for item in result['items'])
+    assert result['categories']==[
+        {'kind':'penalty','label':'Штраф','count':1,'amount':'25.00'},
+        {'kind':'deduction','label':'Удержание','count':1,'amount':'12.00'},
+    ]

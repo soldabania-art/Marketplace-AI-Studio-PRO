@@ -266,22 +266,30 @@ def _totals(rows: list[MarketplaceFinancialLine]) -> dict:
 
 def _financial_risks(rows: list[MarketplaceFinancialLine], limit: int = 50) -> dict:
     events = []
+    category_totals: dict[tuple[str, str], dict] = {}
     penalty_total = deduction_total = 0
     for row in rows:
         penalty = max(0, int(row.penalty_kopecks or 0))
         deduction = 0 if _is_advertising_deduction(row) else max(0, int(row.deduction_kopecks or 0))
         penalty_total += penalty; deduction_total += deduction
         if not penalty and not deduction: continue
-        events.append({'source_line_id': row.source_line_id, 'kind': 'penalty' if penalty else 'deduction',
+        kind = 'penalty' if penalty else 'deduction'
+        label = (str(row.operation or '').strip() or str(row.document_type or '').strip() or 'Без названия')[:120]
+        category = category_totals.setdefault((kind, label), {'kind': kind, 'label': label, 'amount_kopecks': 0, 'count': 0})
+        category['amount_kopecks'] += penalty or deduction; category['count'] += 1
+        events.append({'source_line_id': row.source_line_id, 'kind': kind,
             'amount_kopecks': penalty or deduction, 'event_date': str(row.event_date or '')[:10],
             'operation': str(row.operation or '')[:255], 'document_type': str(row.document_type or '')[:80],
             'nm_id': int(row.nm_id) if row.nm_id else None, 'vendor_code': str(row.vendor_code or '')[:255]})
     events.sort(key=lambda item: (-item['amount_kopecks'], item['event_date'], item['source_line_id']))
     shown = events[:max(1, min(50, limit))]
+    categories = sorted(category_totals.values(), key=lambda item: (-item['amount_kopecks'], item['label']))[:8]
     public_items = [{**{key: value for key, value in item.items() if key != 'amount_kopecks'},
                      'amount': _rubles(item['amount_kopecks'])} for item in shown]
+    public_categories = [{**{key: value for key, value in item.items() if key != 'amount_kopecks'},
+                          'amount': _rubles(item['amount_kopecks'])} for item in categories]
     return {'penalty_total': _rubles(penalty_total), 'deduction_total': _rubles(deduction_total),
-        'event_count': len(events), 'shown_count': len(shown), 'items': public_items}
+        'event_count': len(events), 'shown_count': len(shown), 'categories': public_categories, 'items': public_items}
 
 
 def _public_amounts(totals: dict) -> dict:

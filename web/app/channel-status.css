@@ -1,0 +1,11 @@
+.marketplaces .marketRow { gap: 8px; color: #8c9cb0; font-size: 11px; margin-top: 11px; text-align: left; }
+.marketplaces .marketRow i { width: 7px; height: 7px; opacity: .5; }
+.marketplaces .marketRow .marketName { margin: 0; color: inherit; }
+.marketplaces .marketRow b { margin-left: auto; color: #62758c; font-size: 8px; font-weight: 800; }
+.marketplaces .marketRow.connected { color: #d8e6f5; }
+.marketplaces .marketRow.connected i { opacity: 1; box-shadow: 0 0 10px currentColor; }
+.marketplaces .marketRow.connected b { color: #62d8a8; }
+.yamDot { background: #ff5a5f; }
+.kaspiDot { background: #e94449; }
+.uzumDot { background: #8c5cff; }
+.manageChannels { display: inline-flex; margin-top: 15px; color: #7eafe5; font-size: 9px; font-weight: 800; }

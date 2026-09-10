@@ -18,7 +18,7 @@ export default function AccountPage() {
   const [security, setSecurity] = useState({ sessions: [], events: [] })
   const [storesData,setStoresData]=useState({stores:[],workspaces:[]})
   const [selectedStoreId,setSelectedStoreId]=useState('')
-  const [wb,setWb]=useState({connected:false,token_hint:''})
+  const [wb,setWb]=useState({connected:false})
   const [newStore,setNewStore]=useState({name:'',client_name:''})
   const [wbToken,setWbToken]=useState('')
   const [error, setError] = useState('')
@@ -65,7 +65,7 @@ export default function AccountPage() {
   }
 
   async function loadWb(storeId){
-    if(!storeId){setWb({connected:false,token_hint:''});return}
+    if(!storeId){setWb({connected:false});return}
     const response=await fetch(`/api/marketplace/wildberries?store_id=${encodeURIComponent(storeId)}`,{cache:'no-store'})
     const payload=await response.json()
     if(!response.ok) throw new Error(payload.error||'Не удалось проверить WB')
@@ -129,7 +129,7 @@ export default function AccountPage() {
     try{
       const response=await fetch(`/api/marketplace/wildberries?store_id=${encodeURIComponent(selectedStoreId)}`,{method:'DELETE'})
       const payload=await response.json(); if(!response.ok) throw new Error(payload.error||'Не удалось отключить WB')
-      setWb({connected:false,token_hint:''})
+      setWb({connected:false})
     }catch(e){setError(e.message)}finally{setBusy('')}
   }
 
@@ -181,7 +181,7 @@ export default function AccountPage() {
     </section>
 
     <section className={styles.storeSection}><div className={styles.sectionHead}><div><span className="eyebrow">ИНТЕГРАЦИЯ</span><h2>Wildberries</h2></div><KeyRound size={22}/></div>
-      {!selectedStore?<div className={styles.notice}>Сначала выберите или создайте магазин.</div>:wb.connected?<div className={styles.connectionOk}><div><strong>Wildberries подключён</strong><span>Токен хранится на сервере в зашифрованном виде · {wb.token_hint||'настроен'}</span></div><button className={styles.danger} onClick={disconnectWb} disabled={busy==='wb'}><Unplug size={15}/> Отключить</button></div>:<form className={styles.inlineForm} onSubmit={connectWb}><input type="password" value={wbToken} onChange={e=>setWbToken(e.target.value)} placeholder="API-токен Wildberries" minLength={20} required autoComplete="off"/><button className={styles.action} disabled={busy==='wb'}>{busy==='wb'?'Проверяем…':'Проверить и подключить WB'}</button></form>}
+      {!selectedStore?<div className={styles.notice}>Сначала выберите или создайте магазин.</div>:wb.connected?<div className={styles.connectionOk}><div><strong>Wildberries подключён</strong><span>Токен хранится на сервере в зашифрованном виде и не возвращается в интерфейс</span></div><button className={styles.danger} onClick={disconnectWb} disabled={busy==='wb'}><Unplug size={15}/> Отключить</button></div>:<form className={styles.inlineForm} onSubmit={connectWb}><input type="password" value={wbToken} onChange={e=>setWbToken(e.target.value)} placeholder="API-токен Wildberries" minLength={20} required autoComplete="off"/><button className={styles.action} disabled={busy==='wb'}>{busy==='wb'?'Проверяем…':'Проверить и подключить WB'}</button></form>}
       <small className={styles.help}>Токен отправляется только на backend, проверяется запросом к WB и сохраняется зашифрованно. В интерфейсе полный токен больше не показывается.</small>
     </section>
 

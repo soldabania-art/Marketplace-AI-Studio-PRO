@@ -75,6 +75,21 @@ def test_integrations_start_disconnected():
     assert payload["ozon"]["connected"] is False
 
 
+def test_store_list_exposes_safe_connection_status_without_credentials():
+    _, _, token = _register_user()
+    headers = {"Authorization": f"Bearer {token}"}
+    account = client.get("/api/v1/auth/me", headers=headers).json()
+    store_id = client.get("/api/v1/stores", headers=headers).json()["stores"][0]["id"]
+    with SessionLocal() as db:
+        db.add(MarketplaceConnection(user_id=account["id"], store_id=store_id, marketplace="wildberries",
+            encrypted_token="encrypted-secret", token_hint="secret-hint", enabled=True))
+        db.commit()
+    payload = client.get("/api/v1/stores", headers=headers).json()["stores"][0]
+    assert payload["marketplaces"] == [{"code":"wildberries","connected":True,"enabled":True}]
+    assert "encrypted-secret" not in str(payload)
+    assert "secret-hint" not in str(payload)
+
+
 def test_data_health_is_store_scoped_and_reports_source_freshness():
     _, _, token = _register_user()
     headers = {"Authorization": f"Bearer {token}"}
@@ -345,6 +360,19 @@ def test_sensitive_actions_require_short_lived_step_up():
     assert current["verified"] is True
     sessions = client.get("/api/v1/auth/sessions", headers=headers).json()["sessions"]
     assert next(row for row in sessions if row["current"])["step_up_verified"] is True
+
+
+def test_marketplace_credentials_require_mfa_after_password_step_up():
+    _, password, token = _register_user()
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.post("/api/v1/auth/step-up", headers=headers, json={"password": password}).status_code == 200
+    blocked = client.post(
+        "/api/v1/integrations/wildberries",
+        headers=headers,
+        json={"store_id": None, "token": "x" * 40},
+    )
+    assert blocked.status_code == 403
+    assert "MFA" in blocked.json()["detail"]
 
 
 def test_wrong_password_does_not_consume_mfa_code_during_step_up():

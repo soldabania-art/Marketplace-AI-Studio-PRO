@@ -24,6 +24,7 @@ PLAN_CATALOG = {
             "card_visual_generation": False,
             "marketplace_publication": False,
             "profit_center": True,
+            "community_access": False,
             "autopilot_level": "disabled",
         },
     },
@@ -39,6 +40,7 @@ PLAN_CATALOG = {
             "card_visual_generation": True,
             "marketplace_publication": True,
             "profit_center": True,
+            "community_access": True,
             "autopilot_level": "assisted",
         },
     },
@@ -54,6 +56,7 @@ PLAN_CATALOG = {
             "card_visual_generation": True,
             "marketplace_publication": True,
             "profit_center": True,
+            "community_access": True,
             "autopilot_level": "advanced",
         },
     },
@@ -68,6 +71,7 @@ READ_ONLY_ENTITLEMENTS = {
     "card_visual_generation": False,
     "marketplace_publication": False,
     "profit_center": True,
+    "community_access": False,
     "autopilot_level": "disabled",
 }
 

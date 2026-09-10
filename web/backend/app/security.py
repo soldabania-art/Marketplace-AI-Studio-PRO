@@ -108,6 +108,19 @@ def require_step_up_session(current_session: UserSession = Depends(get_current_s
     return current_session
 
 
+def require_mfa_session(
+    current_session: UserSession = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> UserSession:
+    mfa = db.get(UserMfa, current_session.user_id)
+    if mfa is None or not mfa.enabled or current_session.mfa_verified_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Включите MFA и подтвердите текущую сессию перед подключением магазина",
+        )
+    return current_session
+
+
 def get_current_user(
     current_session: UserSession = Depends(get_current_session),
     db: Session = Depends(get_db),

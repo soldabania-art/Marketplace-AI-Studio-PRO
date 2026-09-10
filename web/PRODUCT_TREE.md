@@ -13,6 +13,9 @@ flowchart TD
     E --> B["Beginner · one photo"]
     E --> S["Seller · connected store"]
     E --> A["Agency · client portfolio"]
+    E --> CH["Start-page channel selector"]
+    E --> CF["Public bundle configurator"]
+    E --> PAY["Account → payment → MFA → workspace"]
     C --> P["Profit and products"]
     C --> F["Card Factory and SEO"]
     C --> O["Ads, reviews, stock, reports"]
@@ -28,6 +31,9 @@ flowchart TD
 ## 1. Entry journeys
 
 - **Public entry — live foundation:** product promise → scenario/marketplace choice → security and trial boundaries → pricing → registration or login. The private dashboard renders only after session verification.
+- **Start-page channels — active:** guest sees an honest roadmap choice; authenticated seller sees per-store connection state from the server. Current catalog: Wildberries → Ozon → Yandex Market → Kaspi.kz → Uzum Market → demand-led connectors. Only an existing connection record may be labelled `connected`.
+- **Public bundle configurator — active:** before login, the visitor selects an available channel, modules and store scale. The selection recommends a tariff and is handed to registration as allowlisted, non-sensitive intent; it never grants an entitlement. Planned channels create demand signals and fall back to the available WB route instead of being sold as live.
+- **Paid entry contract — planned provider gate:** configuration → account/contact verification → provider checkout → verified server webhook → mandatory MFA → chosen workspace/module. Redirect parameters and browser state can route UX but can never activate paid rights.
 - **Beginner — live foundation:** photo analysis → confirmed facts → card draft → economics → preview → approved publication → hand-off to AI Director. Trial: 72 hours from first successful analysis, five successful cards, one user, one store.
 - **Existing seller — live foundation:** connect store → catalog/stocks/sales snapshots → Profit Center → evidence-ranked Daily Director → Card Factory or operational action.
 - **Agency — planned:** organizations → clients → stores → roles → approvals → portfolio reporting → white label.
@@ -65,7 +71,7 @@ AI coordinates the loop. Deterministic services remain authoritative for facts, 
 | Cross-border CIS | **discovery** | Integration Hub + reconciled Profit Center | Kazakhstan read-only economics pilot |
 | Manufacturer OS | **planned P3** | canonical products + accounting sources | Versioned BOM and production costing |
 | Omnichannel / Wholesale | **planned P3** | inventory ledger + channel connectors | Reservation-safe stock and quote MVP |
-| Professional community | **planned P4** | active verified users + moderation | Guides, verified profiles and partnership requests |
+| Professional community | **planned P4; entitlement defined** | active paid subscription + verified users + moderation | `community_access` is PRO/Business-only; build guides, verified profiles and partnership requests |
 | Network insights | **planned P3** | consent + viable protected cohorts | Benchmark and logistics-radar pilots |
 
 ## 4. Integration tree
@@ -73,7 +79,10 @@ AI coordinates the loop. Deterministic services remain authoritative for facts, 
 - Marketplaces
   - Wildberries: catalog → stocks → sales velocity → confirmed content text → verified append-only media → economics → ads/reviews/claims.
   - Ozon: begins after the complete WB write path is production-safe.
-  - Yandex Market, Megamarket and others: use the same canonical model and connector contract.
+  - Yandex Market: follows Ozon through the same canonical product/order/inventory contracts.
+  - Kaspi.kz: first cross-border discovery candidate after legal, partner, API and economics validation.
+  - Uzum Market: follows the Kazakhstan pilot with bilingual localization and separate logistics economics.
+  - Megamarket and demand-led channels: use the connector contract; display in UI never implies availability.
 - Accounting RF/CIS
   - Wave 1: 1C, MoySklad, Saby/SBIS, Kontur.
   - Wave 2: BAS/localized 1C, Odoo, demand-led enterprise systems.

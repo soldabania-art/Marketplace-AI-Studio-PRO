@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from .db import get_db
 from .billing_service import entitlement_snapshot, latest_subscription
-from .models import Membership, MembershipRole, Store, User, Workspace
+from .models import MarketplaceConnection, Membership, MembershipRole, Store, User, Workspace
 from .security import get_current_user
 from .store_access import list_accessible_stores
 
@@ -21,6 +21,15 @@ class StoreCreateBody(BaseModel):
 @router.get('/stores')
 def stores(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rows = list_accessible_stores(db, user)
+    store_ids = [row.id for row in rows]
+    connections = db.scalars(select(MarketplaceConnection).where(MarketplaceConnection.store_id.in_(store_ids))).all() if store_ids else []
+    connections_by_store = {}
+    for connection in connections:
+        connections_by_store.setdefault(connection.store_id, []).append({
+            'code': connection.marketplace,
+            'connected': True,
+            'enabled': bool(connection.enabled),
+        })
     memberships = db.scalars(
         select(Membership).where(Membership.user_id == user.id)
     ).all()
@@ -36,6 +45,7 @@ def stores(user: User = Depends(get_current_user), db: Session = Depends(get_db)
                 'name': row.name,
                 'client_name': row.client_name,
                 'active': row.is_active,
+                'marketplaces': sorted(connections_by_store.get(row.id, []), key=lambda item: item['code']),
             }
             for row in rows
         ],

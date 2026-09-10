@@ -10,6 +10,10 @@
 
 > Penalties and non-advertising deductions are first exposed as a bounded, read-only evidence register derived from normalized finance lines. Incomplete source coverage is explicit, raw provider payloads stay private, and no claim is generated or submitted automatically.
 
+> The start page owns the channel selector. Anonymous users see supported and planned routes; authenticated users see real per-store connection state. UI status must come from store-scoped connection records and must never be inferred from marketing configuration.
+
+> The public bundle choice is routing intent, not authorization. Paid rights are derived only from a verified billing event; marketplace credentials require MFA/step-up. Community access is available only to authenticated workspaces with an active paid entitlement.
+
 ## Product direction
 TROVENDI is a web-first AI operating system for marketplace sellers, starting with Wildberries and Ozon and designed for later expansion to Yandex Market, Megamarket, AliExpress and other verified integrations.
 

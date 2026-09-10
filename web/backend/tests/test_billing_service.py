@@ -21,6 +21,7 @@ def test_trial_entitlements_are_limited_before_first_success():
     assert result["entitlements"]["card_copy_generation"] is True
     assert result["entitlements"]["card_visual_generation"] is False
     assert result["entitlements"]["marketplace_publication"] is False
+    assert result["entitlements"]["community_access"] is False
 
 
 def test_expired_trial_keeps_read_only_access():
@@ -39,7 +40,9 @@ def test_paid_access_honors_status_and_period_end():
     assert active["read_only"] is False
     assert active["cancel_at_period_end"] is True
     assert active["entitlements"]["marketplace_publication"] is True
+    assert active["entitlements"]["community_access"] is True
     assert expired["read_only"] is True
+    assert expired["entitlements"]["community_access"] is False
 
 
 def test_verified_provider_event_is_idempotent():

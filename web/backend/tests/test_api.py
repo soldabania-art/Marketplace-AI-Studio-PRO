@@ -143,6 +143,8 @@ def test_onboarding_is_store_scoped_and_business_profile_requires_admin_confirma
     body = {"store_id": store_id, "operating_model": "manufacturer", "buys_finished_goods": False, "makes_products": True, "controls_rrp": False}
     forbidden = client.put("/api/v1/onboarding/profile", headers=analyst_headers, json=body)
     assert forbidden.status_code == 403
+    import_forbidden = client.post(f"/api/v1/onboarding/import?store_id={store_id}", headers=analyst_headers)
+    assert import_forbidden.status_code == 403
 
     confirmed = client.put("/api/v1/onboarding/profile", headers=owner_headers, json=body)
     assert confirmed.status_code == 200
@@ -164,6 +166,26 @@ def test_onboarding_is_store_scoped_and_business_profile_requires_admin_confirma
         ).count() == 1
     inconsistent = client.put("/api/v1/onboarding/profile", headers=owner_headers, json={**body, "makes_products": False})
     assert inconsistent.status_code == 422
+
+    with SessionLocal() as db:
+        store = db.get(Store, store_id)
+        owner_id = client.get("/api/v1/auth/me", headers=owner_headers).json()["id"]
+        db.add(MarketplaceConnection(user_id=owner_id, store_id=store_id, marketplace="wildberries", encrypted_token="test", enabled=True))
+        db.commit()
+    started = client.post(f"/api/v1/onboarding/import?store_id={store_id}", headers=owner_headers)
+    repeated_import = client.post(f"/api/v1/onboarding/import?store_id={store_id}", headers=owner_headers)
+    assert started.status_code == 202
+    assert repeated_import.status_code == 202
+    assert started.json()["read_only"] is True
+    assert {key: value["id"] for key, value in started.json()["jobs"].items()} == {key: value["id"] for key, value in repeated_import.json()["jobs"].items()}
+    progress = client.get(f"/api/v1/onboarding?store_id={store_id}", headers=owner_headers).json()
+    assert progress["import"]["resumable"] is True
+    assert {item["state"] for item in progress["import"]["groups"]} == {"syncing"}
+    assert len(progress["costing_questions"]) == 5
+    with SessionLocal() as db:
+        jobs = db.query(BackgroundJob).filter(BackgroundJob.store_id == store_id).all()
+        assert len(jobs) == 3
+        assert all((job.payload or {}).get("origin") == "onboarding" for job in jobs)
 
     _, _, outsider_token = _register_user()
     outsider = client.get(f"/api/v1/onboarding?store_id={store_id}", headers={"Authorization": f"Bearer {outsider_token}"})

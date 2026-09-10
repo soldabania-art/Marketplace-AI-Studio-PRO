@@ -1,14 +1,15 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from .data_health import store_data_health
 from .db import get_db
 from .marketplace_sync import latest_snapshot
-from .models import BusinessOperatingProfile, MarketplaceConnection, OperationalAuditEvent, User
+from .job_queue import enqueue
+from .models import BackgroundJob, BusinessOperatingProfile, JobStatus, MarketplaceConnection, OperationalAuditEvent, User
 from .security import get_current_user
 from .store_access import require_store_admin, resolve_store
 
@@ -20,6 +21,33 @@ MODEL_LABELS = {
     'manufacturer': 'Собственное производство',
     'distributor': 'Официальный дистрибьютор',
     'mixed': 'Смешанная модель',
+}
+COSTING_QUESTIONS = {
+    'reseller': [
+        {'key': 'purchase_price', 'label': 'Закупочная цена единицы', 'source': 'Накладная или счёт поставщика'},
+        {'key': 'purchase_currency', 'label': 'Валюта и подтверждённый курс партии', 'source': 'Банк или платёжный документ'},
+        {'key': 'inbound_logistics', 'label': 'Карго, таможня и доставка до фулфилмента', 'source': 'Документы перевозчика'},
+        {'key': 'fulfillment_unit', 'label': 'Упаковка и обработка одной единицы', 'source': 'Тариф фулфилмента'},
+    ],
+    'manufacturer': [
+        {'key': 'materials', 'label': 'Сырьё и комплектующие на единицу', 'source': 'Технологическая карта'},
+        {'key': 'direct_labor', 'label': 'Сдельная работа на единицу', 'source': 'Наряд или норматив'},
+        {'key': 'packaging', 'label': 'Упаковка и маркировка', 'source': 'Спецификация упаковки'},
+        {'key': 'equipment', 'label': 'Амортизация оборудования и энергия', 'source': 'Подтверждённая методика распределения'},
+        {'key': 'overhead', 'label': 'Доля аренды и цеховых расходов', 'source': 'Подтверждённая база распределения'},
+    ],
+    'distributor': [
+        {'key': 'net_purchase', 'label': 'Закупочная цена после бонусов', 'source': 'Договор и закрывающие документы'},
+        {'key': 'rrp', 'label': 'РРЦ и допустимый диапазон цены', 'source': 'Политика правообладателя'},
+        {'key': 'brand_rebate', 'label': 'Маркетинговые компенсации', 'source': 'Отчёт или акт бренда'},
+        {'key': 'fulfillment_unit', 'label': 'Логистика и обработка единицы', 'source': 'Тарифы партнёров'},
+    ],
+    'mixed': [
+        {'key': 'sku_model', 'label': 'Модель себестоимости для каждого SKU', 'source': 'Решение владельца'},
+        {'key': 'purchase_or_materials', 'label': 'Закупка или материалы на единицу', 'source': 'Накладная или техкарта'},
+        {'key': 'labor_and_fulfillment', 'label': 'Производство, упаковка и фулфилмент', 'source': 'Нормативы и тарифы'},
+        {'key': 'allocation', 'label': 'Правило распределения общих расходов', 'source': 'Подтверждённая методика'},
+    ],
 }
 
 
@@ -61,6 +89,59 @@ def _metrics(db: Session, store_id: str) -> dict:
     }
 
 
+def _latest_job(db: Session, store_id: str, job_type: str) -> BackgroundJob | None:
+    return db.query(BackgroundJob).filter(
+        BackgroundJob.store_id == store_id,
+        BackgroundJob.job_type == job_type,
+    ).order_by(BackgroundJob.created_at.desc()).first()
+
+
+def _import_progress(db: Session, store_id: str, health: dict) -> dict:
+    source_map = {item['key']: item for item in health['sources']}
+    groups = []
+    specs = (
+        ('core', 'Каталог, остатки и продажи', ('catalog', 'stocks', 'sales'), 'marketplace.wb.analytics.sync', 50),
+        ('finance', 'Финансовый отчёт', ('finance',), 'marketplace.wb.finance.sync', 25),
+        ('advertising', 'Рекламная статистика', ('advertising',), 'marketplace.wb.advertising.sync', 25),
+    )
+    total = 0
+    for key, label, source_keys, job_type, weight in specs:
+        sources = [source_map[item] for item in source_keys]
+        job = _latest_job(db, store_id, job_type)
+        complete = all(item['status'] in {'healthy', 'delayed'} for item in sources)
+        if key in {'finance', 'advertising'}:
+            snapshot_type = 'finance_realization_sync' if key == 'finance' else 'advertising_sync'
+            snapshot = latest_snapshot(db, store_id=store_id, marketplace='wildberries', snapshot_type=snapshot_type)
+            snapshot_payload = dict(snapshot.payload or {}) if snapshot else {}
+            complete = complete and snapshot_payload.get('complete') is True and snapshot_payload.get('date_to') == datetime.now(timezone.utc).date().isoformat()
+        if complete:
+            state = 'complete'; total += weight
+        elif job and job.status == JobStatus.dead:
+            state = 'error'
+        elif job and job.status == JobStatus.retry:
+            state = 'retrying'
+        elif job and job.status in {JobStatus.queued, JobStatus.running} or any(item['status'] == 'syncing' for item in sources):
+            state = 'syncing'
+        else:
+            state = 'waiting'
+        groups.append({'key': key, 'label': label, 'state': state, 'weight': weight,
+            'job': {'id': job.id, 'status': job.status.value, 'attempts': job.attempts, 'max_attempts': job.max_attempts} if job else None})
+    return {'progress_percent': total, 'complete': total == 100, 'groups': groups,
+        'resumable': True, 'message': 'Импорт продолжится в фоне после закрытия страницы.'}
+
+
+def _active_or_enqueue(db: Session, *, store, job_type: str, idempotency_key: str, payload: dict, priority: int) -> BackgroundJob:
+    active = db.query(BackgroundJob).filter(
+        BackgroundJob.store_id == store.id,
+        BackgroundJob.job_type == job_type,
+        BackgroundJob.status.in_([JobStatus.queued, JobStatus.running, JobStatus.retry]),
+    ).order_by(BackgroundJob.created_at.desc()).first()
+    if active:
+        return active
+    return enqueue(db, job_type=job_type, idempotency_key=idempotency_key, payload=payload,
+        workspace_id=store.workspace_id, store_id=store.id, priority=priority, max_attempts=5)
+
+
 def _actions(*, connected: bool, health: dict, profile: BusinessOperatingProfile | None, metrics: dict) -> list[dict]:
     actions = []
     if not connected:
@@ -100,9 +181,11 @@ def _assessment(db: Session, store, profile: BusinessOperatingProfile | None) ->
         'completion_percent': int(sum(item['complete'] for item in steps) / len(steps) * 100),
         'steps': steps,
         'data_health': {'overall_status': health['overall_status'], 'safe_for_ai_decisions': health['safe_for_ai_decisions']},
+        'import': _import_progress(db, store.id, health),
         'evidence': metrics,
         'profile': ({'operating_model': profile.operating_model, 'label': MODEL_LABELS[profile.operating_model], 'answers': profile.answers, 'confirmed_at': profile.confirmed_at} if profile else None),
         'profile_decision': {'state': 'confirmation_required' if profile is None else 'confirmed', 'reason': 'Юридическую и операционную модель нельзя надёжно определить только по карточкам WB.'},
+        'costing_questions': COSTING_QUESTIONS.get(profile.operating_model, []) if profile else [],
         'actions': _actions(connected=bool(connection), health=health, profile=profile, metrics=metrics),
     }
 
@@ -140,3 +223,30 @@ def confirm_profile(payload: ProfileConfirmation, user: User = Depends(get_curre
         payload={'operating_model': payload.operating_model, 'marketplace': 'wildberries'}))
     db.commit(); db.refresh(profile)
     return _assessment(db, store, profile)
+
+
+@router.post('/import', status_code=202)
+def start_import(store_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = resolve_store(db, user, store_id); require_store_admin(db, user, store)
+    connection = db.query(MarketplaceConnection).filter(
+        MarketplaceConnection.store_id == store.id,
+        MarketplaceConnection.marketplace == 'wildberries',
+        MarketplaceConnection.enabled.is_(True),
+    ).first()
+    if connection is None:
+        raise HTTPException(409, 'Сначала подключите Wildberries к выбранному магазину.')
+    now = datetime.now(timezone.utc); today = now.date(); begin = today - timedelta(days=29); run_id = f'onboarding:{begin}:{today}'
+    recovery_slot = int(now.timestamp() // 3600)
+    common = {'store_id': store.id, 'date_from': begin.isoformat(), 'date_to': today.isoformat(), 'run_id': run_id, 'origin': 'onboarding'}
+    jobs = {
+        'core': _active_or_enqueue(db, store=store, job_type='marketplace.wb.analytics.sync', idempotency_key=f'onboarding-core:{store.id}:{today}:{recovery_slot}', payload={'store_id': store.id, 'origin': 'onboarding'}, priority=50),
+        'finance': _active_or_enqueue(db, store=store, job_type='marketplace.wb.finance.sync', idempotency_key=f'onboarding-finance:{store.id}:{today}:{recovery_slot}', payload=common | {'rrd_id': 0, 'page_number': 1}, priority=51),
+        'advertising': _active_or_enqueue(db, store=store, job_type='marketplace.wb.advertising.sync', idempotency_key=f'onboarding-advertising:{store.id}:{today}:{recovery_slot}', payload=common | {'campaign_ids': [], 'date_index': 0, 'batch_index': 0}, priority=52),
+    }
+    db.add(OperationalAuditEvent(workspace_id=store.workspace_id, store_id=store.id, user_id=user.id,
+        event_type='onboarding.import.requested', entity_type='store', entity_id=store.id,
+        payload={'read_only': True, 'jobs': {key: job.id for key, job in jobs.items()}}))
+    db.commit()
+    return {'store_id': store.id, 'read_only': True,
+        'jobs': {key: {'id': job.id, 'status': job.status.value} for key, job in jobs.items()},
+        'message': 'Импорт поставлен в защищённую очередь и продолжится в фоне.'}

@@ -47,7 +47,7 @@ AI coordinates the loop. Deterministic services remain authoritative for facts, 
 | Branch | Status | Depends on | Next gate |
 | --- | --- | --- | --- |
 | Accounts, stores, trial | **live foundation** | PostgreSQL, auth, server entitlements | RF/CIS payment checkout and verified webhook adapter |
-| Business profiles / onboarding | **live foundation** | store context + source health | Resumable import progress and profile-aware costing questions |
+| Business profiles / onboarding | **live foundation** | store context + source health + durable jobs | Confirm per-SKU cost inputs and accounting-source mappings |
 | WB snapshots | **live foundation** | encrypted token, worker | Reconciliation and freshness SLO |
 | Products | **live foundation** | catalog + stock + velocity | Provenance and cross-source identity |
 | AI Card Factory | **live foundation** | facts + AI persistence | Production observation of text and media writes |

@@ -31,6 +31,7 @@ TROVENDI uses one container image with separate process roles.
 - `MARKETPLACE_DATABASE_URL`
 - `MARKETPLACE_JWT_SECRET` — long random secret, never committed
 - `MARKETPLACE_MARKETPLACE_TOKEN_KEY` — temporary Fernet provider key until managed SecretProvider/KMS rollout
+- `MARKETPLACE_MFA_ENCRYPTION_KEY` — a separate Fernet key for TOTP secrets; never reuse the marketplace-token key
 - `MARKETPLACE_FRONTEND_URL`
 - `MARKETPLACE_BILLING_PROVIDER` — remains `not_configured` until a contracted RF/CIS provider adapter verifies checkout and webhook events server-side
 - `MARKETPLACE_OPENAI_API_KEY` — server-only key for AI Card Factory; never expose it to the frontend
@@ -40,7 +41,7 @@ TROVENDI uses one container image with separate process roles.
 - `MARKETPLACE_OPENAI_IMAGE_ESTIMATED_COST_MICROUSD` — current provider estimate used for budgets and audit
 - VAPID settings when Web Push is enabled
 
-The API intentionally refuses production startup when PostgreSQL, TLS, HTTPS, the JWT secret or the marketplace credential-encryption key is missing. Do not weaken these checks to make a deployment pass.
+The API intentionally refuses production startup when PostgreSQL, TLS, HTTPS, the JWT secret, the marketplace credential-encryption key or the separate MFA-encryption key is missing. Do not weaken these checks to make a deployment pass.
 
 Frontend must set `MARKETPLACE_API_URL` to the externally reachable API base URL. Connect a public Vercel Blob store to the frontend project; Vercel supplies `BLOB_STORE_ID` + rotating `VERCEL_OIDC_TOKEN`, or `BLOB_READ_WRITE_TOKEN` only for a non-OIDC/manual setup. Generated marketplace visuals use unique immutable paths and are never written when Blob credentials are absent.
 

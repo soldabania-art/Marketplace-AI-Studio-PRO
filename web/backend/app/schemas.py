@@ -39,8 +39,26 @@ class PasswordResetConfirmRequest(TokenActionRequest, StrongPasswordModel):
 
 
 class TokenResponse(BaseModel):
-    access_token: str
+    access_token: str | None = None
     token_type: str = "bearer"
+    mfa_required: bool = False
+    mfa_challenge_token: str | None = None
+
+
+class MfaPasswordRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=128)
+
+
+class MfaCodeRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=32)
+
+
+class MfaLoginRequest(MfaCodeRequest):
+    challenge_token: str = Field(min_length=20, max_length=512)
+
+
+class MfaDisableRequest(MfaCodeRequest, MfaPasswordRequest):
+    pass
 
 
 class AccountResponse(BaseModel):

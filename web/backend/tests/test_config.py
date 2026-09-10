@@ -22,6 +22,7 @@ def test_production_requires_explicit_strong_jwt_secret():
         jwt_secret="x" * 48,
         database_url="postgresql+psycopg://app:secret@db.internal/trovendi?sslmode=require",
         marketplace_token_key=Fernet.generate_key().decode(),
+        mfa_encryption_key=Fernet.generate_key().decode(),
         frontend_url="https://trovendi.ru",
         _env_file=None,
     )
@@ -35,6 +36,8 @@ def test_production_requires_explicit_strong_jwt_secret():
         ({"database_url": "postgresql+psycopg://app:secret@db.internal/trovendi"}, "must require TLS"),
         ({"marketplace_token_key": ""}, "TOKEN_KEY is required"),
         ({"marketplace_token_key": "not-a-fernet-key"}, "must be a valid Fernet key"),
+        ({"mfa_encryption_key": ""}, "MFA_ENCRYPTION_KEY is required"),
+        ({"mfa_encryption_key": "not-a-fernet-key"}, "MFA_ENCRYPTION_KEY must be a valid Fernet key"),
         ({"jwt_algorithm": "none"}, "must be HS256"),
         ({"frontend_url": "http://trovendi.ru"}, "must use HTTPS"),
     ],
@@ -45,6 +48,7 @@ def test_production_rejects_insecure_runtime_configuration(override, message):
         "jwt_secret": "x" * 48,
         "database_url": "postgresql+psycopg://app:secret@db.internal/trovendi?sslmode=require",
         "marketplace_token_key": Fernet.generate_key().decode(),
+        "mfa_encryption_key": Fernet.generate_key().decode(),
         "frontend_url": "https://trovendi.ru",
         "_env_file": None,
     }

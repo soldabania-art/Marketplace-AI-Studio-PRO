@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from app.db import Base, engine
 from app.main import app
 from app.config import get_settings
+from app.mfa_service import totp_code
 
 Base.metadata.create_all(bind=engine)
 client = TestClient(app)
@@ -105,6 +106,44 @@ def test_register_login_and_me_contract():
     login = client.post("/api/v1/auth/login", json={"email":email,"password":password})
     assert login.status_code == 200
     assert login.json()["access_token"]
+
+
+def test_mfa_setup_login_recovery_and_single_use_challenge():
+    email, password, token = _register_user()
+    headers = {"Authorization": f"Bearer {token}"}
+    setup = client.post("/api/v1/auth/mfa/setup", headers=headers, json={"password": password})
+    assert setup.status_code == 200
+    secret = setup.json()["secret"]
+    confirm = client.post("/api/v1/auth/mfa/confirm", headers=headers, json={"code": totp_code(secret)})
+    assert confirm.status_code == 200
+    recovery_codes = confirm.json()["recovery_codes"]
+    assert len(recovery_codes) == 10
+    status_response = client.get("/api/v1/auth/mfa/status", headers=headers)
+    assert status_response.json()["enabled"] is True
+    assert status_response.json()["current_session_verified"] is True
+
+    password_step = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    assert password_step.status_code == 200
+    assert password_step.json()["mfa_required"] is True
+    assert password_step.json()["access_token"] is None
+    challenge = password_step.json()["mfa_challenge_token"]
+    wrong = client.post("/api/v1/auth/mfa/login", json={"challenge_token": challenge, "code": "000000"})
+    assert wrong.status_code == 401
+    verified = client.post("/api/v1/auth/mfa/login", json={"challenge_token": challenge, "code": totp_code(secret)})
+    assert verified.status_code == 200
+    assert verified.json()["access_token"]
+    assert client.post("/api/v1/auth/mfa/login", json={"challenge_token": challenge, "code": totp_code(secret)}).status_code == 400
+
+    replay_step = client.post("/api/v1/auth/login", json={"email": email, "password": password}).json()
+    replayed_totp = client.post("/api/v1/auth/mfa/login", json={"challenge_token": replay_step["mfa_challenge_token"], "code": totp_code(secret)})
+    assert replayed_totp.status_code == 401
+
+    recovery_step = client.post("/api/v1/auth/login", json={"email": email, "password": password}).json()
+    recovered = client.post("/api/v1/auth/mfa/login", json={"challenge_token": recovery_step["mfa_challenge_token"], "code": recovery_codes[0]})
+    assert recovered.status_code == 200
+    next_step = client.post("/api/v1/auth/login", json={"email": email, "password": password}).json()
+    reused = client.post("/api/v1/auth/mfa/login", json={"challenge_token": next_step["mfa_challenge_token"], "code": recovery_codes[0]})
+    assert reused.status_code == 401
 
 
 def test_trial_subscription_exposes_server_entitlements_and_blocks_second_store():

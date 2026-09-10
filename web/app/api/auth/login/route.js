@@ -16,6 +16,18 @@ export async function POST(request) {
       )
     }
 
+    if (payload.mfa_required) {
+      return NextResponse.json({
+        ok: false,
+        mfa_required: true,
+        mfa_challenge_token: payload.mfa_challenge_token,
+      })
+    }
+
+    if (!payload.access_token) {
+      return NextResponse.json({ error: 'Сервер не выдал безопасную сессию' }, { status: 502 })
+    }
+
     const result = NextResponse.json({ ok: true })
     result.cookies.set('mai_session', payload.access_token, sessionCookieOptions())
     return result

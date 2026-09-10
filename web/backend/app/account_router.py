@@ -15,10 +15,12 @@ from .models import (
     AccountTokenPurpose,
     Membership,
     MembershipRole,
+    MfaLoginChallenge,
     SecurityEvent,
     Subscription,
     SubscriptionStatus,
     User,
+    UserMfa,
     UserSession,
     Workspace,
 )
@@ -26,10 +28,24 @@ from .schemas import (
     AccountResponse,
     EmailRequest,
     LoginRequest,
+    MfaCodeRequest,
+    MfaDisableRequest,
+    MfaLoginRequest,
+    MfaPasswordRequest,
     PasswordResetConfirmRequest,
     RegisterRequest,
     TokenActionRequest,
     TokenResponse,
+)
+from .mfa_service import (
+    consume_recovery_code,
+    decrypt_secret,
+    encrypt_secret,
+    generate_recovery_codes,
+    generate_secret,
+    matched_totp_step,
+    provisioning_uri,
+    verify_totp,
 )
 from .security import (
     create_access_token,
@@ -71,7 +87,7 @@ def _record_security_event(db: Session, request: Request, event_type: str, succe
     ))
 
 
-def _create_session(db: Session, request: Request, user: User) -> str:
+def _create_session(db: Session, request: Request, user: User, mfa_verified: bool = False) -> str:
     settings = get_settings()
     ip_hash, user_agent = _request_fingerprint(request)
     now = datetime.now(timezone.utc)
@@ -81,11 +97,56 @@ def _create_session(db: Session, request: Request, user: User) -> str:
         ip_hash=ip_hash,
         last_seen_at=now,
         expires_at=now + timedelta(days=settings.session_days),
+        mfa_verified_at=now if mfa_verified else None,
     )
     db.add(session)
     _record_security_event(db, request, "session_created", True, user=user)
     db.commit()
     return create_access_token(user.id, session.id)
+
+
+def _new_mfa_challenge(db: Session, request: Request, user: User) -> str:
+    settings = get_settings()
+    now = datetime.now(timezone.utc)
+    db.execute(update(MfaLoginChallenge).where(
+        MfaLoginChallenge.user_id == user.id,
+        MfaLoginChallenge.used_at.is_(None),
+    ).values(used_at=now))
+    raw_token = secrets.token_urlsafe(48)
+    db.add(MfaLoginChallenge(
+        user_id=user.id,
+        token_hash=_token_hash(raw_token),
+        expires_at=now + timedelta(minutes=settings.mfa_challenge_minutes),
+    ))
+    _record_security_event(db, request, "mfa_challenge_created", True, user=user)
+    db.commit()
+    return raw_token
+
+
+def _verify_mfa_code(mfa: UserMfa, code: str) -> bool:
+    step = matched_totp_step(decrypt_secret(mfa.secret_ciphertext), code)
+    if step is not None and (mfa.last_totp_step is None or step > mfa.last_totp_step):
+        mfa.last_totp_step = step
+        return True
+    remaining = consume_recovery_code(mfa.recovery_code_hashes or [], code)
+    if remaining is None:
+        return False
+    mfa.recovery_code_hashes = remaining
+    return True
+
+
+def _mfa_login_is_limited(db: Session, request: Request, user: User) -> bool:
+    settings = get_settings()
+    since = datetime.now(timezone.utc) - timedelta(minutes=settings.login_attempt_window_minutes)
+    ip_hash, _ = _request_fingerprint(request)
+    conditions = (SecurityEvent.event_type == "mfa_login", SecurityEvent.success.is_(False), SecurityEvent.created_at >= since)
+    subject_failures = db.scalar(select(func.count(SecurityEvent.id)).where(
+        *conditions, SecurityEvent.subject_hash == _privacy_hash(user.email),
+    )) or 0
+    ip_failures = db.scalar(select(func.count(SecurityEvent.id)).where(
+        *conditions, SecurityEvent.ip_hash == ip_hash,
+    )) or 0
+    return subject_failures >= settings.mfa_attempt_limit or ip_failures >= settings.login_ip_max_failures
 
 
 def _login_is_limited(db: Session, email: str, request: Request) -> bool:
@@ -239,9 +300,142 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         _record_security_event(db, request, "login", False, user=user, subject=email)
         db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    mfa = db.get(UserMfa, user.id)
+    if mfa is not None and mfa.enabled:
+        return TokenResponse(mfa_required=True, mfa_challenge_token=_new_mfa_challenge(db, request, user))
     _record_security_event(db, request, "login", True, user=user, subject=email)
-    db.commit()
     return TokenResponse(access_token=_create_session(db, request, user))
+
+
+@router.post("/auth/mfa/login", response_model=TokenResponse)
+def login_mfa(payload: MfaLoginRequest, request: Request, db: Session = Depends(get_db)):
+    challenge = db.scalar(select(MfaLoginChallenge).where(
+        MfaLoginChallenge.token_hash == _token_hash(payload.challenge_token),
+        MfaLoginChallenge.used_at.is_(None),
+    ))
+    if challenge is None:
+        raise HTTPException(status_code=400, detail="MFA challenge is invalid or already used")
+    now = datetime.now(timezone.utc)
+    expires_at = challenge.expires_at if challenge.expires_at.tzinfo else challenge.expires_at.replace(tzinfo=timezone.utc)
+    settings = get_settings()
+    if expires_at <= now or challenge.attempts >= settings.mfa_attempt_limit:
+        challenge.used_at = now
+        db.commit()
+        raise HTTPException(status_code=400, detail="MFA challenge has expired")
+    user = db.get(User, challenge.user_id)
+    mfa = db.get(UserMfa, challenge.user_id)
+    if user is None or not user.is_active or mfa is None or not mfa.enabled:
+        challenge.used_at = now
+        db.commit()
+        raise HTTPException(status_code=400, detail="MFA challenge is unavailable")
+    if _mfa_login_is_limited(db, request, user):
+        challenge.used_at = now
+        db.commit()
+        raise HTTPException(status_code=429, detail="Too many failed MFA attempts. Try again later.")
+    if not _verify_mfa_code(mfa, payload.code):
+        challenge.attempts += 1
+        if challenge.attempts >= settings.mfa_attempt_limit:
+            challenge.used_at = now
+        _record_security_event(db, request, "mfa_login", False, user=user, subject=user.email)
+        db.commit()
+        raise HTTPException(status_code=401, detail="Invalid authentication code")
+    challenge.used_at = now
+    _record_security_event(db, request, "mfa_login", True, user=user, subject=user.email)
+    _record_security_event(db, request, "login", True, user=user, subject=user.email)
+    return TokenResponse(access_token=_create_session(db, request, user, mfa_verified=True))
+
+
+@router.get("/auth/mfa/status")
+def mfa_status(current_user: User = Depends(get_current_user), current_session: UserSession = Depends(get_current_session), db: Session = Depends(get_db)):
+    mfa = db.get(UserMfa, current_user.id)
+    return {
+        "enabled": bool(mfa and mfa.enabled),
+        "setup_pending": bool(mfa and not mfa.enabled),
+        "recovery_codes_remaining": len(mfa.recovery_code_hashes or []) if mfa and mfa.enabled else 0,
+        "current_session_verified": current_session.mfa_verified_at is not None,
+    }
+
+
+@router.post("/auth/mfa/setup")
+def setup_mfa(payload: MfaPasswordRequest, request: Request, current_user: User = Depends(get_current_user), current_session: UserSession = Depends(get_current_session), db: Session = Depends(get_db)):
+    if _account_action_is_limited(db, request, "mfa_setup", current_user.email):
+        raise HTTPException(status_code=429, detail="Too many MFA setup attempts. Try again later.")
+    if not verify_password(payload.password, current_user.password_hash):
+        _record_security_event(db, request, "mfa_setup", False, user=current_user)
+        db.commit()
+        raise HTTPException(status_code=401, detail="Current password is invalid")
+    existing = db.get(UserMfa, current_user.id)
+    if existing is not None and existing.enabled:
+        raise HTTPException(status_code=409, detail="Disable the current MFA configuration before replacing it")
+    secret = generate_secret()
+    now = datetime.now(timezone.utc)
+    if existing is None:
+        existing = UserMfa(user_id=current_user.id, secret_ciphertext=encrypt_secret(secret), enabled=False, recovery_code_hashes=[], pending_created_at=now)
+        db.add(existing)
+    else:
+        existing.secret_ciphertext = encrypt_secret(secret)
+        existing.enabled = False
+        existing.recovery_code_hashes = []
+        existing.last_totp_step = None
+        existing.pending_created_at = now
+        existing.confirmed_at = None
+    _record_security_event(db, request, "mfa_setup", True, user=current_user)
+    db.commit()
+    return {"ok": True, "secret": secret, "provisioning_uri": provisioning_uri(secret, current_user.email)}
+
+
+@router.post("/auth/mfa/confirm")
+def confirm_mfa(payload: MfaCodeRequest, request: Request, current_user: User = Depends(get_current_user), current_session: UserSession = Depends(get_current_session), db: Session = Depends(get_db)):
+    if _account_action_is_limited(db, request, "mfa_confirm", current_user.email):
+        raise HTTPException(status_code=429, detail="Too many MFA confirmation attempts. Try again later.")
+    mfa = db.get(UserMfa, current_user.id)
+    if mfa is None or mfa.enabled:
+        raise HTTPException(status_code=409, detail="MFA setup is not pending")
+    pending_at = mfa.pending_created_at if mfa.pending_created_at.tzinfo else mfa.pending_created_at.replace(tzinfo=timezone.utc)
+    if pending_at + timedelta(minutes=get_settings().mfa_setup_minutes) <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="MFA setup has expired. Start again.")
+    if not verify_totp(decrypt_secret(mfa.secret_ciphertext), payload.code):
+        _record_security_event(db, request, "mfa_confirm", False, user=current_user)
+        db.commit()
+        raise HTTPException(status_code=401, detail="Invalid authentication code")
+    now = datetime.now(timezone.utc)
+    raw_codes, code_hashes = generate_recovery_codes()
+    mfa.enabled = True
+    mfa.recovery_code_hashes = code_hashes
+    mfa.confirmed_at = now
+    current_session.mfa_verified_at = now
+    db.execute(update(UserSession).where(
+        UserSession.user_id == current_user.id,
+        UserSession.id != current_session.id,
+        UserSession.revoked_at.is_(None),
+    ).values(revoked_at=now))
+    _record_security_event(db, request, "mfa_enabled", True, user=current_user)
+    db.commit()
+    return {"ok": True, "enabled": True, "recovery_codes": raw_codes}
+
+
+@router.post("/auth/mfa/disable")
+def disable_mfa(payload: MfaDisableRequest, request: Request, current_user: User = Depends(get_current_user), current_session: UserSession = Depends(get_current_session), db: Session = Depends(get_db)):
+    if _account_action_is_limited(db, request, "mfa_disable", current_user.email):
+        raise HTTPException(status_code=429, detail="Too many MFA disable attempts. Try again later.")
+    mfa = db.get(UserMfa, current_user.id)
+    if mfa is None or not mfa.enabled:
+        raise HTTPException(status_code=409, detail="MFA is not enabled")
+    if not verify_password(payload.password, current_user.password_hash) or not _verify_mfa_code(mfa, payload.code):
+        _record_security_event(db, request, "mfa_disable", False, user=current_user)
+        db.commit()
+        raise HTTPException(status_code=401, detail="Password or authentication code is invalid")
+    now = datetime.now(timezone.utc)
+    db.delete(mfa)
+    current_session.mfa_verified_at = None
+    db.execute(update(UserSession).where(
+        UserSession.user_id == current_user.id,
+        UserSession.id != current_session.id,
+        UserSession.revoked_at.is_(None),
+    ).values(revoked_at=now))
+    _record_security_event(db, request, "mfa_disabled", True, user=current_user)
+    db.commit()
+    return {"ok": True, "enabled": False}
 
 
 @router.get("/auth/sessions")
@@ -255,6 +449,7 @@ def sessions(current_user: User = Depends(get_current_user), current_session: Us
         "last_seen_at": row.last_seen_at,
         "expires_at": row.expires_at,
         "revoked": row.revoked_at is not None,
+        "mfa_verified": row.mfa_verified_at is not None,
     } for row in rows]}
 
 

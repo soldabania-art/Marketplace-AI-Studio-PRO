@@ -8,7 +8,7 @@ import { getActiveStoreId, setActiveStoreId, STORE_EVENT } from '../../lib/useAc
 import BrandLogo from '../../components/BrandLogo'
 import styles from './page.module.css'
 
-const eventNames = { login:'Вход', logout:'Выход', registration:'Регистрация', session_created:'Создана сессия', session_revoked:'Сессия завершена' }
+const eventNames = { login:'Вход', logout:'Выход', registration:'Регистрация', session_created:'Создана сессия', session_revoked:'Сессия завершена', mfa_challenge_created:'Запрошен второй фактор', mfa_login:'Проверка второго фактора', mfa_setup:'Настройка MFA', mfa_confirm:'Подтверждение MFA', mfa_enabled:'MFA включена', mfa_disable:'Отключение MFA', mfa_disabled:'MFA отключена' }
 const fmt = (value) => value ? new Date(value).toLocaleString('ru-RU') : '—'
 
 export default function AccountPage() {
@@ -26,12 +26,22 @@ export default function AccountPage() {
   const [busy,setBusy]=useState('')
   const [verifyMessage, setVerifyMessage] = useState('')
   const [verifyLoading, setVerifyLoading] = useState(false)
+  const [mfa,setMfa]=useState({enabled:false,setup_pending:false,recovery_codes_remaining:0,current_session_verified:false})
+  const [mfaForm,setMfaForm]=useState({password:'',code:''})
+  const [mfaSecret,setMfaSecret]=useState('')
+  const [recoveryCodes,setRecoveryCodes]=useState([])
 
   async function loadSecurity() {
     const response = await fetch('/api/auth/security', { cache:'no-store' })
     const payload = await response.json()
     if (!response.ok) throw new Error(payload.error || 'Не удалось загрузить безопасность')
     setSecurity(payload)
+  }
+
+  async function loadMfa(){
+    const response=await fetch('/api/auth/mfa',{cache:'no-store'}); const payload=await response.json()
+    if(!response.ok) throw new Error(payload.error||'Не удалось загрузить MFA')
+    setMfa(payload)
   }
 
   async function loadStores(){
@@ -60,6 +70,7 @@ export default function AccountPage() {
       fetch('/api/auth/me', { cache:'no-store' }).then(async r => { const p=await r.json(); if(!r.ok) throw new Error(p.error || 'Не удалось загрузить аккаунт'); if(active) setAccount(p) }),
       fetch('/api/billing/subscription', { cache:'no-store' }).then(async r => { const p=await r.json(); if(!r.ok) throw new Error(p.error || 'Не удалось загрузить тариф'); if(active) setBilling(p) }),
       loadSecurity(),
+      loadMfa(),
       loadStores().then(id=>id?loadWb(id):null),
     ]).catch(e => { if(active){ setError(e.message); if(e.message === 'Требуется вход') router.replace('/login') } }).finally(() => active && setLoading(false))
     return () => { active=false }
@@ -125,6 +136,20 @@ export default function AccountPage() {
     try { const response=await fetch('/api/auth/email-verification',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'request'})}); const payload=await response.json(); if(!response.ok) throw new Error(payload.error || 'Не удалось отправить подтверждение'); setVerifyMessage(payload.delivery==='email_provider_not_configured'?'Подтверждение подготовлено. Почтовый провайдер подключим перед запуском.':'Письмо с подтверждением отправлено.') } catch(e){ setVerifyMessage(e.message) } finally { setVerifyLoading(false) }
   }
 
+  async function mfaAction(action){
+    setError('');setBusy(`mfa-${action}`)
+    try{
+      const body={action}
+      if(action==='setup'||action==='disable') body.password=mfaForm.password
+      if(action==='confirm'||action==='disable') body.code=mfaForm.code
+      const response=await fetch('/api/auth/mfa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+      const payload=await response.json(); if(!response.ok) throw new Error(payload.error||'Операция MFA не выполнена')
+      if(action==='setup'){setMfaSecret(payload.secret);setMfa({...mfa,setup_pending:true});setMfaForm({...mfaForm,code:''})}
+      if(action==='confirm'){setRecoveryCodes(payload.recovery_codes||[]);setMfaSecret('');setMfaForm({password:'',code:''});await loadMfa();await loadSecurity()}
+      if(action==='disable'){setRecoveryCodes([]);setMfaForm({password:'',code:''});await loadMfa();await loadSecurity()}
+    }catch(e){setError(e.message)}finally{setBusy('')}
+  }
+
   const selectedStore=storesData.stores.find(x=>x.id===selectedStoreId)
 
   return <main className={styles.shell}>
@@ -148,6 +173,9 @@ export default function AccountPage() {
       <article className={`${styles.card} ${styles.plan}`}><div className={styles.icon}><CreditCard size={20}/></div><span className="eyebrow">ТАРИФ</span><h3>{String(billing?.plan||account.plan_code).toUpperCase()}</h3><p>{!billing?'Загружаем статус тарифа…':billing.plan==='trial'?(billing.access_status==='not_started'?'3 дня начнутся с первой успешной карточки':`Осталось карточек: ${billing.cards_remaining} из ${billing.cards_limit}`):billing.read_only?'Подписка завершена · режим просмотра':billing.cancel_at_period_end?'Активен до конца оплаченного периода':'Подписка активна'}</p><small>{!billing?'Проверяем серверные права':billing.expires_at?`Доступ до: ${fmt(billing.expires_at)}`:billing.checkout_available?'Платёжный провайдер подключён':'Оплата пока не подключена — Trial работает без карты'}</small><Link href="/pricing" className={styles.action}>Управлять тарифом</Link></article>
       <article className={styles.card}><div className={styles.icon}><ShieldCheck size={20}/></div><span className="eyebrow">ЗАЩИТА</span><h3>Серверные сессии</h3><p>Каждый вход имеет отдельную отзывную серверную сессию. После смены пароля все устройства отключаются.</p><small>IP хранится только в виде приватного хэша</small></article>
     </div>
+    <section className={styles.securitySection}><div className={styles.sectionHead}><div><span className="eyebrow">ДВУХФАКТОРНАЯ ЗАЩИТА</span><h2>Приложение-аутентификатор</h2></div><KeyRound size={22}/></div>
+      {recoveryCodes.length>0?<div className={styles.recoveryBox}><strong>Сохраните резервные коды сейчас</strong><p>Каждый код работает один раз. После закрытия страницы TROVENDI больше их не покажет.</p><div className={styles.codeGrid}>{recoveryCodes.map(code=><code key={code}>{code}</code>)}</div></div>:mfa.enabled?<><div className={styles.connectionOk}><div><strong>MFA включена</strong><span>Текущая сессия подтверждена · резервных кодов: {mfa.recovery_codes_remaining}</span></div></div><form className={styles.inlineForm} onSubmit={e=>{e.preventDefault();mfaAction('disable')}}><input type="password" value={mfaForm.password} onChange={e=>setMfaForm({...mfaForm,password:e.target.value})} placeholder="Текущий пароль" autoComplete="current-password" required/><input value={mfaForm.code} onChange={e=>setMfaForm({...mfaForm,code:e.target.value})} placeholder="Код MFA или резервный код" autoComplete="one-time-code" required/><button className={styles.danger} disabled={busy==='mfa-disable'}>{busy==='mfa-disable'?'Проверяем…':'Отключить MFA'}</button></form></>:mfaSecret?<><div className={styles.setupBox}><strong>1. Добавьте TROVENDI в приложение-аутентификатор</strong><p>Введите секрет вручную. Не отправляйте его и не сохраняйте в облачных заметках.</p><code>{mfaSecret}</code></div><form className={styles.inlineForm} onSubmit={e=>{e.preventDefault();mfaAction('confirm')}}><input value={mfaForm.code} onChange={e=>setMfaForm({...mfaForm,code:e.target.value})} placeholder="2. Введите шестизначный код" inputMode="numeric" autoComplete="one-time-code" minLength={6} maxLength={6} required/><button className={styles.action} disabled={busy==='mfa-confirm'}>{busy==='mfa-confirm'?'Проверяем…':'Подтвердить и включить'}</button></form></>:<><p className={styles.sectionCopy}>При каждом новом входе потребуется одноразовый код. Для административных операций MFA обязательна.</p><form className={styles.inlineForm} onSubmit={e=>{e.preventDefault();mfaAction('setup')}}><input type="password" value={mfaForm.password} onChange={e=>setMfaForm({...mfaForm,password:e.target.value})} placeholder="Текущий пароль" autoComplete="current-password" required/><button className={styles.action} disabled={busy==='mfa-setup'}>{busy==='mfa-setup'?'Подготавливаем…':'Настроить MFA'}</button></form></>}
+    </section>
     <section className={styles.securitySection}><div className={styles.sectionHead}><div><span className="eyebrow">УСТРОЙСТВА</span><h2>Активные сессии</h2></div><Laptop size={22}/></div><div className={styles.list}>{security.sessions.map(s=><div className={styles.row} key={s.id}><div><strong>{s.current?'Это устройство':'Другое устройство'} {s.revoked&&'· завершена'}</strong><span>{s.user_agent || 'Браузер не определён'}</span><small>Последняя активность: {fmt(s.last_seen_at)} · истекает: {fmt(s.expires_at)}</small></div>{!s.revoked&&<button className={styles.danger} onClick={()=>revoke(s.id,s.current)}>{s.current?'Выйти здесь':'Завершить'}</button>}</div>)}</div></section>
     <section className={styles.securitySection}><div className={styles.sectionHead}><div><span className="eyebrow">ЖУРНАЛ</span><h2>Последние события безопасности</h2></div><ShieldCheck size={22}/></div><div className={styles.list}>{security.events.slice(0,20).map((e,i)=><div className={styles.event} key={`${e.created_at}-${i}`}><span className={e.success?styles.ok:styles.bad}>{e.success?'OK':'!'}</span><div><strong>{eventNames[e.event_type] || e.event_type}</strong><small>{fmt(e.created_at)} · {e.user_agent || 'устройство не определено'}</small></div></div>)}</div></section></>}
     </section>

@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     max_request_body_bytes: int = 20 * 1024 * 1024
     email_verification_hours: int = 24
     password_reset_minutes: int = 30
+    mfa_encryption_key: str = ""
+    mfa_challenge_minutes: int = 5
+    mfa_attempt_limit: int = 8
+    mfa_setup_minutes: int = 10
     frontend_url: str = "http://localhost:3000"
     admin_emails: str = ""
     billing_provider: str = "not_configured"
@@ -66,6 +70,8 @@ class Settings(BaseSettings):
             if self.is_production:
                 raise ValueError("MARKETPLACE_JWT_SECRET is required in production")
             self.jwt_secret = secrets.token_urlsafe(48)
+        if not self.mfa_encryption_key and not self.is_production:
+            self.mfa_encryption_key = Fernet.generate_key().decode()
         if self.is_production and len(self.jwt_secret) < 32:
             raise ValueError("MARKETPLACE_JWT_SECRET must contain at least 32 characters in production")
         if self.is_production:
@@ -76,12 +82,18 @@ class Settings(BaseSettings):
                 raise ValueError("MARKETPLACE_DATABASE_URL must require TLS in production")
             if not self.marketplace_token_key:
                 raise ValueError("MARKETPLACE_MARKETPLACE_TOKEN_KEY is required in production")
+            if not self.mfa_encryption_key:
+                raise ValueError("MARKETPLACE_MFA_ENCRYPTION_KEY is required in production")
             if self.marketplace_secret_provider.strip().lower() != "fernet":
                 raise ValueError("Unsupported marketplace secret provider")
             try:
                 Fernet(self.marketplace_token_key.encode())
             except Exception as exc:
                 raise ValueError("MARKETPLACE_MARKETPLACE_TOKEN_KEY must be a valid Fernet key") from exc
+            try:
+                Fernet(self.mfa_encryption_key.encode())
+            except Exception as exc:
+                raise ValueError("MARKETPLACE_MFA_ENCRYPTION_KEY must be a valid Fernet key") from exc
             if self.jwt_algorithm != "HS256":
                 raise ValueError("MARKETPLACE_JWT_ALGORITHM must be HS256 in production")
             if not self.frontend_url.lower().startswith("https://"):

@@ -3,7 +3,7 @@ from app.director_service import action, build_director, compare_measurement
 
 def live_sources():
     return [{'name': name, 'state': 'live', 'last_snapshot_at': None, 'age_seconds': 10} for name in (
-        'catalog', 'stocks', 'sales_velocity_7d', 'finance_realization_sync', 'advertising_sync')]
+        'catalog', 'stocks', 'sales_velocity_7d', 'finance_realization_sync', 'advertising_sync', 'feedbacks')]
 
 
 def complete_profit(products=None):
@@ -44,7 +44,7 @@ def test_missing_sources_become_explainable_actions_without_ai_guessing():
     result = build_director(store_id='s1', store_name='Store', sources=sources, catalog_items=[], supply_facts=[],
         profit={'profit_status': 'partial', 'completeness': {'cogs': False, 'tax': False}, 'products': []})
     assert result['mode'] == 'waiting'
-    assert len(result['actions']) == 7
+    assert len(result['actions']) == 8
     assert all(item['provider']['label'] == 'Rules · Free' for item in result['actions'])
     assert result['automation']['writes_enabled'] is False
     source_action = next(item for item in result['actions'] if item['id'] == 'source:stocks')
@@ -62,3 +62,14 @@ def test_measurement_compares_same_metric_without_inventing_resolved_value():
     resolved = compare_measurement({'metric': 'content_issue_count', 'baseline': 2, 'better_when': 'lower'}, None)
     assert resolved['outcome'] == 'no_longer_detected'
     assert resolved['current'] is None
+
+
+def test_director_turns_review_facts_into_human_only_actions():
+    result = build_director(store_id='s1', store_name='Store', sources=live_sources(), catalog_items=[], supply_facts=[], profit=complete_profit(), feedback_items=[
+        {'feedback_id': 'a', 'rating': 2, 'answered': False}, {'feedback_id': 'b', 'rating': 5, 'answered': True},
+    ])
+    low = next(item for item in result['actions'] if item['id'] == 'reviews:low-rating')
+    unanswered = next(item for item in result['actions'] if item['id'] == 'reviews:unanswered')
+    assert low['measurement']['baseline'] == 1
+    assert unanswered['measurement']['baseline'] == 1
+    assert low['can_execute'] is False and unanswered['can_execute'] is False

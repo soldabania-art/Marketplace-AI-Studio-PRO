@@ -61,7 +61,7 @@ AI coordinates the loop. Deterministic services remain authoritative for facts, 
 | Beginner Studio | **active** | trial + facts + Card Factory | Reuse stored visuals and publication pipeline |
 | Profit Center | **live foundation** | WB ledgers, verified costs, CSV presets, private import journal, preview/commit + tax | Production reconciliation, XLSX and certified accounting adapters |
 | Penalties and claims | **read-only foundation** | normalized WB finance ledger + ranked reason groups | Reviews, condition changes and explicitly approved claim workflow |
-| AI Director | **live foundation** | healthy sources + Profit Center | Previewed marketplace-write executors and verified rollback |
+| AI Director | **live foundation** | healthy sources + Profit Center + review facts | Previewed marketplace-write executors and verified rollback |
 | Agent network and Security Sentinel | **live foundation** | auth + store scope + audit | Offline eval artefacts, signed policy promotion and bounded executor gates |
 | AI Support Agent | **planned P1** | audit, store context + versioned knowledge | Incident intake and deterministic escalation first |
 | SEO and advertising | **P1 in progress** | Director + marketplace readers | Measured recommendations before bounded writes |

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, Bot, CheckCircle2, CircleAlert, Clock3, PauseCircle, PlayCircle, RefreshCw, ShieldCheck, XCircle } from 'lucide-react'
 import { useActiveStore } from '../lib/useActiveStore'
 
-const sourceNames={catalog:'Каталог',stocks:'Остатки',sales_velocity_7d:'Заказы 7 дней',finance_realization_sync:'Финансы 30 дней',advertising_sync:'Реклама 30 дней'}
+const sourceNames={catalog:'Каталог',stocks:'Остатки',sales_velocity_7d:'Заказы 7 дней',finance_realization_sync:'Финансы 30 дней',advertising_sync:'Реклама 30 дней',feedbacks:'Отзывы'}
 const stateNames={live:'актуально',stale:'устарело',missing:'нет данных',incomplete:'загрузка не завершена'}
 const statusNames={proposed:'Ждёт решения',approved:'Подтверждено · не исполнено',rejected:'Отклонено',executing:'Обновляем источник',measured:'Результат измерен'}
 const rubles=kopecks=>kopecks===null||kopecks===undefined?'Не рассчитано':`${(Math.abs(kopecks)/100).toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2})} ₽`

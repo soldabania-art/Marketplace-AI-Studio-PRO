@@ -24,6 +24,7 @@ def test_executor_allowlist_contains_only_read_sync_actions():
     read_only = {'can_execute': True, 'execution_type': 'read_sync'}
     assert _read_sync_group('source:stocks', read_only) == 'analytics'
     assert _read_sync_group('source:finance_realization_sync', read_only) == 'profit'
+    assert _read_sync_group('source:feedbacks', read_only) == 'feedbacks'
     with pytest.raises(HTTPException):
         _read_sync_group('content:42', {'can_execute': True, 'execution_type': 'marketplace_write'})
     with pytest.raises(HTTPException):

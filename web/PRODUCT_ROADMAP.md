@@ -91,6 +91,7 @@ AI Director is the coordinator, not an unrestricted autonomous bot.
 - Provider routing must allow managed models first and additional providers or customer keys later without changing product workflows.
 - A deny-by-default agent registry now declares the Director and specialist capabilities. An independent Security Sentinel has veto power, all external writes remain disabled in registry version 1, and the authenticated control plane exposes the policy checksum. Owner/admin work orders are routed only through enumerated goals, redacted, idempotent and stored with that checksum.
 - Agent feedback is stored only as a redacted, idempotent, store-scoped learning candidate. Review does not change production behavior; promotion requires separate offline evaluations and a versioned release.
+- Daily AI Director also consumes the privacy-minimised WB feedback snapshot as a rules-only source: stale or missing reviews trigger a safe refresh, low ratings and unanswered reviews become human-only tasks with count-based measurements. It never infers causes or sends a reply.
 
 ## 6. Integration Hub: Russia and CIS accounting coverage
 

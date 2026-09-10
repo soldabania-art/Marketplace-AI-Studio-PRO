@@ -66,7 +66,8 @@ def action(*, action_id: str, kind: str, title: str, reason: str, evidence: str,
 
 
 def build_director(*, store_id: str, store_name: str, sources: list[dict],
-                   catalog_items: list[dict], supply_facts: list[dict], profit: dict) -> dict:
+                   catalog_items: list[dict], supply_facts: list[dict], profit: dict,
+                   feedback_items: list[dict] | None = None) -> dict:
     actions: list[dict] = []
     source_by_name = {item['name']: item for item in sources}
     missing_source_labels = {
@@ -75,6 +76,7 @@ def build_director(*, store_id: str, store_name: str, sources: list[dict],
         'sales_velocity_7d': ('История заказов WB ещё не загружена', '/products'),
         'finance_realization_sync': ('Финансовый отчёт WB не готов за 30 дней', '/profit'),
         'advertising_sync': ('Рекламная статистика WB не готова за 30 дней', '/profit'),
+        'feedbacks': ('Отзывы WB ещё не загружены', '/reviews'),
     }
     for name, (title, href) in missing_source_labels.items():
         source = source_by_name.get(name) or {'state': 'missing'}
@@ -148,6 +150,26 @@ def build_director(*, store_id: str, store_name: str, sources: list[dict],
                 evidence='; '.join(issues).capitalize() + '.', href=f'/card-factory?nm_id={nm_id}',
                 risk='medium', requires_approval=True, source_refs=['catalog'],
                 measurement={'metric': 'content_issue_count', 'baseline': len(issues), 'better_when': 'lower'},
+            ))
+    reviews = list(feedback_items or [])
+    if reviews:
+        low_rating_count = sum(int(item.get('rating') or 5) <= 3 for item in reviews)
+        unanswered_count = sum(not bool(item.get('answered')) for item in reviews)
+        if low_rating_count:
+            actions.append(action(
+                action_id='reviews:low-rating', kind='reviews', title='Проверьте причины низких оценок',
+                reason='Повторяющийся негатив может указывать на проблему товара, упаковки или ожиданий покупателей. Директор не делает вывод о причине без просмотра отзывов.',
+                evidence=f'В сохранённом снимке {low_rating_count} отзывов с оценкой 1–3 из {len(reviews)}.',
+                href='/reviews', urgency='high' if low_rating_count >= 5 else 'medium', risk='low',
+                source_refs=['feedbacks'], measurement={'metric': 'low_rating_feedback_count', 'baseline': low_rating_count, 'better_when': 'lower'},
+            ))
+        if unanswered_count:
+            actions.append(action(
+                action_id='reviews:unanswered', kind='reviews', title='Проверьте отзывы без ответа',
+                reason='Ответ должен быть проверен продавцом: TROVENDI не отправляет сообщения покупателям автоматически.',
+                evidence=f'В сохранённом снимке {unanswered_count} отзывов без ответа продавца.',
+                href='/reviews', urgency='medium', risk='low', source_refs=['feedbacks'],
+                measurement={'metric': 'unanswered_feedback_count', 'baseline': unanswered_count, 'better_when': 'lower'},
             ))
     actions.sort(key=lambda item: (-item['priority_score'], item['id'])); actions = actions[:10]
     source_states = {item['state'] for item in sources}

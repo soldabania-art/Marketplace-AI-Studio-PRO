@@ -69,6 +69,7 @@ def _read_sync_group(action_key: str, recommendation: dict) -> str:
     if not recommendation.get('can_execute') or recommendation.get('execution_type') != 'read_sync':
         raise HTTPException(409, 'Для этого действия нет безопасного исполнителя. Откройте источник и выполните проверку вручную.')
     if action_key in {'source:catalog', 'source:stocks', 'source:sales_velocity_7d'}: return 'analytics'
+    if action_key == 'source:feedbacks': return 'feedbacks'
     if action_key in {'source:finance_realization_sync', 'source:advertising_sync'}: return 'profit'
     raise HTTPException(409, 'Тип безопасного исполнителя не входит в allowlist.')
 
@@ -120,7 +121,7 @@ def _stored_action_payload(row: DirectorAction) -> dict:
 
 def _current_result(db: Session, store, user: User) -> dict:
     snapshot = lambda name: latest_snapshot(db, store_id=store.id, marketplace='wildberries', snapshot_type=name)
-    catalog, stocks, sales = snapshot('catalog'), snapshot('stocks'), snapshot('sales_velocity_7d')
+    catalog, stocks, sales, feedbacks = snapshot('catalog'), snapshot('stocks'), snapshot('sales_velocity_7d'), snapshot('feedbacks')
     finance, advertising = snapshot('finance_realization_sync'), snapshot('advertising_sync')
     end = date.today(); date_from, date_to = (end - timedelta(days=29)).isoformat(), end.isoformat()
     finance_payload = dict(finance.payload or {}) if finance else {}
@@ -131,15 +132,17 @@ def _current_result(db: Session, store, user: User) -> dict:
                 coverage_matches=finance_payload.get('date_from') == date_from and finance_payload.get('date_to') == date_to),
         _source(advertising, 'advertising_sync', complete=bool(advertising_payload.get('complete')) if advertising else None,
                 coverage_matches=advertising_payload.get('date_from') == date_from and advertising_payload.get('date_to') == date_to),
+        _source(feedbacks, 'feedbacks'),
     ]
     catalog_items = list((catalog.payload or {}).get('items') or []) if catalog else []
     stock_rows = list((stocks.payload or {}).get('rows') or []) if stocks else []
     sales_rows = list((sales.payload or {}).get('items') or []) if sales else []
     sales_map = {int(row['nm_id']): row for row in sales_rows if row.get('nm_id') is not None}
     supply_facts = build_network_supply_inputs(stock_rows, sales_map) if stocks and sales else []
+    feedback_items = list((feedbacks.payload or {}).get('items') or []) if feedbacks else []
     profit = profit_center(store_id=store.id, period_days=30, user=user, db=db)
     result = build_director(store_id=store.id, store_name=store.name, sources=sources,
-                            catalog_items=catalog_items, supply_facts=supply_facts, profit=profit)
+                            catalog_items=catalog_items, supply_facts=supply_facts, profit=profit, feedback_items=feedback_items)
     result['profit_status'] = profit.get('profit_status')
     return result
 
@@ -177,6 +180,12 @@ def execute_action(action_id: str, payload: ActionRequest, user: User = Depends(
                       payload={'store_id': store.id}, workspace_id=store.workspace_id, store_id=store.id,
                       priority=55, max_attempts=5)
         jobs = {'analytics': job.id}
+    elif executor_group == 'feedbacks':
+        bucket = int(datetime.now(timezone.utc).timestamp() // 900)
+        job = enqueue(db, job_type='marketplace.wb.feedbacks.sync', idempotency_key=f'wb-feedbacks:{store.id}:{bucket}',
+                      payload={'store_id': store.id}, workspace_id=store.workspace_id, store_id=store.id,
+                      priority=54, max_attempts=5)
+        jobs = {'feedbacks': job.id}
     else:
         queued = start_profit_sync(ProfitSyncRequest(store_id=store.id, period_days=30), user=user, db=db)
         jobs = queued['jobs']

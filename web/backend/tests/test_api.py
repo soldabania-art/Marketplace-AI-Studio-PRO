@@ -7,7 +7,7 @@ from app.db import Base, SessionLocal, engine
 from app.main import app
 from app.config import get_settings
 from app.mfa_service import totp_code
-from app.models import BackgroundJob, JobStatus, MarketplaceConnection, MarketplaceSnapshot, Store
+from app.models import BackgroundJob, BusinessOperatingProfile, JobStatus, MarketplaceConnection, MarketplaceSnapshot, Membership, MembershipRole, OperationalAuditEvent, Store
 
 Base.metadata.create_all(bind=engine)
 client = TestClient(app)
@@ -119,6 +119,55 @@ def test_data_health_is_store_scoped_and_reports_source_freshness():
     _, _, other_token = _register_user()
     forbidden = client.get(f"/api/v1/data-health?store_id={store_id}", headers={"Authorization": f"Bearer {other_token}"})
     assert forbidden.status_code == 404
+
+
+def test_onboarding_is_store_scoped_and_business_profile_requires_admin_confirmation():
+    _, _, owner_token = _register_user()
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    store_id = client.get("/api/v1/stores", headers=owner_headers).json()["stores"][0]["id"]
+    assessment = client.get(f"/api/v1/onboarding?store_id={store_id}", headers=owner_headers)
+    assert assessment.status_code == 200
+    assert assessment.json()["completion_percent"] == 25
+    assert assessment.json()["profile_decision"]["state"] == "confirmation_required"
+    assert assessment.json()["evidence"]["catalog_cards"] == 0
+    assert len(assessment.json()["actions"]) <= 3
+
+    _, _, analyst_token = _register_user()
+    analyst_headers = {"Authorization": f"Bearer {analyst_token}"}
+    analyst_id = client.get("/api/v1/auth/me", headers=analyst_headers).json()["id"]
+    with SessionLocal() as db:
+        store = db.get(Store, store_id)
+        db.query(Membership).filter(Membership.user_id == analyst_id).delete()
+        db.add(Membership(user_id=analyst_id, workspace_id=store.workspace_id, role=MembershipRole.analyst))
+        db.commit()
+    body = {"store_id": store_id, "operating_model": "manufacturer", "buys_finished_goods": False, "makes_products": True, "controls_rrp": False}
+    forbidden = client.put("/api/v1/onboarding/profile", headers=analyst_headers, json=body)
+    assert forbidden.status_code == 403
+
+    confirmed = client.put("/api/v1/onboarding/profile", headers=owner_headers, json=body)
+    assert confirmed.status_code == 200
+    assert confirmed.json()["profile"]["operating_model"] == "manufacturer"
+    assert confirmed.json()["completion_percent"] == 50
+    with SessionLocal() as db:
+        assert db.query(BusinessOperatingProfile).filter(BusinessOperatingProfile.store_id == store_id).count() == 1
+        assert db.query(OperationalAuditEvent).filter(
+            OperationalAuditEvent.store_id == store_id,
+            OperationalAuditEvent.event_type == "onboarding.business_profile.confirmed",
+        ).count() == 1
+
+    repeated = client.put("/api/v1/onboarding/profile", headers=owner_headers, json=body)
+    assert repeated.status_code == 200
+    with SessionLocal() as db:
+        assert db.query(OperationalAuditEvent).filter(
+            OperationalAuditEvent.store_id == store_id,
+            OperationalAuditEvent.event_type == "onboarding.business_profile.confirmed",
+        ).count() == 1
+    inconsistent = client.put("/api/v1/onboarding/profile", headers=owner_headers, json={**body, "makes_products": False})
+    assert inconsistent.status_code == 422
+
+    _, _, outsider_token = _register_user()
+    outsider = client.get(f"/api/v1/onboarding?store_id={store_id}", headers={"Authorization": f"Bearer {outsider_token}"})
+    assert outsider.status_code == 404
 
 
 def test_profit_formula_provenance():

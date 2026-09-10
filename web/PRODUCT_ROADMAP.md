@@ -170,7 +170,7 @@ The web product and future Android app use the same versioned API, permissions a
 | Area | Current status | Next production gate |
 |---|---|---|
 | Accounts, organizations, stores | Server sessions, TOTP MFA, recovery codes, admin MFA gate and ten-minute step-up authorization implemented | Passkeys, export gates, complete RBAC and audit coverage |
-| Business profiles / onboarding | Architecture accepted | Self-service profile confirmation and trustworthy first-value screen |
+| Business profiles / onboarding | Store-scoped assessment, confirmed operating profile, evidence summary and first-action route implemented | Resumable import progress and profile-aware costing questions |
 | WB snapshots | Catalog, stocks, sales velocity and store-scoped Data Health Center implemented | Automatic scheduling, freshness SLO telemetry and incident alerts |
 | Products | Reads real WB catalog facts | Provenance and cross-source identity mapping |
 | Beginner Studio | Photo analysis, confirmed facts, draft and saved project implemented | Durable image assets and publication |
@@ -211,7 +211,7 @@ The web product and future Android app use the same versioned API, permissions a
    **Implemented safe executor:** only allowlisted WB read synchronizations can run from Director. Profit, stock and content recommendations expose structured baselines and can be measured again only against fresh compatible sources. Marketplace writes remain blocked; a missing recommendation is reported as “no longer detected” without inventing a numeric result.
 4. Reviews, marketplace-condition changes, penalties and claims in read-only mode first.
 5. Incident-safe AI Support Agent: deterministic escalation, idempotent ticket, redacted evidence and authenticated emergency STOP entry point before product-help RAG.
-6. Self-service onboarding: read-only capability test, resumable source import, user-confirmed business profile, completeness gate and first three evidence-backed actions.
+6. Self-service onboarding: read-only capability test, resumable source import, user-confirmed business profile, completeness gate and first three evidence-backed actions. **Implemented foundation:** the setup master verifies store/WB/data readiness, summarizes only latest snapshot evidence, persists an owner-confirmed operating profile with audit and returns up to three grounded next actions. Detailed resumable import progress remains.
 7. Typed AI capability registry is implemented as a deny-by-default foundation; add eval artefacts and transactional outbox promotion before more autonomous executors.
 
 ### P2 — expand the operating system

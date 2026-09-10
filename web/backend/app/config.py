@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     openai_image_size: str = "1024x1024"
     openai_image_timeout_seconds: float = 120.0
     openai_image_estimated_cost_microusd: int = 5000
+    document_scan_webhook_secret: str = ""
     model_config = SettingsConfigDict(env_file=".env", env_prefix="MARKETPLACE_", extra="ignore")
 
     @model_validator(mode="after")

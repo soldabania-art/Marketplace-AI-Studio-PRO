@@ -30,8 +30,8 @@ Retention is policy-driven by document class, seller jurisdiction, transaction c
 ## Next production gates
 
 1. Provision and bind a dedicated private Blob store via `DOCUMENT_BLOB_READ_WRITE_TOKEN`.
-2. Add asynchronous malware scanning and signed scan-result callbacks.
-3. Add authenticated streaming download, export approval and complete read audit.
+2. Connect an asynchronous malware scanner to the implemented HMAC-signed `/scan-results` callback (`MARKETPLACE_DOCUMENT_SCAN_WEBHOOK_SECRET`).
+3. Protected download is implemented with store authorization, SHA-256 integrity verification and read audit; add multi-document export approval before bulk exports.
 4. Add country-specific, lawyer/accountant-approved retention policies.
 5. Add connectors for OFD/fiscal receipts, marketplace order documents, EDI and fulfillment partner documents.
 6. Add data-subject request workflows without deleting records under accounting or legal hold.

@@ -40,6 +40,8 @@ TROVENDI uses one container image with separate process roles.
 - `MARKETPLACE_OPENAI_IMAGE_MODEL` — image editor (defaults to economical `gpt-image-1-mini`)
 - `MARKETPLACE_OPENAI_IMAGE_QUALITY`, `MARKETPLACE_OPENAI_IMAGE_SIZE` — trial defaults are `low` and `1024x1024`
 - `MARKETPLACE_OPENAI_IMAGE_ESTIMATED_COST_MICROUSD` — current provider estimate used for budgets and audit
+- `MARKETPLACE_DOCUMENT_SCAN_WEBHOOK_SECRET` — long independent secret used to authenticate malware scan results
+- Frontend: `DOCUMENT_BLOB_READ_WRITE_TOKEN` must belong to a dedicated **private** Blob store used only for document evidence
 - VAPID settings when Web Push is enabled
 
 The API intentionally refuses production startup when PostgreSQL, TLS, HTTPS, the JWT secret, the marketplace credential-encryption key or the separate MFA-encryption key is missing. Do not weaken these checks to make a deployment pass.

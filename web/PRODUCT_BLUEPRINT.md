@@ -164,6 +164,8 @@ Per-SKU cost confirmation follows the selected operating model. Resellers record
 
 Accounting connectors never write costs directly. They normalize source rows into the same component contract, create an immutable preview bound to store, actor, source document and SHA-256, then wait for a separate confirmation. A commit rechecks current catalog ownership, expires after 24 hours, runs transactionally and is idempotent. This boundary is shared by 1C, MoySklad, Saby, Kontur, CSV and partner APIs; each concrete adapter must still pass its own mapping and reconciliation certification.
 
+The first self-service adapter is CSV. The browser parses the selected file locally, limits it to 2 MB and 500 data rows, detects comma/semicolon/tab delimiters, supports quoted cells and rejects malformed structure. It suggests known mappings but never silently guesses values: the user maps `nmId`, optional per-SKU model, allowed cost components and a row-level or common source. Only normalized rows reach the preview API; the raw accounting file is not uploaded or retained.
+
 ## Promo Economics
 Before a seller joins a marketplace promotion, recompute unit economics per SKU and scenario.
 

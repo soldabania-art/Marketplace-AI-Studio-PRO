@@ -294,6 +294,96 @@
   margin-top: 12px;
 }
 .costEditorFooter > strong { margin-right: auto; color: #7ee2b8; }
+.costImportPanel { margin-bottom: 14px; }
+.costImportTitle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.costImportTitle > div { flex: 1; }
+.costImportTitle h2 { margin: 3px 0; }
+.costImportTitle p { margin: 0; color: #8294aa; font-size: 11px; }
+.costImportSetup {
+  display: grid;
+  grid-template-columns: .55fr 1.45fr auto;
+  gap: 10px;
+  align-items: end;
+  margin-top: 16px;
+}
+.costImportSetup label,
+.costMapping label {
+  display: grid;
+  gap: 5px;
+  color: #8fa3ba;
+  font-size: 11px;
+}
+.costImportSetup input,
+.costImportSetup select,
+.costMapping select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #26364d;
+  border-radius: 8px;
+  background: #091321;
+  color: #fff;
+  padding: 9px;
+}
+.costFile {
+  position: relative;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  min-width: 160px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px dashed #3a587b;
+  border-radius: 8px;
+  color: #bdddff !important;
+  cursor: pointer;
+}
+.costFile input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.costMapping {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #1f3047;
+  border-radius: 10px;
+  background: #091321;
+}
+.costMapping > div { grid-column: 1/-1; display: flex; justify-content: space-between; }
+.costMapping > div span { color: #71869f; font-size: 10px; }
+.costImportErrors {
+  display: grid;
+  gap: 5px;
+  margin-top: 12px;
+  padding: 11px;
+  border: 1px solid #63383d;
+  border-radius: 9px;
+  background: #1c1015;
+  color: #ffb7bd;
+  font-size: 11px;
+}
+.costImportErrors b { display: flex; align-items: center; gap: 7px; }
+.costPreviewBtn { margin-top: 12px; }
+.costPreview {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #34506f;
+  border-radius: 10px;
+  background: #0c1929;
+}
+.costPreview.committed { border-color: rgba(66,231,164,.35); }
+.costPreview > div:first-child { display: flex; align-items: center; gap: 8px; color: #9ccaff; }
+.costPreview > div:first-child span { margin-left: auto; color: #71869f; font-size: 10px; }
+.costPreviewRows { display: grid; gap: 5px; margin-top: 10px; }
+.costPreviewRows > span { display: grid; grid-template-columns: 1fr .7fr auto; gap: 8px; font-size: 11px; }
+.costPreviewRows i { color: #8294aa; font-style: normal; }
+.costPreviewRows strong { color: #7ee2b8; }
+.costCommit { display: flex; align-items: center; justify-content: flex-end; gap: 14px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #233550; }
+.costCommit label { display: flex; align-items: center; gap: 7px; color: #a9bacd; font-size: 11px; }
+.costCommit input { accent-color: #79b9ff; }
 @media (max-width: 1050px) {
   .profitMetrics,
   .sourceGrid {
@@ -316,6 +406,9 @@
     grid-column: 1/-1;
   }
   .costComponents { grid-template-columns: 1fr; }
+  .costImportSetup { grid-template-columns: 1fr 2fr; }
+  .costFile { grid-column: 1/-1; }
+  .costMapping { grid-template-columns: repeat(2,minmax(150px,1fr)); }
 }
 @media (max-width: 680px) {
   .profitToolbar {
@@ -343,6 +436,13 @@
     grid-column: auto;
   }
   .costProfileWarning,
-  .costEditorFooter { align-items: stretch; flex-direction: column; }
+  .costEditorFooter,
+  .costImportTitle,
+  .costCommit { align-items: stretch; flex-direction: column; }
   .costComponent { grid-template-columns: 1fr; }
+  .costImportSetup,
+  .costMapping { grid-template-columns: 1fr; }
+  .costMapping > div { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .costPreview > div:first-child { flex-wrap: wrap; }
+  .costPreview > div:first-child span { width: 100%; margin-left: 26px; }
 }

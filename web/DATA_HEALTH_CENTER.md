@@ -26,4 +26,6 @@ The Data Health Center is the freshness gate between marketplace ingestion and A
 - `missing`: the connection exists but no snapshot has been stored.
 - `disconnected`: the marketplace connection is not active.
 
-The first UI provides a manual core WB refresh. Automatic scheduling, alert delivery, freshness SLO telemetry and incident correlation remain the next production gates.
+The worker now schedules read-only WB analytics every 30 minutes when due and finance/advertising refreshes daily. Jobs keep unique time-bucket keys, database leases and bounded exponential retry. A dead daily job can enter a separate hourly recovery window without creating an unbounded retry loop. Stale or failed sources open one deduplicated incident, limit AI Director decisions and optionally notify workspace owners/admins through Web Push. Incidents close only after a healthy snapshot is observed. Raw provider exceptions and credentials never enter incident payloads; persisted job errors are sanitized before storage.
+
+Freshness SLO aggregation and external incident correlation remain later production gates.

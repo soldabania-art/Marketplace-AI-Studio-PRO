@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import BackgroundJob, JobStatus, MarketplaceConnection, MarketplaceSnapshot
+from .models import BackgroundJob, DataHealthIncident, JobStatus, MarketplaceConnection, MarketplaceSnapshot
 
 
 SOURCE_POLICIES = (
@@ -98,6 +98,10 @@ def store_data_health(db: Session, store_id: str, now: datetime | None = None) -
     priority = {"error": 6, "disconnected": 5, "stale": 4, "missing": 3, "delayed": 2, "syncing": 1, "healthy": 0}
     worst = max(sources, key=lambda item: priority[item["status"]])["status"] if sources else "missing"
     counts = {status: sum(item["status"] == status for item in sources) for status in priority}
+    incidents = db.scalars(select(DataHealthIncident).where(
+        DataHealthIncident.store_id == store_id,
+        DataHealthIncident.status == "open",
+    ).order_by(DataHealthIncident.opened_at.desc()).limit(20)).all()
     return {
         "marketplace": "wildberries",
         "connected": bool(connection),
@@ -105,5 +109,13 @@ def store_data_health(db: Session, store_id: str, now: datetime | None = None) -
         "checked_at": now,
         "counts": counts,
         "sources": sources,
+        "active_incidents": [{
+            "id": row.id,
+            "source_key": row.source_key,
+            "severity": row.severity,
+            "message": row.public_message,
+            "opened_at": row.opened_at,
+            "last_seen_at": row.last_seen_at,
+        } for row in incidents],
         "safe_for_ai_decisions": bool(connection) and all(item["status"] == "healthy" for item in sources if item["key"] in {"catalog", "stocks", "sales"}),
     }

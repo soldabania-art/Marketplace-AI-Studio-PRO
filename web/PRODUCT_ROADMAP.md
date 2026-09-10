@@ -203,7 +203,7 @@ The web product and future Android app use the same versioned API, permissions a
 
 ### P1 — make AI Director operational
 
-1. Freshness/health monitoring for all data sources. **Implemented foundation:** the authenticated Data Health Center reports bounded freshness, expected intervals, record counts and redacted job failures for catalog, stocks, sales, finance and advertising. Core-data safety gates are exposed to AI consumers; automatic schedules and alert delivery remain.
+1. Freshness/health monitoring for all data sources. **Implemented foundation:** the authenticated Data Health Center reports bounded freshness, expected intervals, record counts and redacted job failures for catalog, stocks, sales, finance and advertising. Core-data safety gates are exposed to AI consumers. The dedicated worker now schedules due read-only WB updates, retries through the durable queue, sanitizes persisted failures and maintains deduplicated incidents with optional Web Push delivery to owners/admins.
 2. Ranked profit, stock, content and operational recommendations.
    **Implemented foundation:** store-scoped queue of up to ten actions, transparent priority formula, source freshness, observed-loss labelling, zero-cost rules provider and proposal-only safety mode.
 3. Approval inbox, bounded policies, audit and rollback measurement.

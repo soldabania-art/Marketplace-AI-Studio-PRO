@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     job_retry_base_seconds: int = 10
     job_retry_max_seconds: int = 900
     job_priority_aging_seconds: int = 300
+    sync_scheduler_seconds: int = 60
+    sync_analytics_interval_seconds: int = 1800
+    sync_finance_interval_seconds: int = 86400
+    sync_advertising_interval_seconds: int = 86400
+    sync_dead_retry_interval_seconds: int = 3600
     openai_api_key: str = ""
     openai_model: str = "gpt-5.6-terra"
     openai_timeout_seconds: float = 60.0

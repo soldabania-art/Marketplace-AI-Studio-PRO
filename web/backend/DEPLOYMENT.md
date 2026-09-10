@@ -13,7 +13,8 @@ TROVENDI uses one container image with separate process roles.
 2. **Worker service**
    - Command: `python -m app.worker`
    - Uses the same image/environment as API.
-   - Runs the durable job consumers and lightweight FBO scheduler.
+   - Runs durable job consumers, the lightweight FBO scheduler and automatic marketplace sync scheduler.
+   - Automatic sync defaults: core WB analytics every 30 minutes when due; finance and advertising daily. Override only through the documented `MARKETPLACE_SYNC_*` environment settings after checking provider quotas.
 
 3. **PostgreSQL**
    - Shared by API + workers.

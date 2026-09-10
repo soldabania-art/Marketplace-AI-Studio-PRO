@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import random
+import re
 import socket
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -17,6 +18,19 @@ from .models import BackgroundJob, JobStatus
 logger=logging.getLogger(__name__)
 JobHandler=Callable[[dict],Awaitable[None]]
 HANDLERS:dict[str,JobHandler]={}
+
+_SECRET_PATTERNS = (
+    (re.compile(r'(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,;]+'), r'\1[REDACTED]'),
+    (re.compile(r'(?i)((?:api[_-]?key|token|secret|password)\s*[:=]\s*)[^\s,;]+'), r'\1[REDACTED]'),
+    (re.compile(r'(?i)([?&](?:api[_-]?key|token|secret|password)=)[^&\s]+'), r'\1[REDACTED]'),
+)
+
+def safe_job_error(error: Exception) -> str:
+    """Return operational context without persisting credentials from provider errors."""
+    value = str(error).replace('\r', ' ').replace('\n', ' ')
+    for pattern, replacement in _SECRET_PATTERNS:
+        value = pattern.sub(replacement, value)
+    return f'{type(error).__name__}: {value}'[:1000]
 
 def utcnow(): return datetime.now(timezone.utc)
 
@@ -68,7 +82,7 @@ def _finish(db:Session,job_id:str,worker_id:str):
 def _fail(db:Session,job_id:str,worker_id:str,error:Exception):
     settings=get_settings(); job=db.get(BackgroundJob,job_id)
     if not job or job.locked_by!=worker_id: return
-    job.last_error=str(error)[:4000]; job.locked_at=None; job.locked_by=''
+    job.last_error=safe_job_error(error); job.locked_at=None; job.locked_by=''
     if job.attempts>=job.max_attempts:
         job.status=JobStatus.dead; job.finished_at=utcnow()
     else:
@@ -94,7 +108,7 @@ async def run_one(worker_id:str)->bool:
         try: _finish(db,job.id,worker_id)
         finally: db.close()
     except Exception as exc:
-        logger.exception('Background job failed id=%s type=%s attempt=%s',job.id,job.job_type,job.attempts)
+        logger.error('Background job failed id=%s type=%s attempt=%s error_type=%s',job.id,job.job_type,job.attempts,type(exc).__name__)
         db=SessionLocal()
         try: _fail(db,job.id,worker_id,exc)
         finally: db.close()

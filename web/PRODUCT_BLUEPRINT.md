@@ -8,6 +8,8 @@
 
 > Import history is store-scoped, bounded and metadata-only. Row-level costs remain inside the explicitly opened preview instead of being replicated into a general activity feed.
 
+> Penalties and non-advertising deductions are first exposed as a bounded, read-only evidence register derived from normalized finance lines. Incomplete source coverage is explicit, raw provider payloads stay private, and no claim is generated or submitted automatically.
+
 ## Product direction
 TROVENDI is a web-first AI operating system for marketplace sellers, starting with Wildberries and Ozon and designed for later expansion to Yandex Market, Megamarket, AliExpress and other verified integrations.
 

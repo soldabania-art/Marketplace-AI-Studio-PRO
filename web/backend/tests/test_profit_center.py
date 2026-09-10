@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi import HTTPException
 
-from app.profit_center_router import ProductCostRequest, TaxProfileRequest, _public_amounts, _public_import_summary, _tax_kopecks, _totals, _validated_import_mapping, _verified_cost, save_tax_profile
+from app.profit_center_router import ProductCostRequest, TaxProfileRequest, _financial_risks, _public_amounts, _public_import_summary, _tax_kopecks, _totals, _validated_import_mapping, _verified_cost, save_tax_profile
 
 
 def line(**values):
@@ -13,6 +13,7 @@ def line(**values):
         'logistics_kopecks':0,'acquiring_kopecks':0,'storage_kopecks':0,
         'acceptance_kopecks':0,'penalty_kopecks':0,'deduction_kopecks':0,
         'additional_payment_kopecks':0,'operation':'','document_type':'',
+        'source_line_id':'line','event_date':'','nm_id':None,'vendor_code':'',
     }
     return SimpleNamespace(**(defaults|values))
 
@@ -126,3 +127,15 @@ def test_import_history_expires_preview_without_exposing_rows():
     assert result['status']=='expired'
     assert result['row_count']==1
     assert 'rows' not in result
+
+
+def test_financial_risks_exclude_advertising_and_source_payload():
+    rows=[line(source_line_id='penalty-1',penalty_kopecks=2500,event_date='2026-09-09T10:00:00',operation='Штраф',document_type='Продажа',nm_id=7,vendor_code='SKU-7',source_payload={'secret':'never expose'}),
+          line(source_line_id='ads-1',deduction_kopecks=9900,operation='Услуги WB Продвижение'),
+          line(source_line_id='deduction-1',deduction_kopecks=1200,event_date='2026-09-08',operation='Удержание')]
+    result=_financial_risks(rows)
+    assert result['event_count']==2
+    assert result['penalty_total']=='25.00'
+    assert result['deduction_total']=='12.00'
+    assert result['items'][0]['source_line_id']=='penalty-1'
+    assert all('source_payload' not in item for item in result['items'])

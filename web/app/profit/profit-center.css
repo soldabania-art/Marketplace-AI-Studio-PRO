@@ -401,6 +401,20 @@
 .costHistoryRow strong { justify-self: end; color: #f0c978; }
 .costHistoryRow.committed strong { color: #72dbaf; }
 .costHistoryRow.expired strong { color: #8493a5; }
+.financeRiskPanel { margin-top: 16px; }
+.financeRiskHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.financeRiskHead h2 { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+.financeRiskHead p { max-width: 720px; margin: 0; color: #8294aa; font-size: 11px; }
+.financeRiskHead > div:last-child { display: flex; gap: 10px; }
+.financeRiskHead > div:last-child span { display: grid; gap: 3px; min-width: 130px; padding: 10px; border: 1px solid #3e2f38; border-radius: 9px; color: #a897a2; font-size: 10px; }
+.financeRiskHead > div:last-child strong { color: #ffb4bd; font-size: 15px; }
+.riskIncomplete { display: flex; align-items: center; gap: 7px; margin-top: 12px; padding: 8px 10px; border-radius: 8px; background: #211a0e; color: #e3c275; font-size: 10px; }
+.financeRiskRows { display: grid; gap: 6px; margin-top: 12px; }
+.financeRiskRows > div { display: grid; grid-template-columns: minmax(190px,1.5fr) .55fr .65fr auto; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid #263344; border-radius: 8px; color: #8fa2b8; font-size: 10px; }
+.financeRiskRows span:first-child { display: grid; gap: 2px; min-width: 0; }
+.financeRiskRows b { color: #dceafa; font-size: 11px; }
+.financeRiskRows small { overflow: hidden; color: #74879d; text-overflow: ellipsis; white-space: nowrap; }
+.financeRiskRows strong { color: #ffadb6; font-size: 12px; }
 @media (max-width: 1050px) {
   .profitMetrics,
   .sourceGrid {
@@ -468,4 +482,7 @@
   .costImportHistory > div:first-child span { margin-left: 0; }
   .costHistoryRow { grid-template-columns: 1fr auto; }
   .costHistoryRow strong { justify-self: start; }
+  .financeRiskHead { flex-direction: column; }
+  .financeRiskHead > div:last-child { width: 100%; flex-direction: column; }
+  .financeRiskRows > div { grid-template-columns: 1fr auto; }
 }

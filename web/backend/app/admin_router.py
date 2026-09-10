@@ -1,15 +1,47 @@
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .billing_service import PLAN_CATALOG
 from .config import get_settings
 from .db import get_db
-from .models import Membership, Subscription, SubscriptionStatus, User, Workspace
+from .models import KnowledgeDocument, Membership, Subscription, SubscriptionStatus, User, Workspace
 from .security import require_platform_admin, require_platform_admin_step_up
+from .support_service import document_checksum
 
 router = APIRouter()
 VALID_PLANS = set(PLAN_CATALOG)
+
+class KnowledgeDraftRequest(BaseModel):
+    slug: str = Field(pattern=r'^[a-z0-9][a-z0-9-]{1,118}$')
+    version: int = Field(ge=1, le=100000)
+    title: str = Field(min_length=3, max_length=240)
+    body: str = Field(min_length=20, max_length=30000)
+    source_url: str = Field(default='', max_length=500)
+    product_version: str = Field(default='', max_length=40)
+    expires_at: datetime | None = None
+
+@router.get('/admin/knowledge')
+def knowledge_documents(_: User = Depends(require_platform_admin), db: Session = Depends(get_db)):
+    rows=db.scalars(select(KnowledgeDocument).order_by(KnowledgeDocument.slug,KnowledgeDocument.version.desc()).limit(200)).all()
+    return {'items':[{'id':r.id,'slug':r.slug,'version':r.version,'title':r.title,'status':r.status,'source_url':r.source_url or None,'product_version':r.product_version,'reviewed_at':r.reviewed_at,'expires_at':r.expires_at} for r in rows]}
+
+@router.post('/admin/knowledge',status_code=status.HTTP_201_CREATED)
+def create_knowledge_draft(payload: KnowledgeDraftRequest, _: User = Depends(require_platform_admin_step_up), db: Session = Depends(get_db)):
+    row=KnowledgeDocument(slug=payload.slug,version=payload.version,title=payload.title.strip(),body=payload.body.strip(),source_url=payload.source_url.strip(),product_version=payload.product_version.strip(),expires_at=payload.expires_at,checksum_sha256=document_checksum(title=payload.title,body=payload.body,source_url=payload.source_url,version=payload.version));db.add(row)
+    try:db.commit()
+    except Exception as exc:db.rollback();raise HTTPException(409,'Документ с такой версией уже существует') from exc
+    db.refresh(row);return {'id':row.id,'status':row.status,'checksum_sha256':row.checksum_sha256}
+
+@router.post('/admin/knowledge/{document_id}/approve')
+def approve_knowledge_document(document_id: str, admin: User = Depends(require_platform_admin_step_up), db: Session = Depends(get_db)):
+    row=db.get(KnowledgeDocument,document_id)
+    if row is None:raise HTTPException(404,'Knowledge document not found')
+    now=datetime.now(timezone.utc)
+    if row.expires_at is not None and row.expires_at<=now:raise HTTPException(422,'Нельзя одобрить уже истёкший документ')
+    row.status='approved';row.reviewed_by_user_id=admin.id;row.reviewed_at=now;row.effective_at=now;db.commit();return {'id':row.id,'status':row.status,'reviewed_at':row.reviewed_at,'checksum_sha256':row.checksum_sha256}
 
 
 def _latest_subscription(db: Session, workspace_id: str) -> Subscription | None:

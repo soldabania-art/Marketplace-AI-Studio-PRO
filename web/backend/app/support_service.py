@@ -4,6 +4,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from datetime import datetime, timezone
+from sqlalchemy import select
 
 from .agent_network import sanitize_learning_note
 
@@ -43,3 +45,19 @@ def request_hash(*, category: str, description: str, correlation_id: str) -> str
 
 def evidence_hash(payload: dict) -> str:
     return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+def document_checksum(*, title: str, body: str, source_url: str, version: int) -> str:
+    data={'title': title.strip(), 'body': body.strip(), 'source_url': source_url.strip(), 'version': version}
+    return hashlib.sha256(json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+def _terms(value: str) -> set[str]:
+    return set(re.findall(r"[\wа-яё]{3,}", (value or '').lower()))
+
+def grounded_product_help(db, question: str) -> dict:
+    from .models import KnowledgeDocument
+    now=datetime.now(timezone.utc); query=_terms(question)
+    rows=db.scalars(select(KnowledgeDocument).where(KnowledgeDocument.status=='approved', KnowledgeDocument.effective_at<=now, (KnowledgeDocument.expires_at.is_(None) | (KnowledgeDocument.expires_at>now)))).all()
+    ranked=sorted(((len(query & _terms(f'{row.title} {row.body}')),row) for row in rows),key=lambda item:(-item[0],item[1].slug,item[1].version))[:3]
+    rows=[row for score,row in ranked if score]
+    if not rows:return {'answer':'Пока нет одобренного материала, на который можно опереться. Вопрос не передаётся модели без источника; при риске или сбое зарегистрируйте инцидент.','citations':[],'grounded':False}
+    return {'answer':'\n\n'.join(f'«{row.title}»: {" ".join(row.body.split())[:700]}' for row in rows),'citations':[{'id':row.id,'title':row.title,'version':row.version,'source_url':row.source_url or None,'reviewed_at':row.reviewed_at,'expires_at':row.expires_at} for row in rows],'grounded':True}

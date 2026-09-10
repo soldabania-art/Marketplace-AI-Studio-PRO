@@ -14,7 +14,7 @@ from .db import get_db
 from .models import AutomationControl, IncidentEvidenceBundle, OperationalAuditEvent, SupportTicket, User
 from .security import get_current_user
 from .store_access import require_store_admin, resolve_store
-from .support_service import classify_support_message, evidence_hash, request_hash, sanitize_support_description
+from .support_service import classify_support_message, evidence_hash, grounded_product_help, request_hash, sanitize_support_description
 
 router = APIRouter(prefix="/support", tags=["support"])
 
@@ -24,6 +24,10 @@ class IncidentRequest(BaseModel):
     description: str = Field(min_length=3, max_length=4000)
     correlation_id: str = Field(default="", max_length=120)
     category: Literal["auto", "incident", "security", "legal_or_billing"] = "auto"
+
+class HelpRequest(BaseModel):
+    store_id: str = Field(min_length=1, max_length=36)
+    question: str = Field(min_length=3, max_length=1500)
 
 
 def _public_ticket(row: SupportTicket, bundle: IncidentEvidenceBundle | None = None, *, can_stop: bool = False) -> dict:
@@ -121,3 +125,11 @@ def incidents(store_id: str, user: User = Depends(get_current_user), db: Session
     bundles = {row.ticket_id: row for row in db.scalars(select(IncidentEvidenceBundle).where(IncidentEvidenceBundle.store_id == store.id)).all()}
     return {"items": [_public_ticket(row, bundles.get(row.id), can_stop=can_stop) for row in rows],
             "support_mode": "incident_intake_only", "knowledge_base_enabled": False, "automatic_actions": False}
+
+@router.post('/help')
+def product_help(payload: HelpRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    resolve_store(db, user, payload.store_id)
+    question=sanitize_support_description(payload.question); classification=classify_support_message(question)
+    if classification['human_review_required']:
+        raise HTTPException(409,'Вопрос содержит признак риска или сбоя. Зарегистрируйте защищённый инцидент: эскалация не заменяется ответом модели.')
+    return grounded_product_help(db,question)|{'automatic_actions':False,'knowledge_base_enabled':True}

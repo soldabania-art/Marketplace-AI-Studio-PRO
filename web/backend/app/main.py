@@ -17,6 +17,7 @@ from .db import Base, engine
 from .director_router import router as director_router
 from .data_health_router import router as data_health_router
 from .fbo_monitor import monitor_forever
+from .fulfillment_router import router as fulfillment_router
 from .legal_router import router as legal_router
 from .integration_router import router as integration_router
 from .marketplace_connections import router as marketplace_router
@@ -110,4 +111,5 @@ app.include_router(seller_data_router,prefix='/api/v1')
 app.include_router(smart_fbo_router,prefix='/api/v1')
 app.include_router(sync_router,prefix='/api/v1')
 app.include_router(support_router,prefix='/api/v1')
+app.include_router(fulfillment_router,prefix='/api/v1')
 app.include_router(api_router,prefix='/api/v1')

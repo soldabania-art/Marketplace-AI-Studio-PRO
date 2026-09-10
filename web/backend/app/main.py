@@ -15,6 +15,7 @@ from .card_factory_router import router as card_factory_router
 from .config import get_settings
 from .db import Base, engine
 from .director_router import router as director_router
+from .data_health_router import router as data_health_router
 from .fbo_monitor import monitor_forever
 from .legal_router import router as legal_router
 from .marketplace_connections import router as marketplace_router
@@ -92,6 +93,7 @@ app.include_router(admin_router,prefix='/api/v1',tags=['admin'])
 app.include_router(beginner_router,prefix='/api/v1')
 app.include_router(card_factory_router,prefix='/api/v1')
 app.include_router(director_router,prefix='/api/v1')
+app.include_router(data_health_router,prefix='/api/v1')
 app.include_router(legal_router,prefix='/api/v1',tags=['legal'])
 app.include_router(push_router,prefix='/api/v1',tags=['push'])
 app.include_router(profit_center_router,prefix='/api/v1')

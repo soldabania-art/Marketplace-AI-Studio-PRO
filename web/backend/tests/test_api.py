@@ -3,10 +3,11 @@ import uuid
 
 from fastapi.testclient import TestClient
 
-from app.db import Base, engine
+from app.db import Base, SessionLocal, engine
 from app.main import app
 from app.config import get_settings
 from app.mfa_service import totp_code
+from app.models import BackgroundJob, JobStatus, MarketplaceConnection, MarketplaceSnapshot, Store
 
 Base.metadata.create_all(bind=engine)
 client = TestClient(app)
@@ -72,6 +73,52 @@ def test_integrations_start_disconnected():
     payload = client.get("/api/v1/integrations/status").json()
     assert payload["wildberries"]["connected"] is False
     assert payload["ozon"]["connected"] is False
+
+
+def test_data_health_is_store_scoped_and_reports_source_freshness():
+    _, _, token = _register_user()
+    headers = {"Authorization": f"Bearer {token}"}
+    user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+    store_id = client.get("/api/v1/stores", headers=headers).json()["stores"][0]["id"]
+    disconnected = client.get(f"/api/v1/data-health?store_id={store_id}", headers=headers)
+    assert disconnected.status_code == 200
+    assert disconnected.json()["overall_status"] == "disconnected"
+
+    with SessionLocal() as db:
+        assert db.get(Store, store_id) is not None
+        db.add(MarketplaceConnection(user_id=user_id, store_id=store_id, marketplace="wildberries", encrypted_token="test", enabled=True))
+        db.add_all([
+            MarketplaceSnapshot(store_id=store_id, marketplace="wildberries", snapshot_type="catalog", payload={"count": 2}),
+            MarketplaceSnapshot(store_id=store_id, marketplace="wildberries", snapshot_type="stocks", payload={"count": 2}),
+            MarketplaceSnapshot(store_id=store_id, marketplace="wildberries", snapshot_type="sales_velocity_7d", payload={"count": 2}),
+        ])
+        db.commit()
+    health = client.get(f"/api/v1/data-health?store_id={store_id}", headers=headers)
+    assert health.status_code == 200
+    result = health.json()
+    assert result["safe_for_ai_decisions"] is True
+    assert {item["key"]: item["status"] for item in result["sources"]}["stocks"] == "healthy"
+    assert result["overall_status"] == "missing"
+
+    with SessionLocal() as db:
+        store = db.get(Store, store_id)
+        db.add(BackgroundJob(
+            workspace_id=store.workspace_id,
+            store_id=store_id,
+            job_type="marketplace.wb.analytics.sync",
+            idempotency_key=f"health-error:{uuid.uuid4().hex}",
+            status=JobStatus.dead,
+            last_error="SECRET_API_TOKEN must never reach the browser",
+        ))
+        db.commit()
+    failed = client.get(f"/api/v1/data-health?store_id={store_id}", headers=headers).json()
+    assert failed["overall_status"] == "error"
+    assert failed["safe_for_ai_decisions"] is False
+    assert "SECRET_API_TOKEN" not in str(failed)
+
+    _, _, other_token = _register_user()
+    forbidden = client.get(f"/api/v1/data-health?store_id={store_id}", headers={"Authorization": f"Bearer {other_token}"})
+    assert forbidden.status_code == 404
 
 
 def test_profit_formula_provenance():

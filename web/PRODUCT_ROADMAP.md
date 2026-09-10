@@ -171,7 +171,7 @@ The web product and future Android app use the same versioned API, permissions a
 |---|---|---|
 | Accounts, organizations, stores | Server sessions, TOTP MFA, recovery codes, admin MFA gate and ten-minute step-up authorization implemented | Passkeys, export gates, complete RBAC and audit coverage |
 | Business profiles / onboarding | Architecture accepted | Self-service profile confirmation and trustworthy first-value screen |
-| WB snapshots | Catalog, stocks and sales velocity implemented | Reconciliation, freshness SLO and failure UI |
+| WB snapshots | Catalog, stocks, sales velocity and store-scoped Data Health Center implemented | Automatic scheduling, freshness SLO telemetry and incident alerts |
 | Products | Reads real WB catalog facts | Provenance and cross-source identity mapping |
 | Beginner Studio | Photo analysis, confirmed facts, draft and saved project implemented | Durable image assets and publication |
 | Trial and billing | Server entitlements, 3 days / 5 cards, store cap, paid-period lifecycle and idempotent provider-event core | Select RF/CIS payment provider and add its verified checkout/webhook adapter |
@@ -203,7 +203,7 @@ The web product and future Android app use the same versioned API, permissions a
 
 ### P1 — make AI Director operational
 
-1. Freshness/health monitoring for all data sources.
+1. Freshness/health monitoring for all data sources. **Implemented foundation:** the authenticated Data Health Center reports bounded freshness, expected intervals, record counts and redacted job failures for catalog, stocks, sales, finance and advertising. Core-data safety gates are exposed to AI consumers; automatic schedules and alert delivery remain.
 2. Ranked profit, stock, content and operational recommendations.
    **Implemented foundation:** store-scoped queue of up to ten actions, transparent priority formula, source freshness, observed-loss labelling, zero-cost rules provider and proposal-only safety mode.
 3. Approval inbox, bounded policies, audit and rollback measurement.

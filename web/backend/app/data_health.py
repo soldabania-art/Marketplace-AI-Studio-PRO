@@ -12,6 +12,7 @@ SOURCE_POLICIES = (
     {"key": "sales", "label": "Продажи и скорость", "snapshot_type": "sales_velocity_7d", "job_type": "marketplace.wb.analytics.sync", "warn_after": 7200, "stale_after": 21600, "required_for": ["smart_fbo", "director"]},
     {"key": "finance", "label": "Финансовый отчёт", "snapshot_type": "finance_realization_sync", "job_type": "marketplace.wb.finance.sync", "warn_after": 86400, "stale_after": 172800, "required_for": ["profit_center"]},
     {"key": "advertising", "label": "Реклама", "snapshot_type": "advertising_sync", "job_type": "marketplace.wb.advertising.sync", "warn_after": 86400, "stale_after": 172800, "required_for": ["profit_center", "director"]},
+    {"key": "feedbacks", "label": "Отзывы", "snapshot_type": "feedbacks", "job_type": "marketplace.wb.feedbacks.sync", "warn_after": 3600, "stale_after": 14400, "required_for": ["reviews", "director"]},
 )
 
 

@@ -33,6 +33,7 @@ def test_store_identifier_cannot_be_used_to_download_another_tenants_data():
         f"/api/v1/beginner/projects?store_id={foreign_store}",
         f"/api/v1/agents/work-orders?store_id={foreign_store}",
         f"/api/v1/agents/learning?store_id={foreign_store}",
+        f"/api/v1/reviews?store_id={foreign_store}",
     ]
     for path in probes:
         response = client.get(path, headers=owner_headers)

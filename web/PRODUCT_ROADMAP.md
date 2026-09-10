@@ -180,7 +180,9 @@ The web product and future Android app use the same versioned API, permissions a
 | AI Director | Evidence queue, durable decisions, audit, STOP, read-only executors and source-based measurement implemented | Bounded marketplace-write executors and verified rollback |
 | Agent network and security | Director + five specialists, independent Security Sentinel, typed deny-by-default registry and reviewed-learning candidates implemented | Eval artefacts, signed policy versions, canary promotion and executor-level security gates |
 | AI Support Agent | Architecture accepted | Incident intake, forced escalation and evidence bundle before general chat |
-| Advertising, reviews, claims | Planned | Read-only insights before approved writes |
+| Advertising | Read-only source data connected | Reconciliation and bounded, approved writes |
+| Reviews | Read-only WB snapshot and privacy-minimised workspace connected | Grounded theme analysis and reviewable response drafts; no automatic replies |
+| Claims | Planned | Read-only insights before approved writes |
 | Integration Hub | Architecture accepted | Canonical schema and 1C/MoySklad adapters |
 | Ozon and other marketplaces | Planned | Start after WB write path is safe |
 | Android and push | API/event foundation required now | Native approval and alert MVP |

@@ -10,6 +10,7 @@ from .models import MarketplaceAdvertisingLine, MarketplaceConnection, Marketpla
 from .wb_analytics import fetch_wb_current_stocks, fetch_wb_sales_velocity
 from .wb_content import fetch_wb_cards
 from .wb_finance import fetch_financial_report_page
+from .wb_feedbacks import fetch_wb_feedbacks
 from .wb_promotion import date_chunks, fetch_advertising_stats, fetch_campaign_ids
 
 
@@ -20,6 +21,22 @@ def save_snapshot(db: Session, *, store_id: str, marketplace: str, snapshot_type
 
 def latest_snapshot(db: Session, *, store_id: str, marketplace: str, snapshot_type: str) -> MarketplaceSnapshot | None:
     return (db.query(MarketplaceSnapshot).filter(MarketplaceSnapshot.store_id==store_id, MarketplaceSnapshot.marketplace==marketplace, MarketplaceSnapshot.snapshot_type==snapshot_type).order_by(MarketplaceSnapshot.created_at.desc()).first())
+
+
+@register_handler('marketplace.wb.feedbacks.sync')
+async def sync_wb_feedbacks(payload: dict) -> None:
+    store_id = str(payload.get('store_id') or '')
+    if not store_id:
+        raise ValueError('store_id is required')
+    db = SessionLocal()
+    try:
+        connection = db.query(MarketplaceConnection).filter(MarketplaceConnection.store_id == store_id, MarketplaceConnection.marketplace == 'wildberries', MarketplaceConnection.enabled.is_(True)).first()
+        if not connection:
+            raise RuntimeError('Wildberries connection is not enabled for store')
+        items, unanswered_count = await fetch_wb_feedbacks(decrypt_connection(connection))
+        save_snapshot(db, store_id=store_id, marketplace='wildberries', snapshot_type='feedbacks', payload={'items': items, 'count': len(items), 'unanswered_count': unanswered_count, 'read_only': True, 'privacy_minimised': True})
+    finally:
+        db.close()
 
 
 @register_handler('marketplace.wb.analytics.sync')

@@ -186,7 +186,7 @@ The web product and future Android app use the same versioned API, permissions a
 | Advertising | Read-only source data connected | Reconciliation and bounded, approved writes |
 | Reviews | Read-only WB snapshot plus persisted grounded AI themes/drafts | Human review workflow; automatic replies remain disabled |
 | Claims | Planned | Read-only insights before approved writes |
-| Integration Hub | Architecture accepted | Canonical schema and 1C/MoySklad adapters |
+| Integration Hub | Versioned connector catalog plus scalable fulfillment partner/facility registry | Partner onboarding UI, first certified adapter and canonical inventory/shipment events |
 | Ozon and other marketplaces | Planned | Start after WB write path is safe |
 | Android and push | API/event foundation required now | Native approval and alert MVP |
 | Cross-border CIS | Accepted for discovery | Validate Kazakhstan partner/API/legal route, then read-only economics MVP |

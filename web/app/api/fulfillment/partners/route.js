@@ -1,0 +1,7 @@
+import { cookies } from 'next/headers'
+import { NextResponse } from 'next/server'
+import { backendRequest } from '../../../../lib/backend'
+
+async function token(){return (await cookies()).get('mai_session')?.value}
+export async function GET(request){const session=await token();if(!session)return NextResponse.json({error:'Требуется вход'},{status:401});const storeId=new URL(request.url).searchParams.get('store_id');if(!storeId)return NextResponse.json({error:'Выберите магазин'},{status:400});try{const {response,payload}=await backendRequest(`/api/v1/fulfillment/partners?store_id=${encodeURIComponent(storeId)}`,{headers:{Authorization:`Bearer ${session}`}});return NextResponse.json(response.ok?payload:{error:payload?.detail||'Не удалось загрузить сеть фулфилментов'},{status:response.status})}catch{return NextResponse.json({error:'Fulfillment Hub временно недоступен.'},{status:503})}}
+export async function POST(request){const session=await token();if(!session)return NextResponse.json({error:'Требуется вход'},{status:401});try{const body=await request.json();const path=`/api/v1/fulfillment/partners/${encodeURIComponent(body.partner_id)}/connections?store_id=${encodeURIComponent(body.store_id)}`;const {response,payload}=await backendRequest(path,{method:'POST',headers:{Authorization:`Bearer ${session}`}});return NextResponse.json(response.ok?payload:{error:payload?.detail||'Не удалось создать заявку'},{status:response.status})}catch{return NextResponse.json({error:'Не удалось обработать заявку.'},{status:400})}}

@@ -4,8 +4,8 @@ import BrandLogo from '../../components/BrandLogo'
 
 const plans = [
   { code:'trial', name: 'Пробный запуск', price: '0 ₽', note: '3 дня с первого AI-анализа', features: ['До 5 текстовых карточек', '1 магазин и 1 пользователь', 'Фото, тексты, SEO и экономика', 'Без генерации изображений, публикации и автодействий'] },
-  { code:'pro', name: 'PRO', price: '4 990 ₽', note: 'в месяц', featured: true, features: ['До 3 магазинов', 'До 3 пользователей', 'Расширенный AI', 'AI Card Factory', 'Profit Center', 'Закрытый форум TROVENDI', 'Assisted Autopilot'] },
-  { code:'business', name: 'Business', price: '12 990 ₽', note: 'в месяц', features: ['До 10 магазинов', 'До 10 пользователей', 'Приоритетный AI', 'Расширенный автопилот', 'Командные роли', 'Расширенные отчёты', 'Закрытый форум TROVENDI'] },
+  { code:'pro', name: 'PRO', price: '4 990 ₽', note: 'в месяц', featured: true, features: ['До 3 магазинов', 'До 3 пользователей', 'Расширенный AI', 'AI Card Factory', 'Profit Center', 'Закрытый форум — после запуска', 'Assisted Autopilot'] },
+  { code:'business', name: 'Business', price: '12 990 ₽', note: 'в месяц', features: ['До 10 магазинов', 'До 10 пользователей', 'Приоритетный AI', 'Расширенный автопилот', 'Командные роли', 'Расширенные отчёты', 'Закрытый форум — после запуска'] },
 ]
 
 export default function PricingPage() {

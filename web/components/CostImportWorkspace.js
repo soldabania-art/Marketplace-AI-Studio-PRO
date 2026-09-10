@@ -2,11 +2,13 @@
 
 import Link from 'next/link'
 import {useEffect,useMemo,useState} from 'react'
-import {CheckCircle2,CircleAlert,FileSpreadsheet,LockKeyhole,Save,Trash2,Upload} from 'lucide-react'
+import {CheckCircle2,CircleAlert,Clock3,FileSpreadsheet,LockKeyhole,Save,Trash2,Upload} from 'lucide-react'
 import {normalizeCostModel,normalizeMoney,parseCostCsv,suggestCostMapping} from '../lib/costImportCsv.mjs'
 
 const sourceOptions=[['csv','CSV (включая экспорт Excel)'],['1c','1С'],['moysklad','МойСклад'],['saby','Saby / СБИС'],['kontur','Контур'],['partner_api','Партнёрская система']]
+const sourceLabels=Object.fromEntries(sourceOptions)
 const modelLabels={reseller:'Реселлер',manufacturer:'Производство',distributor:'Дистрибьютор'}
+const statusLabels={preview:'Ожидает подтверждения',committed:'Применён',expired:'Истёк'}
 
 export default function CostImportWorkspace({storeId,profile,onCommitted,onNotice}){
   const [parsed,setParsed]=useState(null)
@@ -21,15 +23,18 @@ export default function CostImportWorkspace({storeId,profile,onCommitted,onNotic
   const [presets,setPresets]=useState([])
   const [presetName,setPresetName]=useState('')
   const [selectedPresetId,setSelectedPresetId]=useState('')
+  const [history,setHistory]=useState([])
 
   const componentCatalog=profile?.component_catalog||{}
   const allowedModels=profile?.allowed_sku_models||[]
   const componentKeys=useMemo(()=>[...new Set(allowedModels.flatMap(model=>Object.keys(componentCatalog[model]||{})))],[allowedModels,componentCatalog])
 
   useEffect(()=>{if(!storeId)return;let active=true
-    fetch(`/api/profit-center/cost-import-mappings?store_id=${encodeURIComponent(storeId)}`).then(async response=>({response,payload:await response.json()})).then(({response,payload})=>{if(active&&response.ok)setPresets(payload.items||[])}).catch(()=>{})
+    Promise.all([fetch(`/api/profit-center/cost-import-mappings?store_id=${encodeURIComponent(storeId)}`),fetch(`/api/profit-center/cost-imports?store_id=${encodeURIComponent(storeId)}`)]).then(async responses=>Promise.all(responses.map(async response=>({response,payload:await response.json()})))).then(([presetResult,historyResult])=>{if(!active)return;if(presetResult.response.ok)setPresets(presetResult.payload.items||[]);if(historyResult.response.ok)setHistory(historyResult.payload.items||[]) }).catch(()=>{})
     return()=>{active=false}
   },[storeId])
+
+  async function refreshHistory(){try{const response=await fetch(`/api/profit-center/cost-imports?store_id=${encodeURIComponent(storeId)}`);if(response.ok){const payload=await response.json();setHistory(payload.items||[])}}catch{}}
 
   function invalidate(){setPreview(null);setConfirmed(false);setErrors([])}
   function updateMapping(key,value){invalidate();setMapping(current=>({...current,[key]:value}))}
@@ -108,7 +113,7 @@ export default function CostImportWorkspace({storeId,profile,onCommitted,onNotic
       const response=await fetch('/api/profit-center/cost-imports/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({store_id:storeId,source_system:sourceSystem,source_document_reference:documentReference.trim(),rows})})
       const payload=await response.json()
       if(!response.ok){const error=new Error(payload.error||'Не удалось создать превью.');error.rowErrors=payload.details?.row_errors||[];throw error}
-      setPreview(payload);onNotice?.(`Превью готово: ${payload.row_count} строк. Проверьте суммы перед применением.`)
+      setPreview(payload);await refreshHistory();onNotice?.(`Превью готово: ${payload.row_count} строк. Проверьте суммы перед применением.`)
     }catch(error){setErrors(error.rowErrors?.length?error.rowErrors:[{error:error.message}]);onNotice?.(error.message)}finally{setBusy(false)}
   }
 
@@ -119,7 +124,7 @@ export default function CostImportWorkspace({storeId,profile,onCommitted,onNotic
       const response=await fetch(`/api/profit-center/cost-imports/${encodeURIComponent(preview.id)}/commit`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({store_id:storeId,preview_sha256:preview.preview_sha256,confirmed:true})})
       const payload=await response.json()
       if(!response.ok)throw new Error(payload.error||'Не удалось применить импорт.')
-      setPreview(payload);setConfirmed(false);onNotice?.(`Применено строк: ${payload.row_count}. Изменение записано в аудит.`);await onCommitted?.()
+      setPreview(payload);setConfirmed(false);onNotice?.(`Применено строк: ${payload.row_count}. Изменение записано в аудит.`);await Promise.all([onCommitted?.(),refreshHistory()])
     }catch(error){setErrors([{error:error.message}]);onNotice?.(error.message)}finally{setBusy(false)}
   }
 
@@ -137,5 +142,6 @@ export default function CostImportWorkspace({storeId,profile,onCommitted,onNotic
     {errors.length>0&&<div className="costImportErrors" role="alert"><b><CircleAlert size={16}/> Найдены ошибки</b>{errors.slice(0,20).map((item,index)=><span key={`${item.row||0}-${index}`}>{item.row?`Строка ${item.row}, nmId ${item.nm_id}: `:''}{item.error}</span>)}{errors.length>20&&<span>Ещё ошибок: {errors.length-20}</span>}</div>}
     {parsed&&!preview&&<button type="button" className="primaryBtn costPreviewBtn" onClick={createPreview} disabled={busy||!mapping.nm_id}><LockKeyhole size={16}/>{busy?'Проверяем…':'Создать защищённое превью'}</button>}
     {preview&&<div className={`costPreview ${preview.status==='committed'?'committed':''}`} aria-live="polite"><div><CheckCircle2 size={18}/><b>{preview.status==='committed'?'Импорт применён':'Превью готово'}</b><span>{preview.row_count} строк · SHA {preview.preview_sha256.slice(0,12)}</span></div><div className="costPreviewRows">{preview.rows.slice(0,20).map(item=><span key={item.nm_id}><b>nmId {item.nm_id}</b><i>{modelLabels[item.operating_model]}</i><strong>{item.cogs_rub} ₽</strong></span>)}</div>{preview.status!=='committed'&&<div className="costCommit"><label><input type="checkbox" checked={confirmed} onChange={event=>setConfirmed(event.target.checked)}/><span>Я проверил источник, соответствие колонок и итоговые суммы</span></label><button type="button" className="costSave" disabled={!confirmed||busy} onClick={commitPreview}>{busy?'Применяем…':'Применить импорт'}</button></div>}</div>}
+    {history.length>0&&<div className="costImportHistory"><div><Clock3 size={16}/><b>Последние импорты</b><span>Без раскрытия построчных финансовых данных</span></div>{history.map(item=><div className={`costHistoryRow ${item.status}`} key={item.id}><span><b>{sourceLabels[item.source_system]||item.source_system}</b><small>{item.source_document_reference}</small></span><span>{item.row_count} строк</span><span>{new Date(item.created_at).toLocaleString('ru-RU',{dateStyle:'short',timeStyle:'short'})}</span><strong>{statusLabels[item.status]||item.status}</strong></div>)}</div>}
   </section>
 }

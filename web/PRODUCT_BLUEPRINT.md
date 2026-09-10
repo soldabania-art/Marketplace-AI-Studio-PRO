@@ -6,6 +6,8 @@
 
 > Profit Center import mappings are reusable store-scoped records, validated against an allowlist and audit-logged. A preset never bypasses the immutable preview and explicit commit boundary.
 
+> Import history is store-scoped, bounded and metadata-only. Row-level costs remain inside the explicitly opened preview instead of being replicated into a general activity feed.
+
 ## Product direction
 TROVENDI is a web-first AI operating system for marketplace sellers, starting with Wildberries and Ozon and designed for later expansion to Yandex Market, Megamarket, AliExpress and other verified integrations.
 

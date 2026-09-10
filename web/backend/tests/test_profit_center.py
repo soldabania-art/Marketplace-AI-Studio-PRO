@@ -1,9 +1,10 @@
 from types import SimpleNamespace
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi import HTTPException
 
-from app.profit_center_router import ProductCostRequest, TaxProfileRequest, _public_amounts, _tax_kopecks, _totals, _validated_import_mapping, _verified_cost, save_tax_profile
+from app.profit_center_router import ProductCostRequest, TaxProfileRequest, _public_amounts, _public_import_summary, _tax_kopecks, _totals, _validated_import_mapping, _verified_cost, save_tax_profile
 
 
 def line(**values):
@@ -115,3 +116,13 @@ def test_import_mapping_rejects_unknown_component():
     with pytest.raises(HTTPException) as error:
         _validated_import_mapping({'nm_id':'nmId','components':{'password':'Секрет'}})
     assert error.value.status_code==422
+
+
+def test_import_history_expires_preview_without_exposing_rows():
+    now=datetime(2026,9,10,tzinfo=timezone.utc)
+    result=_public_import_summary(SimpleNamespace(id='batch',source_system='1c',source_document_reference='doc',
+        payload_sha256='a'*64,status='preview',rows=[{'nm_id':1,'cogs_kopecks':99999}],
+        created_at=now-timedelta(days=2),expires_at=now-timedelta(seconds=1),committed_at=None),now)
+    assert result['status']=='expired'
+    assert result['row_count']==1
+    assert 'rows' not in result

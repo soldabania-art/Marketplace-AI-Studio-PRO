@@ -3,7 +3,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import hashlib
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, model_validator
 from typing import Literal
 from sqlalchemy.orm import Session
@@ -359,6 +359,17 @@ def _public_import_batch(batch: CostImportBatch) -> dict:
     }
 
 
+def _public_import_summary(batch: CostImportBatch, now: datetime | None = None) -> dict:
+    current = now or datetime.now(timezone.utc)
+    expires_at = batch.expires_at
+    if expires_at.tzinfo is None: expires_at = expires_at.replace(tzinfo=timezone.utc)
+    status = 'expired' if batch.status == 'preview' and expires_at <= current else batch.status
+    return {'id': batch.id, 'source_system': batch.source_system,
+            'source_document_reference': batch.source_document_reference, 'preview_sha256': batch.payload_sha256,
+            'status': status, 'row_count': len(batch.rows or []), 'created_at': batch.created_at,
+            'expires_at': batch.expires_at, 'committed_at': batch.committed_at}
+
+
 def _public_import_mapping(row: CostImportMapping) -> dict:
     return {'id': row.id, 'name': row.name, 'source_system': row.source_system,
             'mapping': row.mapping or {}, 'created_at': row.created_at, 'updated_at': row.updated_at}
@@ -398,6 +409,14 @@ def delete_cost_import_mapping(mapping_id: str, store_id: str, user: User = Depe
         event_type='profit.cost_mapping.deleted', entity_type='cost_mapping', entity_id=row.id,
         payload={'source_system': row.source_system, 'name': row.name}))
     db.delete(row); db.commit()
+
+
+@router.get('/cost-imports')
+def list_cost_imports(store_id: str, limit: int = Query(default=10, ge=1, le=50),
+                      user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    store = resolve_store(db, user, store_id); require_store_admin(db, user, store)
+    rows = db.query(CostImportBatch).filter(CostImportBatch.store_id == store.id).order_by(CostImportBatch.created_at.desc()).limit(limit).all()
+    return {'items': [_public_import_summary(row) for row in rows]}
 
 
 @router.post('/cost-imports/preview', status_code=201)

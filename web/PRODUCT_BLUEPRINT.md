@@ -160,6 +160,8 @@ Capabilities:
 
 No hidden estimates: every derived metric carries its data source and confidence/provenance.
 
+Per-SKU cost confirmation follows the selected operating model. Resellers record purchase, inbound logistics, customs, fulfillment and packaging; manufacturers record materials, direct labor, packaging, equipment/energy and allocated overhead; distributors record net purchase, fulfillment, packaging and documented brand fees. A mixed store selects one concrete model per SKU. Every non-zero component requires a source reference, totals are calculated in integer kopecks by deterministic backend code, and the canonical input is checksummed and audited. AI may point out a missing component but never supplies a monetary value.
+
 ## Promo Economics
 Before a seller joins a marketplace promotion, recompute unit economics per SKU and scenario.
 

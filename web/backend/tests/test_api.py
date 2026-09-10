@@ -7,7 +7,7 @@ from app.db import Base, SessionLocal, engine
 from app.main import app
 from app.config import get_settings
 from app.mfa_service import totp_code
-from app.models import BackgroundJob, BusinessOperatingProfile, JobStatus, MarketplaceConnection, MarketplaceSnapshot, Membership, MembershipRole, OperationalAuditEvent, Store
+from app.models import BackgroundJob, BusinessOperatingProfile, JobStatus, MarketplaceConnection, MarketplaceSnapshot, Membership, MembershipRole, OperationalAuditEvent, ProductCostProfile, Store
 
 Base.metadata.create_all(bind=engine)
 client = TestClient(app)
@@ -172,6 +172,27 @@ def test_onboarding_is_store_scoped_and_business_profile_requires_admin_confirma
         owner_id = client.get("/api/v1/auth/me", headers=owner_headers).json()["id"]
         db.add(MarketplaceConnection(user_id=owner_id, store_id=store_id, marketplace="wildberries", encrypted_token="test", enabled=True))
         db.commit()
+    cost_body = {
+        "store_id": store_id,
+        "operating_model": "manufacturer",
+        "components_rub": {"materials": "450.25", "direct_labor": "149.75"},
+        "source_references": {"materials": "Техкарта №1", "direct_labor": "Наряд №2"},
+        "confirmed": True,
+    }
+    cost_forbidden = client.patch("/api/v1/profit-center/costs/123456", headers=analyst_headers, json=cost_body)
+    assert cost_forbidden.status_code == 403
+    cost_saved = client.patch("/api/v1/profit-center/costs/123456", headers=owner_headers, json=cost_body)
+    assert cost_saved.status_code == 200
+    assert cost_saved.json()["cogs_rub"] == "600.00"
+    assert cost_saved.json()["cost_profile"]["operating_model"] == "manufacturer"
+    with SessionLocal() as db:
+        cost = db.query(ProductCostProfile).filter(ProductCostProfile.store_id == store_id, ProductCostProfile.nm_id == 123456).one()
+        assert cost.components == {"materials": 45025, "direct_labor": 14975}
+        assert len(cost.calculation_sha256) == 64
+        assert db.query(OperationalAuditEvent).filter(
+            OperationalAuditEvent.store_id == store_id,
+            OperationalAuditEvent.event_type == "profit.cost.confirmed",
+        ).count() == 1
     started = client.post(f"/api/v1/onboarding/import?store_id={store_id}", headers=owner_headers)
     repeated_import = client.post(f"/api/v1/onboarding/import?store_id={store_id}", headers=owner_headers)
     assert started.status_code == 202

@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app.profit_center_router import TaxProfileRequest, _public_amounts, _tax_kopecks, _totals, save_tax_profile
+from app.profit_center_router import ProductCostRequest, TaxProfileRequest, _public_amounts, _tax_kopecks, _totals, _verified_cost, save_tax_profile
 
 
 def line(**values):
@@ -51,3 +51,55 @@ def test_tax_profile_cannot_be_saved_without_explicit_confirmation():
     with pytest.raises(HTTPException) as error:
         save_tax_profile(payload,user=SimpleNamespace(id='user-1'),db=None)
     assert error.value.status_code==422
+
+
+def test_verified_manufacturer_cost_is_exact_and_deterministic():
+    payload=ProductCostRequest(
+        store_id='store-1', operating_model='manufacturer', confirmed=True,
+        components_rub={'materials':'520.45','direct_labor':'180','packaging':'49.55'},
+        source_references={'materials':'Техкарта №7','direct_labor':'Наряд 18','packaging':'Спецификация упаковки'},
+    )
+    profile=SimpleNamespace(operating_model='manufacturer',status='confirmed')
+    first=_verified_cost(payload,profile)
+    second=_verified_cost(payload,profile)
+    assert first[0]==75000
+    assert first[2]=={'materials':52045,'direct_labor':18000,'packaging':4955}
+    assert first[4]==second[4]
+    assert len(first[4])==64
+
+
+def test_verified_cost_requires_source_for_every_nonzero_component():
+    payload=ProductCostRequest(
+        store_id='store-1', operating_model='reseller', confirmed=True,
+        components_rub={'purchase_price':'1000'}, source_references={},
+    )
+    with pytest.raises(HTTPException) as error:
+        _verified_cost(payload,SimpleNamespace(operating_model='reseller',status='confirmed'))
+    assert error.value.status_code==422
+    assert 'источник' in error.value.detail.lower()
+
+
+def test_cost_model_must_match_confirmed_store_profile():
+    payload=ProductCostRequest(
+        store_id='store-1', operating_model='manufacturer', confirmed=True,
+        components_rub={'materials':'100'}, source_references={'materials':'Техкарта'},
+    )
+    with pytest.raises(HTTPException) as error:
+        _verified_cost(payload,SimpleNamespace(operating_model='reseller',status='confirmed'))
+    assert error.value.status_code==422
+
+
+def test_mixed_store_can_select_concrete_cost_model_per_sku():
+    payload=ProductCostRequest(
+        store_id='store-1', operating_model='distributor', confirmed=True,
+        components_rub={'net_purchase':'999.99'}, source_references={'net_purchase':'УПД поставщика'},
+    )
+    total,model,_,_,_=_verified_cost(payload,SimpleNamespace(operating_model='mixed',status='confirmed'))
+    assert total==99999
+    assert model=='distributor'
+
+
+def test_legacy_confirmed_total_remains_supported():
+    payload=ProductCostRequest(store_id='store-1',cogs_rub='123.45',confirmed=True)
+    total,model,components,sources,_=_verified_cost(payload,None)
+    assert (total,model,components,sources)==(12345,'legacy_total',{'legacy_total':12345},{})

@@ -47,12 +47,12 @@ AI coordinates the loop. Deterministic services remain authoritative for facts, 
 | Branch | Status | Depends on | Next gate |
 | --- | --- | --- | --- |
 | Accounts, stores, trial | **live foundation** | PostgreSQL, auth, server entitlements | RF/CIS payment checkout and verified webhook adapter |
-| Business profiles / onboarding | **live foundation** | store context + source health + durable jobs | Confirm per-SKU cost inputs and accounting-source mappings |
+| Business profiles / onboarding | **live foundation** | store context + source health + durable jobs | Accounting-source mappings and document imports |
 | WB snapshots | **live foundation** | encrypted token, worker | Reconciliation and freshness SLO |
 | Products | **live foundation** | catalog + stock + velocity | Provenance and cross-source identity |
 | AI Card Factory | **live foundation** | facts + AI persistence | Production observation of text and media writes |
 | Beginner Studio | **active** | trial + facts + Card Factory | Reuse stored visuals and publication pipeline |
-| Profit Center | **live foundation** | WB finance + advertising ledgers, confirmed COGS + tax | Production reconciliation and accounting-source costs |
+| Profit Center | **live foundation** | WB finance + advertising ledgers, verified per-SKU cost components + tax | Production reconciliation and accounting-source imports |
 | AI Director | **live foundation** | healthy sources + Profit Center | Previewed marketplace-write executors and verified rollback |
 | Agent network and Security Sentinel | **live foundation** | auth + store scope + audit | Offline eval artefacts, signed policy promotion and bounded executor gates |
 | AI Support Agent | **planned P1** | audit, store context + versioned knowledge | Incident intake and deterministic escalation first |

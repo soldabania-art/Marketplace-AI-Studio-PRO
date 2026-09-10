@@ -1,15 +1,17 @@
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+import hashlib
+import json
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Literal
 from sqlalchemy.orm import Session
 
 from .db import get_db
 from .job_queue import enqueue
 from .marketplace_sync import latest_snapshot
-from .models import MarketplaceAdvertisingLine, MarketplaceConnection, MarketplaceFinancialLine, ProductCostProfile, StoreTaxProfile, User
+from .models import BusinessOperatingProfile, MarketplaceAdvertisingLine, MarketplaceConnection, MarketplaceFinancialLine, OperationalAuditEvent, ProductCostProfile, StoreTaxProfile, User
 from .security import get_current_user
 from .store_access import require_store_admin, resolve_store
 
@@ -21,10 +23,49 @@ class ProfitSyncRequest(BaseModel):
     period_days: int = Field(default=30, ge=7, le=90)
 
 
+CostingModel = Literal['reseller', 'manufacturer', 'distributor']
+COST_COMPONENTS = {
+    'reseller': {
+        'purchase_price': 'Закупочная цена',
+        'inbound_logistics': 'Доставка до склада',
+        'customs': 'Таможня и пошлины',
+        'fulfillment_unit': 'Обработка единицы',
+        'packaging': 'Упаковка и маркировка',
+    },
+    'manufacturer': {
+        'materials': 'Сырьё и комплектующие',
+        'direct_labor': 'Сдельная работа',
+        'packaging': 'Упаковка и маркировка',
+        'equipment': 'Оборудование и энергия',
+        'overhead': 'Доля цеховых расходов',
+    },
+    'distributor': {
+        'net_purchase': 'Закупка после скидок',
+        'fulfillment_unit': 'Логистика и обработка',
+        'packaging': 'Упаковка и маркировка',
+        'brand_fee': 'Подтверждённые платежи бренду',
+    },
+}
+
+
 class ProductCostRequest(BaseModel):
     store_id: str = Field(min_length=1, max_length=36)
-    cogs_rub: Decimal = Field(ge=Decimal('0.01'), le=Decimal('100000000'))
+    cogs_rub: Decimal | None = Field(default=None, ge=Decimal('0.01'), le=Decimal('100000000'))
+    operating_model: CostingModel | None = None
+    components_rub: dict[str, Decimal] = Field(default_factory=dict)
+    source_references: dict[str, str] = Field(default_factory=dict)
     confirmed: bool
+
+    @model_validator(mode='after')
+    def valid_cost_input(self):
+        breakdown = self.operating_model is not None or bool(self.components_rub) or bool(self.source_references)
+        if breakdown and self.cogs_rub is not None:
+            raise ValueError('Передайте либо общую себестоимость, либо детализацию, но не оба варианта.')
+        if not breakdown and self.cogs_rub is None:
+            raise ValueError('Укажите подтверждённую себестоимость.')
+        if breakdown and self.operating_model is None:
+            raise ValueError('Для детализации выберите модель себестоимости.')
+        return self
 
 
 class TaxProfileRequest(BaseModel):
@@ -54,6 +95,62 @@ def _period(period_days: int) -> tuple[str, str]:
 
 def _rubles(kopecks: int) -> str:
     return f'{Decimal(kopecks) / Decimal(100):.2f}'
+
+
+def _verified_cost(payload: ProductCostRequest, profile: BusinessOperatingProfile | None) -> tuple[int, str, dict, dict, str]:
+    if not payload.confirmed:
+        raise HTTPException(422, 'Подтвердите, что себестоимость взята из ваших документов.')
+    if payload.cogs_rub is not None:
+        kopecks = int((payload.cogs_rub * 100).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+        canonical = {'operating_model': 'legacy_total', 'components': {'legacy_total': kopecks}, 'sources': {}}
+        digest = hashlib.sha256(json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        return kopecks, 'legacy_total', canonical['components'], {}, digest
+    if profile is None or profile.status != 'confirmed':
+        raise HTTPException(409, 'Сначала подтвердите модель бизнеса в мастере настройки.')
+    model = str(payload.operating_model)
+    if profile.operating_model != 'mixed' and model != profile.operating_model:
+        raise HTTPException(422, 'Модель SKU должна совпадать с подтверждённой моделью магазина.')
+    allowed = COST_COMPONENTS[model]
+    unknown = sorted(set(payload.components_rub) - set(allowed))
+    if unknown:
+        raise HTTPException(422, f'Недопустимые компоненты себестоимости: {", ".join(unknown)}.')
+    if not payload.components_rub:
+        raise HTTPException(422, 'Добавьте хотя бы один компонент себестоимости.')
+    components: dict[str, int] = {}
+    sources: dict[str, str] = {}
+    for key, amount in payload.components_rub.items():
+        try:
+            kopecks = int((Decimal(amount) * 100).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+        except (InvalidOperation, ValueError) as exc:
+            raise HTTPException(422, f'Некорректная сумма компонента {key}.') from exc
+        if kopecks < 0 or kopecks > 10_000_000_000:
+            raise HTTPException(422, f'Сумма компонента {key} вне допустимого диапазона.')
+        if kopecks == 0:
+            continue
+        reference = str(payload.source_references.get(key) or '').strip()
+        if not reference or len(reference) > 300:
+            raise HTTPException(422, f'Укажите источник для компонента «{allowed[key]}» (до 300 символов).')
+        components[key] = kopecks
+        sources[key] = reference
+    total = sum(components.values())
+    if total <= 0 or total > 10_000_000_000:
+        raise HTTPException(422, 'Итоговая себестоимость должна быть больше нуля и не превышать 100 млн ₽.')
+    canonical = {'operating_model': model, 'components': components, 'sources': sources}
+    digest = hashlib.sha256(json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    return total, model, components, sources, digest
+
+
+def _public_cost(row: ProductCostProfile | None) -> dict | None:
+    if row is None:
+        return None
+    return {
+        'operating_model': row.operating_model,
+        'components_rub': {key: _rubles(int(value)) for key, value in dict(row.components or {}).items()},
+        'source_references': dict(row.source_references or {}),
+        'calculation_sha256': row.calculation_sha256,
+        'source': row.source,
+        'confirmed_at': row.confirmed_at,
+    }
 
 
 def _line_in_period(row: MarketplaceFinancialLine, date_from: str, date_to: str) -> bool:
@@ -136,13 +233,15 @@ def start_profit_sync(payload: ProfitSyncRequest, user: User = Depends(get_curre
 def save_product_cost(nm_id: int, payload: ProductCostRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if nm_id <= 0:
         raise HTTPException(422, 'Некорректный nmId.')
-    if not payload.confirmed:
-        raise HTTPException(422, 'Подтвердите, что себестоимость взята из ваших документов.')
     store = resolve_store(db, user, payload.store_id)
     require_store_admin(db, user, store)
     _connection(db, store.id)
+    profile = db.query(BusinessOperatingProfile).filter(
+        BusinessOperatingProfile.store_id == store.id,
+        BusinessOperatingProfile.marketplace == 'wildberries',
+    ).first()
     try:
-        kopecks = int((payload.cogs_rub * 100).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+        kopecks, operating_model, components, source_references, calculation_sha256 = _verified_cost(payload, profile)
     except InvalidOperation as exc:
         raise HTTPException(422, 'Некорректная себестоимость.') from exc
     row = db.query(ProductCostProfile).filter(
@@ -152,16 +251,26 @@ def save_product_cost(nm_id: int, payload: ProductCostRequest, user: User = Depe
     ).first()
     now = datetime.now(timezone.utc)
     if row is None:
-        row = ProductCostProfile(store_id=store.id, marketplace='wildberries', nm_id=nm_id, cogs_kopecks=kopecks, confirmed_by_user_id=user.id, source='manual', confirmed_at=now)
+        row = ProductCostProfile(store_id=store.id, marketplace='wildberries', nm_id=nm_id, cogs_kopecks=kopecks, confirmed_by_user_id=user.id, confirmed_at=now)
         db.add(row)
-    else:
-        row.cogs_kopecks = kopecks
-        row.confirmed_by_user_id = user.id
-        row.source = 'manual'
-        row.confirmed_at = now
+    row.cogs_kopecks = kopecks
+    row.operating_model = operating_model
+    row.components = components
+    row.source_references = source_references
+    row.calculation_sha256 = calculation_sha256
+    row.confirmed_by_user_id = user.id
+    row.source = 'manual_breakdown' if operating_model != 'legacy_total' else 'manual_legacy'
+    row.confirmed_at = now
+    db.flush()
+    db.add(OperationalAuditEvent(
+        workspace_id=store.workspace_id, store_id=store.id, user_id=user.id,
+        event_type='profit.cost.confirmed', entity_type='product_cost', entity_id=row.id,
+        payload={'marketplace': 'wildberries', 'nm_id': nm_id, 'operating_model': operating_model,
+            'component_keys': sorted(components), 'cogs_kopecks': kopecks, 'calculation_sha256': calculation_sha256},
+    ))
     db.commit()
     db.refresh(row)
-    return {'nm_id': row.nm_id, 'cogs_rub': _rubles(row.cogs_kopecks), 'source': row.source, 'confirmed_at': row.confirmed_at}
+    return {'nm_id': row.nm_id, 'cogs_rub': _rubles(row.cogs_kopecks), 'cost_profile': _public_cost(row)}
 
 
 @router.patch('/tax')
@@ -214,6 +323,11 @@ def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get
         StoreTaxProfile.store_id == store.id,
         StoreTaxProfile.marketplace == 'wildberries',
     ).first()
+    operating_profile = db.query(BusinessOperatingProfile).filter(
+        BusinessOperatingProfile.store_id == store.id,
+        BusinessOperatingProfile.marketplace == 'wildberries',
+        BusinessOperatingProfile.status == 'confirmed',
+    ).first()
     catalog = latest_snapshot(db, store_id=store.id, marketplace='wildberries', snapshot_type='catalog')
     cards = {(item.get('nm_id')): item for item in ((catalog.payload or {}).get('items') or [])} if catalog else {}
     by_nm: dict[int, list[MarketplaceFinancialLine]] = {}
@@ -258,6 +372,7 @@ def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get
             'tax_reserve':_rubles(product_tax) if product_tax is not None else None,
             'final_profit':_rubles(final_profit) if final_profit is not None else None,
             'cost_confirmed_at': cost.confirmed_at if cost else None,
+            'cost_profile': _public_cost(cost),
         })
     products.sort(key=lambda item: (item['final_profit'] is None, Decimal(item['final_profit'] or item['contribution_before_tax_ads'] or '0'), item['nm_id']))
     totals = _totals(lines)
@@ -286,6 +401,12 @@ def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get
         'contribution_before_tax_ads': _rubles(contribution) if contribution is not None else None,
         'advertising':{'spend':_rubles(advertising_spend) if advertising_complete else None,'attributed_revenue':_rubles(advertising_revenue) if advertising_complete else None,'already_in_finance_deductions':_rubles(totals['advertising_deduction_kopecks']),'additional_adjustment':_rubles(advertising_adjustment) if advertising_complete else None},
         'tax':{'basis':tax_profile.basis if tax_profile else None,'rate_percent':f'{Decimal(tax_profile.rate_bps)/100:.2f}' if tax_profile else None,'reserve':_rubles(tax_reserve) if tax_reserve is not None else None,'note':tax_profile.note if tax_profile else '','confirmed_at':tax_profile.confirmed_at if tax_profile else None},
+        'operating_profile': ({
+            'operating_model': operating_profile.operating_model,
+            'allowed_sku_models': list(COST_COMPONENTS) if operating_profile.operating_model == 'mixed' else [operating_profile.operating_model],
+            'component_catalog': COST_COMPONENTS,
+            'confirmed_at': operating_profile.confirmed_at,
+        } if operating_profile else None),
         'profit_status': 'complete' if complete else 'partial',
         'final_profit': _rubles(final_profit) if final_profit is not None else None,
         'completeness': {

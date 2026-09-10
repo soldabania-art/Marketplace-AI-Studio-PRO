@@ -157,12 +157,14 @@
   margin-top: 10px;
 }
 .profitRows article {
-  display: grid;
-  grid-template-columns: minmax(190px, 1.5fr) 0.7fr 0.25fr 0.7fr 0.55fr auto;
-  gap: 10px;
-  align-items: center;
   border-top: 1px solid #1b2a3d;
   padding: 14px 0;
+}
+.skuProfitTop {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.5fr) 0.7fr 0.25fr 0.7fr 1.2fr;
+  gap: 10px;
+  align-items: center;
 }
 .profitRows article > div > span,
 .costConfirm span {
@@ -209,10 +211,11 @@
   opacity: 0.45;
 }
 .contribution {
-  grid-column: 2/-1;
   display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 4px;
 }
 .contribution b {
   color: #7ee2b8;
@@ -224,19 +227,87 @@
   color: #667b93;
   text-align: center;
 }
+.costProfileWarning {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid #59491f;
+  border-radius: 10px;
+  color: #e3cc8e;
+  background: #17160f;
+}
+.costProfileWarning span { flex: 1; }
+.costBreakdown {
+  margin-top: 12px;
+  border: 1px solid #233550;
+  border-radius: 10px;
+  background: #0a1422;
+}
+.costBreakdown summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 13px;
+  cursor: pointer;
+  color: #bdddff;
+  font-size: 12px;
+}
+.costBreakdown summary span { color: #71869f; font-size: 10px; }
+.costEditor { padding: 4px 13px 13px; }
+.costEditor > label,
+.costComponent label {
+  display: grid;
+  gap: 6px;
+  color: #8fa3ba;
+  font-size: 11px;
+}
+.costEditor input,
+.costEditor select {
+  width: 100%;
+  border: 1px solid #26364d;
+  border-radius: 8px;
+  background: #091321;
+  color: #fff;
+  padding: 8px;
+}
+.costComponents {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.costComponent {
+  display: grid;
+  grid-template-columns: minmax(130px, .7fr) minmax(190px, 1.3fr);
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #1c2b40;
+  border-radius: 9px;
+}
+.costEditorFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  margin-top: 12px;
+}
+.costEditorFooter > strong { margin-right: auto; color: #7ee2b8; }
 @media (max-width: 1050px) {
   .profitMetrics,
   .sourceGrid {
     grid-template-columns: repeat(2, 1fr);
   }
-  .profitRows article {
+  .skuProfitTop {
     grid-template-columns: 1fr 1fr 80px;
   }
   .profitIdentity {
     grid-column: 1/-1;
   }
-  .contribution {
+  .skuProfitTop .contribution {
     grid-column: 1/-1;
+    align-items: flex-start;
   }
   .taxEditor {
     grid-template-columns: repeat(2, 1fr);
@@ -244,6 +315,7 @@
   .taxEditor > div {
     grid-column: 1/-1;
   }
+  .costComponents { grid-template-columns: 1fr; }
 }
 @media (max-width: 680px) {
   .profitToolbar {
@@ -257,7 +329,7 @@
   .sourceGrid {
     grid-template-columns: 1fr;
   }
-  .profitRows article {
+  .skuProfitTop {
     grid-template-columns: 1fr 1fr;
   }
   .profitIdentity,
@@ -270,4 +342,7 @@
   .taxEditor > div {
     grid-column: auto;
   }
+  .costProfileWarning,
+  .costEditorFooter { align-items: stretch; flex-direction: column; }
+  .costComponent { grid-template-columns: 1fr; }
 }

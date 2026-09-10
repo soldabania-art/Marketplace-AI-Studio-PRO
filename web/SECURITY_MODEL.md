@@ -78,6 +78,10 @@ flowchart TD
 - Production uses dependency and secret scanning, protected branches, reviewed migrations and environment separation.
 - Logs and audit avoid raw credentials, payment details, personal documents and unnecessary marketplace payloads.
 - Security events have owner-visible severity, affected scope, containment state and a documented response path.
+- Production refuses to boot with SQLite, a non-TLS PostgreSQL URL, an HTTP frontend URL or a missing credential-encryption key.
+- API documentation is disabled in production, API responses are marked `no-store`, and browser/API security headers are set centrally.
+- Login throttling is evaluated by both privacy-preserving account hash and source IP hash; recovery and verification actions are bounded separately.
+- A database dump is still sensitive business data. Storage encryption alone does not make a stolen logical dump unreadable; private networking, least-privilege roles, audited access, encrypted backups and selective envelope encryption are separate required controls.
 
 ## 6. Release gates
 

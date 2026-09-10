@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.db import Base, engine
 from app.main import app
+from app.config import get_settings
 
 Base.metadata.create_all(bind=engine)
 client = TestClient(app)
@@ -14,6 +15,50 @@ def test_health():
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["x-request-id"]
+
+
+def test_api_responses_are_not_cached_and_oversized_requests_are_rejected():
+    response = client.get("/api/v1/billing/plans")
+    assert response.headers["cache-control"] == "no-store, max-age=0"
+    oversized = client.post(
+        "/api/v1/auth/login",
+        content=b"{}",
+        headers={"content-type": "application/json", "content-length": str(20 * 1024 * 1024 + 1)},
+    )
+    assert oversized.status_code == 413
+
+
+def test_weak_password_is_rejected_and_non_admin_cannot_list_users():
+    weak = client.post("/api/v1/auth/register", json={
+        "email": f"weak-{uuid.uuid4().hex}@example.com",
+        "password": "password1234",
+        "workspace_name": "Weak Password Test",
+    })
+    assert weak.status_code == 422
+    _, _, token = _register_user()
+    forbidden = client.get("/api/v1/admin/users", headers={"Authorization": f"Bearer {token}"})
+    assert forbidden.status_code == 403
+
+
+def test_failed_logins_are_bounded_by_source_ip(monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "login_ip_max_failures", 2)
+    source_ip = "2001:db8:" + ":".join(uuid.uuid4().hex[index:index + 4] for index in range(0, 16, 4))
+    headers = {"x-forwarded-for": source_ip}
+    for _ in range(2):
+        response = client.post("/api/v1/auth/login", headers=headers, json={
+            "email": f"missing-{uuid.uuid4().hex}@example.com",
+            "password": "NotThePassword123!",
+        })
+        assert response.status_code == 401
+    blocked = client.post("/api/v1/auth/login", headers=headers, json={
+        "email": f"missing-{uuid.uuid4().hex}@example.com",
+        "password": "NotThePassword123!",
+    })
+    assert blocked.status_code == 429
 
 
 def test_dashboard_is_explicitly_demo_until_connected():

@@ -17,7 +17,9 @@ TROVENDI uses one container image with separate process roles.
 
 3. **PostgreSQL**
    - Shared by API + workers.
-   - `MARKETPLACE_DATABASE_URL` must point to managed PostgreSQL in staging/production.
+   - `MARKETPLACE_DATABASE_URL` must point to managed PostgreSQL and require TLS in staging/production; certificate verification with `sslmode=verify-full` is preferred.
+   - Public database ingress must be disabled or temporarily restricted to a narrow provider/IP allowlist.
+   - Runtime credentials must use a non-owner, non-DDL role. See `../DATABASE_SECURITY_RUNBOOK.md`.
 
 4. **Migration step**
    - Run once before deploying new API/worker revisions: `alembic upgrade head`.
@@ -37,6 +39,8 @@ TROVENDI uses one container image with separate process roles.
 - `MARKETPLACE_OPENAI_IMAGE_QUALITY`, `MARKETPLACE_OPENAI_IMAGE_SIZE` — trial defaults are `low` and `1024x1024`
 - `MARKETPLACE_OPENAI_IMAGE_ESTIMATED_COST_MICROUSD` — current provider estimate used for budgets and audit
 - VAPID settings when Web Push is enabled
+
+The API intentionally refuses production startup when PostgreSQL, TLS, HTTPS, the JWT secret or the marketplace credential-encryption key is missing. Do not weaken these checks to make a deployment pass.
 
 Frontend must set `MARKETPLACE_API_URL` to the externally reachable API base URL. Connect a public Vercel Blob store to the frontend project; Vercel supplies `BLOB_STORE_ID` + rotating `VERCEL_OIDC_TOKEN`, or `BLOB_READ_WRITE_TOKEN` only for a non-OIDC/manual setup. Generated marketplace visuals use unique immutable paths and are never written when Blob credentials are absent.
 

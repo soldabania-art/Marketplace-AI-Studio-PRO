@@ -88,10 +88,11 @@ def _create_session(db: Session, request: Request, user: User) -> str:
     return create_access_token(user.id, session.id)
 
 
-def _login_is_limited(db: Session, email: str) -> bool:
+def _login_is_limited(db: Session, email: str, request: Request) -> bool:
     settings = get_settings()
     since = datetime.now(timezone.utc) - timedelta(minutes=settings.login_attempt_window_minutes)
-    failures = db.scalar(
+    ip_hash, _ = _request_fingerprint(request)
+    subject_failures = db.scalar(
         select(func.count(SecurityEvent.id)).where(
             SecurityEvent.event_type == "login",
             SecurityEvent.success.is_(False),
@@ -99,7 +100,33 @@ def _login_is_limited(db: Session, email: str) -> bool:
             SecurityEvent.created_at >= since,
         )
     ) or 0
-    return failures >= settings.login_attempt_max_failures
+    ip_failures = db.scalar(
+        select(func.count(SecurityEvent.id)).where(
+            SecurityEvent.event_type == "login",
+            SecurityEvent.success.is_(False),
+            SecurityEvent.ip_hash == ip_hash,
+            SecurityEvent.created_at >= since,
+        )
+    ) or 0
+    return subject_failures >= settings.login_attempt_max_failures or ip_failures >= settings.login_ip_max_failures
+
+
+def _account_action_is_limited(db: Session, request: Request, event_type: str, subject: str) -> bool:
+    settings = get_settings()
+    since = datetime.now(timezone.utc) - timedelta(minutes=settings.account_action_window_minutes)
+    ip_hash, _ = _request_fingerprint(request)
+    subject_hash = _privacy_hash(subject.lower().strip())
+    subject_count = db.scalar(select(func.count(SecurityEvent.id)).where(
+        SecurityEvent.event_type == event_type,
+        SecurityEvent.subject_hash == subject_hash,
+        SecurityEvent.created_at >= since,
+    )) or 0
+    ip_count = db.scalar(select(func.count(SecurityEvent.id)).where(
+        SecurityEvent.event_type == event_type,
+        SecurityEvent.ip_hash == ip_hash,
+        SecurityEvent.created_at >= since,
+    )) or 0
+    return subject_count >= settings.account_action_subject_limit or ip_count >= settings.account_action_ip_limit
 
 
 def _create_account_token(db: Session, user: User, purpose: AccountTokenPurpose, lifetime: timedelta) -> str:
@@ -205,7 +232,7 @@ def register(payload: RegisterRequest, request: Request, db: Session = Depends(g
 @router.post("/auth/login", response_model=TokenResponse)
 def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
     email = payload.email.lower().strip()
-    if _login_is_limited(db, email):
+    if _login_is_limited(db, email, request):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many failed login attempts. Try again later.")
     user = db.scalar(select(User).where(User.email == email, User.is_active.is_(True)))
     if user is None or not verify_password(payload.password, user.password_hash):
@@ -258,9 +285,12 @@ def security_events(current_user: User = Depends(get_current_user), db: Session 
 
 
 @router.post("/auth/email-verification/request")
-def request_email_verification(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def request_email_verification(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.email_verified:
         return {"ok": True, "message": "Email is already verified", "delivery": "not_required"}
+    if _account_action_is_limited(db, request, "email_verification_request", current_user.email):
+        raise HTTPException(status_code=429, detail="Too many verification requests. Try again later.")
+    _record_security_event(db, request, "email_verification_request", True, user=current_user, subject=current_user.email)
     settings = get_settings()
     raw_token = _create_account_token(db, current_user, AccountTokenPurpose.verify_email, timedelta(hours=settings.email_verification_hours))
     return _delivery_response(raw_token, AccountTokenPurpose.verify_email.value)
@@ -276,10 +306,14 @@ def confirm_email_verification(payload: TokenActionRequest, db: Session = Depend
 
 
 @router.post("/auth/password-reset/request")
-def request_password_reset(payload: EmailRequest, db: Session = Depends(get_db)):
+def request_password_reset(payload: EmailRequest, request: Request, db: Session = Depends(get_db)):
     email = payload.email.lower().strip()
+    if _account_action_is_limited(db, request, "password_reset_request", email):
+        return {"ok": True, "message": "If the account exists, instructions will be sent to its email address.", "delivery": "rate_limited"}
     user = db.scalar(select(User).where(User.email == email, User.is_active.is_(True)))
+    _record_security_event(db, request, "password_reset_request", True, user=user, subject=email)
     if user is None:
+        db.commit()
         return {"ok": True, "message": "If the account exists, instructions will be sent to its email address.", "delivery": "not_disclosed"}
     settings = get_settings()
     raw_token = _create_account_token(db, user, AccountTokenPurpose.reset_password, timedelta(minutes=settings.password_reset_minutes))

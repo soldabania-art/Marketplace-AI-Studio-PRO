@@ -50,7 +50,7 @@ export default function RegisterPage() {
           <label>Ваше имя<div className="authInput"><User size={18}/><input name="full_name" placeholder="Имя" autoComplete="name" required/></div></label>
           <label>Название компании / магазина<div className="authInput"><Building2 size={18}/><input name="workspace_name" placeholder="Мой магазин" required/></div></label>
           <label>Email<div className="authInput"><Mail size={18}/><input name="email" type="email" placeholder="you@company.ru" autoComplete="email" required/></div></label>
-          <label>Пароль<div className="authInput"><LockKeyhole size={18}/><input name="password" type="password" minLength={8} placeholder="Минимум 8 символов" autoComplete="new-password" required/></div></label>
+          <label>Пароль<div className="authInput"><LockKeyhole size={18}/><input name="password" type="password" minLength={12} maxLength={128} placeholder="Минимум 12 символов" autoComplete="new-password" required/></div></label>
           <label className="check terms"><input type="checkbox" required/> Я принимаю условия сервиса и политику конфиденциальности</label>
           {error && <div className="authError">{error}</div>}
           <button className="authPrimary" type="submit" disabled={loading}>{loading ? 'Создаём аккаунт…' : <>Создать аккаунт <ArrowRight size={18}/></>}</button>

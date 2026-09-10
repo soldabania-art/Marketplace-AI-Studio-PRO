@@ -1,7 +1,9 @@
 import asyncio
 from contextlib import asynccontextmanager
+import uuid
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
@@ -36,19 +38,52 @@ async def lifespan(app:FastAPI):
     finally:
         if stop_event is not None and monitor_task is not None: stop_event.set(); await monitor_task
 
-app=FastAPI(title=settings.app_name,version='0.24.0',description='TROVENDI backend',lifespan=lifespan)
+app=FastAPI(
+    title=settings.app_name,
+    version='0.25.0',
+    description='TROVENDI backend',
+    lifespan=lifespan,
+    docs_url=(None if settings.is_production else '/docs'),
+    redoc_url=(None if settings.is_production else '/redoc'),
+    openapi_url=(None if settings.is_production else '/openapi.json'),
+)
 allowed_origins={'http://localhost:3000','https://trovendi.ru','https://www.trovendi.ru','https://marketplace-ai-studio-pro.vercel.app',settings.frontend_url.rstrip('/')}
-app.add_middleware(CORSMiddleware,allow_origins=sorted(x for x in allowed_origins if x),allow_credentials=True,allow_methods=['GET','POST','PATCH','DELETE'],allow_headers=['*'])
+app.add_middleware(CORSMiddleware,allow_origins=sorted(x for x in allowed_origins if x),allow_credentials=True,allow_methods=['GET','POST','PATCH','DELETE'],allow_headers=['Authorization','Content-Type'])
+
+
+@app.middleware('http')
+async def security_boundary(request: Request, call_next):
+    request_id = str(uuid.uuid4())
+    content_length = request.headers.get('content-length')
+    if content_length:
+        try:
+            if int(content_length) > settings.max_request_body_bytes:
+                return JSONResponse({'detail':'Request body is too large'},status_code=413,headers={'X-Request-ID':request_id})
+        except ValueError:
+            return JSONResponse({'detail':'Invalid Content-Length'},status_code=400,headers={'X-Request-ID':request_id})
+    response = await call_next(request)
+    response.headers['X-Request-ID'] = request_id
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Referrer-Policy'] = 'no-referrer'
+    response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=()'
+    response.headers['Cross-Origin-Opener-Policy'] = 'same-origin'
+    if request.url.path.startswith('/api/'):
+        response.headers['Cache-Control'] = 'no-store, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+    if settings.is_production:
+        response.headers['Strict-Transport-Security'] = 'max-age=63072000; includeSubDomains; preload'
+    return response
 
 @app.get('/health',tags=['system'])
-def health(): return {'status':'ok','service':'marketplace-ai-studio-api','version':'0.24.0','environment':settings.environment,'embedded_fbo_monitor':settings.run_fbo_monitor_in_api}
+def health(): return {'status':'ok','service':'marketplace-ai-studio-api','version':'0.25.0','environment':settings.environment,'embedded_fbo_monitor':settings.run_fbo_monitor_in_api}
 
 @app.get('/ready',tags=['system'])
 def ready():
     try:
         with engine.connect() as connection: connection.execute(text('SELECT 1'))
     except Exception as exc: raise HTTPException(status_code=503,detail='Database is not ready') from exc
-    return {'status':'ready','database':'ok','version':'0.24.0'}
+    return {'status':'ready','database':'ok','version':'0.25.0'}
 
 app.include_router(account_router,prefix='/api/v1',tags=['account'])
 app.include_router(agent_router,prefix='/api/v1')

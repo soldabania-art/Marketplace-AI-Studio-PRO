@@ -194,6 +194,7 @@ The web product and future Android app use the same versioned API, permissions a
 
 ### P0 — complete the safe vertical product
 
+0. Complete the production security perimeter: private PostgreSQL connectivity, least-privilege runtime role, encrypted PITR/backups with restore drill, MFA/passkeys, step-up authorization for exports/admin actions, observed Vercel WAF rules, and PostgreSQL RLS rollout. **Application baseline implemented:** production fails closed without PostgreSQL/TLS/HTTPS/secrets, API docs are disabled, auth/recovery limits and anti-cache headers are active, and cross-tenant exfiltration probes run in tests. Infrastructure controls remain launch gates until verified in the providers.
 1. Finish one store-scoped Card Factory using real catalog facts.
 2. Persist generated images and generation metadata. **Implemented for Card Factory; Beginner Studio reuse remains.**
 3. Add validation preview and confirmed WB publication. **Implemented for title/description and separately approved image upload, each with post-write verification and no automatic retry.**
@@ -286,4 +287,5 @@ A feature is done only when all applicable gates pass:
 - Reseller/importer, manufacturer and distributor are versioned business operating profiles, not tenants. Profiles can differ by SKU and are proposed by AI but confirmed by a user before affecting financial calculations.
 - TROVENDI uses bounded AI capabilities behind typed domain services. Finance AI has no arbitrary production SQL, vector retrieval is not financial memory, and Guided mode never weakens approval or money-safety rules.
 - The near-term scale path is a modular application, PostgreSQL, transactional outbox, durable idempotent jobs, workload-specific workers and rate-limit backpressure. Kafka, ClickHouse or service extraction require measured workload evidence.
+- Security is a launch gate, not a marketing label. Current application controls do not make a stolen logical database dump harmless; private networking, minimal database roles, independent encrypted backups, monitored key access, PostgreSQL RLS and selective per-tenant envelope encryption follow `DATABASE_SECURITY_RUNBOOK.md` and must be verified before broad onboarding.
 - Cross-customer benchmarks and logistics radar require separate consent, contractual data-use rights, comparable cohorts, minimum cohort protection, uncertainty disclosure and access audit. Raw tenant data is never shared across retrieval contexts.

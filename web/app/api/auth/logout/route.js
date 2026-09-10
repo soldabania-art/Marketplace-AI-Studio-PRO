@@ -18,6 +18,8 @@ export async function POST() {
   }
 
   const response = NextResponse.json({ ok: true })
+  response.headers.set('Clear-Site-Data','"cache", "cookies", "storage"')
+  response.headers.set('Cache-Control','no-store, max-age=0')
   response.cookies.set('mai_session', '', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',

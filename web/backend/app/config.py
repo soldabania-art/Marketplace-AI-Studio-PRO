@@ -1,5 +1,6 @@
 from functools import lru_cache
 import secrets
+from cryptography.fernet import Fernet
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,6 +18,11 @@ class Settings(BaseSettings):
     session_last_seen_write_seconds: int = 300
     login_attempt_window_minutes: int = 15
     login_attempt_max_failures: int = 5
+    login_ip_max_failures: int = 25
+    account_action_window_minutes: int = 15
+    account_action_subject_limit: int = 5
+    account_action_ip_limit: int = 25
+    max_request_body_bytes: int = 20 * 1024 * 1024
     email_verification_hours: int = 24
     password_reset_minutes: int = 30
     frontend_url: str = "http://localhost:3000"
@@ -56,13 +62,30 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def secure_runtime_secrets(self):
-        if self.jwt_secret:
-            if self.is_production and len(self.jwt_secret) < 32:
-                raise ValueError("MARKETPLACE_JWT_SECRET must contain at least 32 characters in production")
-            return self
+        if not self.jwt_secret:
+            if self.is_production:
+                raise ValueError("MARKETPLACE_JWT_SECRET is required in production")
+            self.jwt_secret = secrets.token_urlsafe(48)
+        if self.is_production and len(self.jwt_secret) < 32:
+            raise ValueError("MARKETPLACE_JWT_SECRET must contain at least 32 characters in production")
         if self.is_production:
-            raise ValueError("MARKETPLACE_JWT_SECRET is required in production")
-        self.jwt_secret = secrets.token_urlsafe(48)
+            if not self.database_url.startswith(("postgresql://", "postgresql+psycopg://", "postgresql+psycopg2://")):
+                raise ValueError("MARKETPLACE_DATABASE_URL must use PostgreSQL in production")
+            tls_markers = ("sslmode=require", "sslmode=verify-full", "ssl=true")
+            if not any(marker in self.database_url.lower() for marker in tls_markers):
+                raise ValueError("MARKETPLACE_DATABASE_URL must require TLS in production")
+            if not self.marketplace_token_key:
+                raise ValueError("MARKETPLACE_MARKETPLACE_TOKEN_KEY is required in production")
+            if self.marketplace_secret_provider.strip().lower() != "fernet":
+                raise ValueError("Unsupported marketplace secret provider")
+            try:
+                Fernet(self.marketplace_token_key.encode())
+            except Exception as exc:
+                raise ValueError("MARKETPLACE_MARKETPLACE_TOKEN_KEY must be a valid Fernet key") from exc
+            if self.jwt_algorithm != "HS256":
+                raise ValueError("MARKETPLACE_JWT_ALGORITHM must be HS256 in production")
+            if not self.frontend_url.lower().startswith("https://"):
+                raise ValueError("MARKETPLACE_FRONTEND_URL must use HTTPS in production")
         return self
 
     @property

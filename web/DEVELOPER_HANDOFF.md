@@ -64,3 +64,16 @@ npm run build
 PostgreSQL migrations проверять на отдельной тестовой БД: fresh install и previous→head. Production credentials, клиентские данные и реальные внешние записи не использовать.
 
 Источники: [аудит](ARCHITECTURE_REVIEW_2026-09-12.md), [дерево](PRODUCT_TREE.md), [roadmap](PRODUCT_ROADMAP.md), [backlog](DEVELOPER_BACKLOG.md), [security](SECURITY_MODEL.md).
+
+
+## Уточнение владельца и текущая доработка
+
+Исполнитель проекта — GPT 5.6 Sol. Главный разработчик самостоятельно доводит обнаруженные при приёмке дефекты до проверяемого результата; не возвращает владельцу только промпт для другого исполнителя.
+
+PR #28: устранено блокирующее ожидание scope-lock через pg_try_advisory_xact_lock и явный HTTP 409 EXTERNAL_WRITE_BUSY; добавлены PostgreSQL проверки двух сессий в одном event loop и освобождения после commit/rollback/cancellation. Head `3d4335fcbcaf454e8d50a2ac68fe124338ddf90f`.
+
+PR #29: неоднозначные nm/nms отклоняются; проверка и нормализация используют общий разбор. Добавлены регрессии aliases и сохранности БД. Head `01e95dde52c8e7eeafcdeade4255557da324116f`.
+
+Эти изменения требуют полного CI на указанных SHA и повторной приёмки; прежние зелёные запуски их не подтверждают. T05 пока не начинается.
+
+T01: код CI внедрён, но GitHub Ruleset с обязательными проверками остаётся BLOCKED_EXTERNAL до подтверждённого включения владельцем репозитория. CLOSED issue #1 не доказывает запрет слияния красных PR.

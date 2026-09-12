@@ -1,5 +1,7 @@
 # TROVENDI Document Vault
 
+> 2026-09-12 review: code foundation, not production-certified. [T11/T12](DEVELOPER_BACKLOG.md) cover transport, scanner lifecycle and authorization gaps.
+
 ## Purpose
 
 The vault is the tenant-scoped evidence layer for seller, buyer/order and fulfillment operations. Binary files live in a dedicated **private** object store. PostgreSQL stores identity, ownership, links, hashes, retention state and immutable access events; it never stores the file body.
@@ -35,3 +37,11 @@ Retention is policy-driven by document class, seller jurisdiction, transaction c
 4. Add country-specific, lawyer/accountant-approved retention policies.
 5. Add connectors for OFD/fiscal receipts, marketplace order documents, EDI and fulfillment partner documents.
 6. Add data-subject request workflows without deleting records under accounting or legal hold.
+
+## Audit corrections — 2026-09-12
+
+The lifecycle above is the target contract. At baseline f090a4b, finalize does not enqueue scanner work, callback duplicates are not idempotent, and scan error cannot be retried through the existing callback. Membership checks do not yet implement a document-role matrix or require a seller–partner agreement for partner links. These must not be described as completed controls.
+
+Current upload/download Next.js handlers buffer file bodies up to 25 MB. This exceeds the ordinary Vercel Function request/response limit of 4.5 MB ([official limit](https://vercel.com/docs/functions/limitations), checked 2026-09-12). Implement authorized direct private upload or dedicated backend transport and a protected download transport; do not expose private documents through public marketplace asset storage.
+
+Before enabling the module commercially, verify scanner submission/retry/replay, object identity and size/hash, actor role, related store/partner scope, immutable versions, retention and legal holds. Receipts and buyer records must come from an authorized source; their existence in the concept is not a claim that marketplaces expose all buyer documents.

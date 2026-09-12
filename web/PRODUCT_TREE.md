@@ -1,104 +1,95 @@
-# TROVENDI product tree
+# TROVENDI — дерево продукта
 
-Status legend: **live foundation** = real data/code exists; **active** = current production work; **planned** = sequenced but not implemented.
+Версия архитектуры: **12.09.2026**. Проверенный baseline: `f090a4b`.
+Концепция одобрена для разработки; production-готовность не утверждена. Доказательства — [аудит](ARCHITECTURE_REVIEW_2026-09-12.md); ближайшие задачи — [backlog](DEVELOPER_BACKLOG.md).
 
-```mermaid
-flowchart TD
-    T["TROVENDI · AI Commerce OS"] --> E["Entry journeys"]
-    T --> D["AI Director"]
-    T --> G["Agent control and security"]
-    T --> C["Commerce engines"]
-    T --> I["Integration platform"]
-    T --> M["Mobile and notifications"]
-    E --> B["Beginner · one photo"]
-    E --> S["Seller · connected store"]
-    E --> A["Agency · client portfolio"]
-    E --> CH["Start-page channel selector"]
-    E --> CF["Public bundle configurator"]
-    E --> PAY["Account → payment → MFA → workspace"]
-    C --> P["Profit and products"]
-    C --> F["Card Factory and SEO"]
-    C --> O["Ads, reviews, stock, reports"]
-    C --> X["Expansion platform"]
-    I --> WB["Wildberries first"]
-    I --> AC["Accounting RF/CIS"]
-    I --> OZ["Ozon and other marketplaces"]
-    X --> CB["Cross-border CIS"]
-    X --> MF["Manufacturer OS"]
-    X --> NW["Wholesale and community"]
-```
+## 1. Как читать дерево
 
-## 1. Entry journeys
+- **Код / частично:** путь или часть логики есть; это не гарантия работающего production.
+- **Shell:** страница существует, операция не реализована.
+- **План:** принятая часть концепции без готового исполнения.
+- **Внешний gate:** нужны проверенный provider/runtime/договор/данные.
+- **Production подтверждён:** присваивается только отдельной capability со ссылкой на датированную проверку exact SHA.
 
-- **Public entry — live foundation:** product promise → scenario/marketplace choice → security and trial boundaries → pricing → registration or login. The private dashboard renders only after session verification.
-- **Start-page channels — active:** guest sees an honest roadmap choice; authenticated seller sees per-store connection state from the server. Current catalog: Wildberries → Ozon → Yandex Market → Kaspi.kz → Uzum Market → demand-led connectors. Only an existing connection record may be labelled `connected`.
-- **Public bundle configurator — live foundation:** before login, the visitor selects an available channel, modules and store scale. Registration validates and persists one tenant-scoped, non-sensitive purchase intent while granting only Trial; a matching verified payment event may mark it fulfilled. Planned channels create demand signals and fall back to the available WB route instead of being sold as live.
-- **Paid entry contract — live routing foundation; provider gate:** configuration → account/contact verification → provider checkout → verified server webhook → mandatory MFA → chosen workspace/module. `/billing/activation` derives the next step from server state; redirect parameters and browser state can never activate paid rights.
-- **Beginner — live foundation:** photo analysis → confirmed facts → card draft → economics → preview → approved publication → hand-off to AI Director. Trial: 72 hours from first successful analysis, five successful cards, one user, one store.
-- **Existing seller — live foundation:** connect store → catalog/stocks/sales snapshots → Profit Center → evidence-ranked Daily Director → Card Factory or operational action.
-- **Agency — planned:** organizations → clients → stores → roles → approvals → portfolio reporting → white label.
+Старое обозначение «live foundation» заменено более точным состоянием. У каталогов интеграций должны отдельно храниться declared, implemented, certified и enabled capabilities.
 
-## 2. Core operating loop
+## 2. Продуктовые ветви
 
-```mermaid
-flowchart LR
-    A["Collect facts"] --> B["Calculate"] --> C["Recommend"] --> D["Preview"]
-    D --> E["Approve"] --> F["Execute"] --> G["Verify"] --> H["Measure"]
-    H --> I["Keep or roll back"]
-```
+| Ветвь первого уровня | Подветви | Текущий статус и ближайший результат |
+| --- | --- | --- |
+| Вход и активация | Public landing; выбор маркетплейсов, модулей и масштаба; тариф; account/email; платёж; MFA; выбранное рабочее пространство | Код / частично. T09/T10/T16: работающий путь и честная доступность |
+| Beginner Studio | Фото → подтверждённые факты → экономика → текст/визуалы → preview → доступная публикация/экспорт → Director | Код / частично. T21: общий сохраняемый проект; new-card create — отдельная capability |
+| Seller workspace | Один или несколько магазинов; цели; operating profile; context; подключённый набор | Код / частично. T13/T16: workspace/store и права без смешения |
+| Agency workspace | Клиенты; назначения сотрудников; роли; portfolio; client portal; white label; bulk approvals | План поверх общих организаций и stores; не отдельный финансовый engine |
+| AI Director | Очередь по фактам; объяснения; решения; план; handoff в модуль; измерение | Код / частично. T02/T07/T16: общий STOP и согласованная freshness |
+| AI platform | Capability registry; Rules/Free, Economy, Premium; router; budget; jobs; prompts/evals; reviewed learning; Sentinel | Registry и generation persistence есть; T05/T15: реальный runtime contract |
+| Товары и контент | Canonical products/variants/listings; фактология; Card Factory; SEO; версии; локализация | WB-код и частичные UI. T05/T06/T18: facts, immutable assets, canonical ID |
+| Финансы | Source ledgers; profit; COGS; tax reserve; рекламные затраты; сверка; штрафы; claims; отчёты | Код / частично. T04/T17: строгий импорт и воспроизводимые периоды |
+| Продвижение | Реклама; ставки/лимиты; reviews; SEO/search; competitor intelligence; Growth Lab/A-B; external traffic | Ads readers/reviews есть; остальные очереди частично или план |
+| Запасы и поставки | Складские остатки; demand/cover; FBO slots; supply plan; FBS; reservations; возвраты | WB/FBO foundation. Физический ledger и подтверждённое распределение — план |
+| Сеть фулфилментов | Каталог → partner onboarding → договор и grants → facilities → интеграция → приёмка/резерв/заказ/возврат → тарифы/сверка | Каталог/модели есть. T19 read-only pilot, затем T20 operations |
+| Документы и доказательства | Seller/partner/order/buyer документы; версии; private storage; scan; links; search; export; retention/hold | Код / частично. T11/T12 до продажи готового сейфа |
+| Integration Hub | WB → Ozon → ЯМ/Kaspi/Uzum; 1С/МойСклад/Saby/Контур; WMS/fulfillment; CSV/XLSX; EDI/OFD | WB и CSV foundation; остальные по adapter gates T18 |
+| Поддержка и сообщество | Контекстная помощь; incidents/human queue; база знаний; paid forum; verified profiles/partnerships | Support foundation; T22. Форум план, доступ всем активным paid |
+| Управление платформой | Auth/MFA/RBAC; billing; admin; audit; secrets; data health; worker/queue; backups; observability | Код / инфраструктурные gates T01/T08/T13/T14 |
+| Каналы уведомлений | In-app; Web Push/PWA; Telegram; Android camera/alerts/approve/STOP | Web Push foundation; остальные план на общем API/event model |
+| Расширение РФ/СНГ | Multi-currency/FX; country/route profiles; localization; seller-of-record; Manufacturer BOM; wholesale/D2C | Discovery и последовательные пилоты после сверенного ядра |
 
-AI coordinates the loop. Deterministic services remain authoritative for facts, money, permissions, limits, audit and external writes.
+## 3. Главный пользовательский маршрут
 
-## 3. Module branches
+Публичная страница доступна без входа. На ней видны функции, каналы, тарифы и что доступно сейчас. Пользователь сохраняет выбор, создаёт account, подтверждает email и оплачивает выбранный доступ через провайдера. Права выдаёт только проверенное серверное событие. Затем MFA и вход в выбранный store/workspace. Trial пропускает платёж, но не защиту marketplace credentials.
 
-| Branch | Status | Depends on | Next gate |
-| --- | --- | --- | --- |
-| Accounts, stores, trial | **live foundation** | PostgreSQL, auth, server entitlements | RF/CIS payment checkout and verified webhook adapter |
-| Business profiles / onboarding | **live foundation** | store context + source health + durable jobs | Source-specific mapping UI and document readers |
-| WB snapshots | **live foundation** | encrypted token, worker | Reconciliation and freshness SLO |
-| Products | **live foundation** | catalog + stock + velocity | Provenance and cross-source identity |
-| AI Card Factory | **live foundation** | facts + AI persistence | Production observation of text and media writes |
-| Beginner Studio | **active** | trial + facts + Card Factory | Reuse stored visuals and publication pipeline |
-| Profit Center | **live foundation** | WB ledgers, verified costs, CSV presets, private import journal, preview/commit + tax | Production reconciliation, XLSX and certified accounting adapters |
-| Penalties and claims | **read-only foundation** | normalized WB finance ledger + ranked reason groups | Reviews, condition changes and explicitly approved claim workflow |
-| AI Director | **live foundation** | healthy sources + Profit Center + review facts | Previewed marketplace-write executors and verified rollback |
-| Agent network and Security Sentinel | **live foundation** | auth + store scope + audit | Offline eval artefacts, signed policy promotion and bounded executor gates |
-| AI Support Agent | **safe incident-intake foundation** | audit, store context + versioned knowledge | Approved knowledge, citations and human queue integration |
-| SEO and advertising | **P1 in progress** | Director + marketplace readers | Measured recommendations before bounded writes |
-| Reviews | **snapshot + persisted grounded AI analysis** | feedback reader + fact hash + cost ledger | Human approval workflow; automatic replies remain disabled |
-| Integration Hub | **versioned catalog live** | tenant scope + connector capability contract | WB reconciliation, then Ozon/1C/MoySklad read adapters |
-| Reports and autopilot | **planned P1/P2** | audit + approvals + measurement | Bounded policies and rollback evidence |
-| Integration Hub | **planned P2** | canonical commerce model | 1C and MoySklad first |
-| Android/PWA | **foundation** | versioned API + event model | Alerts, camera, approve/reject, emergency stop |
-| Cross-border CIS | **discovery** | Integration Hub + reconciled Profit Center | Kazakhstan read-only economics pilot |
-| Manufacturer OS | **planned P3** | canonical products + accounting sources | Versioned BOM and production costing |
-| Omnichannel / Wholesale | **planned P3** | inventory ledger + channel connectors | Reservation-safe stock and quote MVP |
-| Professional community | **planned P4; entitlement defined** | active paid subscription + verified users + moderation | `community_access` is PRO/Business-only; build guides, verified profiles and partnership requests |
-| Network insights | **planned P3** | consent + viable protected cohorts | Benchmark and logistics-radar pilots |
+Внутри магазина главный экран — **реальная очередь AI Director** с одной следующей задачей в Guided mode и evidence/альтернативами в Expert mode. KPI — контекст к решениям и вторичный обзор. У каждого результата видны источник, время, магазин, провайдер/режим и стоимость либо «неизвестна». STOP доступен постоянно. Инциденты поддержки и форум — разные функции.
 
-## 4. Integration tree
+## 4. Общее дерево данных и полномочий
 
-- Marketplaces
-  - Wildberries: catalog → stocks → sales velocity → confirmed content text → verified append-only media → economics → ads/reviews/claims.
-  - Ozon: begins after the complete WB write path is production-safe.
-  - Yandex Market: follows Ozon through the same canonical product/order/inventory contracts.
-  - Kaspi.kz: first cross-border discovery candidate after legal, partner, API and economics validation.
-  - Uzum Market: follows the Kazakhstan pilot with bilingual localization and separate logistics economics.
-  - Megamarket and demand-led channels: use the connector contract; display in UI never implies availability.
-- Accounting RF/CIS
-  - Wave 1: 1C, MoySklad, Saby/SBIS, Kontur.
-  - Wave 2: BAS/localized 1C, Odoo, demand-led enterprise systems.
-  - Universal: CSV/XLSX mappings, REST/webhooks, SFTP/object storage and partner SDK.
-- Notifications
-  - Web Push/PWA first.
-  - Android: approval required, stock risk, sync failure, margin risk, advertising limits, reviews and completed AI jobs.
+| Родитель | Дочерние сущности | Граница |
+| --- | --- | --- |
+| User | Memberships, sessions, MFA | Пользователь может состоять в нескольких организациях |
+| Workspace | Clients при Agency, Stores, subscription, budgets | Explicit context; первый Membership не является выбором пользователя |
+| Store | MarketplaceConnections, canonical products, source records, actions | Каждая операция разрешается сервером |
+| Product / Variant | MarketplaceListings и partner mappings | WB nm_id — внешний ID; не универсальный ключ |
+| Partner organization | Memberships, facilities, adapter/credentials | Изолированный домен партнёра |
+| Seller ↔ Partner agreement | Store/facility grants, capabilities, тарифные версии | Разрешены только указанные операции и данные |
+| Operation / Order / Shipment | Immutable events, stock movements, reservations, claims | Физический факт не выводится из текста AI |
+| Business entity | Document links и document versions | Tenant + role + relationship + scan/retention |
+| Action | Evidence, proposal/hash, decision, execution, verification, measurement | Один договор исполнения для ручных и AI writes |
 
-## 5. Delivery spine
+Это целевая модель; существующие таблицы покрывают лишь часть строк. Новые сущности вводятся миграциями, не отмечаются реализованными заранее.
 
-1. **P0:** one safe WB vertical is implemented through provider-neutral billing entitlements; production observation and the selected payment adapter remain launch gates.
-2. **P1:** operational AI Director, self-service onboarding, typed AI capabilities, health monitoring, approval inbox, incident-safe Support Agent and read-only risk modules.
-3. **P2:** Integration Hub, 1C/MoySklad, Ozon, Android and agency roles.
-4. **P3:** Kazakhstan cross-border pilot, Manufacturer OS foundation, omnichannel and wholesale workflows.
-5. **P4:** broader CIS routes, connector SDK, professional network/community and enterprise scale.
+## 5. Сеть фулфилментов: обязательная детализация
 
-This file is the hierarchy view. [`PRODUCT_ROADMAP.md`](./PRODUCT_ROADMAP.md) remains the delivery source of truth; [`AI_ORCHESTRATION_AND_SCALE.md`](./AI_ORCHESTRATION_AND_SCALE.md) defines onboarding, AI boundaries and scale; [`SUPPORT_AGENT_ARCHITECTURE.md`](./SUPPORT_AGENT_ARCHITECTURE.md) defines support safety; [`EXPANSION_STRATEGY.md`](./EXPANSION_STRATEGY.md) defines the accepted discovery architecture.
+| Подветвь | Что должно быть внутри |
+| --- | --- |
+| Партнёр и площадки | Проверенный контрагент, страны, timezone, facility, поддерживаемые операции, версия интеграции |
+| Подключение продавца | Договор, согласие сторон, scope stores/facilities, secret reference, test/read-only, отзыв доступа |
+| Товары и остатки | Canonical SKU mapping, единицы, owner stock, available/reserved/quarantine, cursor и сверка |
+| Приёмка | Заявка, подтверждение, фактические количества, расхождения, акт и доказательства |
+| Заказы и отгрузки | Резерв, сборка, упаковка, частичная отгрузка, carrier milestones, отмена |
+| Возвраты и claims | Приём возврата, состояние, карантин, повторная продажа/списание, претензия |
+| Тарифы и расчёты | Версия тарифа, quote, согласование, акт, начисление, сверка и dispute |
+| Документы | Ссылки на договор/операцию, immutable versions, scan, permissions, hold/retention |
+| Надёжность | Signed events, inbox/outbox, duplicate/out-of-order handling, retry, reconciliation, audit |
+| Масштаб | Pagination, индексы, rate limits, worker isolation, monitoring и реальная нагрузочная проверка |
+
+500 записей каталога не означают 500 работающих интеграций. Первый gate — один read-only партнёр; затем физические операции на контролируемом пилоте; затем измеренное масштабирование.
+
+## 6. Очерёдность
+
+| Этап | Результат | Основные задачи |
+| --- | --- | --- |
+| A. Контроль изменений | Проверки PR и PostgreSQL | T01 |
+| B. Достоверность и безопасность | STOP, entitlements, import/facts/media/freshness, jobs и access | T02–T08, T13 |
+| C. Готовая платная WB-вертикаль | Email, billing, budgets, runtime, понятный UX и сверка | T09/T10/T14–T17/T21/T22 |
+| D. Документы и общий integration contract | Private transport/lifecycle, canonical IDs | T11/T12/T18 |
+| E. Фулфилменты | Read-only пилот, затем operations/ledger | T19/T20 |
+| F. Расширение | Ozon, 1С/МойСклад, agency, paid community, Android | Следующие ограниченные задачи после gates ядра |
+| G. СНГ/производство/опт | Казахстанский read-only пилот; затем остальные направления | Discovery по EXPANSION_STRATEGY |
+
+Этапы C/D можно вести независимо там, где зависимости закрыты. Форум сохраняется для каждого активного платного пользователя; его нельзя обещать уже работающим. Операции 1С и других источников используют тот же preview/commit для затрат.
+
+## 7. Физическая структура разработки
+
+Сохраняем `web/app`, `web/components`, `web/lib`, `web/backend/app` и Alembic. Выделять доменные сервисы постепенно по выполняемой задаче: identity, billing, AI, actions, commerce, integrations, fulfillment, documents, support. Не переносить всё в новую структуру одновременно.
+
+[PRODUCT_ROADMAP](PRODUCT_ROADMAP.md) хранит весь принятый scope и историю; раздел 0 фиксирует новое решение. [DEVELOPER_BACKLOG](DEVELOPER_BACKLOG.md) задаёт следующий проверяемый шаг. [SECURITY_MODEL](SECURITY_MODEL.md), [AI_ORCHESTRATION_AND_SCALE](AI_ORCHESTRATION_AND_SCALE.md), [EXPANSION_STRATEGY](EXPANSION_STRATEGY.md) остаются тематическими контрактами.

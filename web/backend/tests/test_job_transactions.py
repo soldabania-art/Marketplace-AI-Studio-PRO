@@ -15,6 +15,19 @@ from app.wb_finance import parse_financial_report_page
 from app.wb_promotion import parse_advertising_stats_page
 
 Base.metadata.create_all(bind=engine)
+_TEST_STORES = []
+
+
+@pytest.fixture(autouse=True)
+def isolate_transaction_stores_from_global_scheduler():
+    """Later scheduler tests must not poll connections created by fault tests."""
+    start = len(_TEST_STORES)
+    yield
+    with SessionLocal() as db:
+        db.query(MarketplaceConnection).filter(
+            MarketplaceConnection.store_id.in_(_TEST_STORES[start:])
+        ).update({'enabled': False}, synchronize_session=False)
+        db.commit()
 
 
 def make_store():
@@ -27,6 +40,7 @@ def make_store():
         db.add(MarketplaceConnection(user_id=user.id, store_id=store.id,
             marketplace='wildberries', encrypted_token='test', enabled=True))
         db.commit()
+        _TEST_STORES.append(store.id)
         return store.id, workspace.id
 
 

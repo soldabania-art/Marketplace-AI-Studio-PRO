@@ -8,12 +8,14 @@ from pydantic import BaseModel, Field, model_validator
 from typing import Literal
 from sqlalchemy.orm import Session
 
+from .data_health import expected_coverage
 from .db import get_db
 from .job_queue import enqueue
 from .marketplace_sync import latest_snapshot
 from .models import BusinessOperatingProfile, CostImportBatch, CostImportMapping, MarketplaceAdvertisingLine, MarketplaceConnection, MarketplaceFinancialLine, OperationalAuditEvent, ProductCostProfile, StoreTaxProfile, User
 from .security import get_current_user
 from .store_access import require_store_admin, resolve_store
+from .sync_scheduler import enqueue_sync_job
 
 router = APIRouter(prefix='/profit-center', tags=['profit-center'])
 
@@ -137,9 +139,8 @@ def _connection(db: Session, store_id: str):
 
 
 def _period(period_days: int) -> tuple[str, str]:
-    end = date.today()
-    start = end - timedelta(days=max(7, min(90, period_days)) - 1)
-    return start.isoformat(), end.isoformat()
+    coverage = expected_coverage('finance', period_days=max(7, min(90, period_days)))
+    return coverage['date_from'], coverage['date_to']
 
 
 def _rubles(kopecks: int) -> str:
@@ -316,26 +317,17 @@ def start_profit_sync(payload: ProfitSyncRequest, user: User = Depends(get_curre
     store = resolve_store(db, user, payload.store_id)
     _connection(db, store.id)
     date_from, date_to = _period(payload.period_days)
-    run_id = f'{date_from}:{date_to}:{datetime.now(timezone.utc).strftime("%Y%m%d%H")}'
-    finance_job = enqueue(
-        db,
-        job_type='marketplace.wb.finance.sync',
-        idempotency_key=f'wb-finance:{store.id}:{run_id}:start',
+    now = datetime.now(timezone.utc)
+    run_id = f'manual:profit:{date_from}:{date_to}:{int(now.timestamp() // 3600)}'
+    finance_job, _ = enqueue_sync_job(
+        db, store=store, group='finance', now=now, suffix=f'{run_id}:start',
         payload={'store_id': store.id, 'date_from': date_from, 'date_to': date_to, 'rrd_id': 0, 'page_number': 1, 'run_id': run_id},
-        workspace_id=store.workspace_id,
-        store_id=store.id,
         priority=45,
-        max_attempts=5,
     )
-    advertising_job = enqueue(
-        db,
-        job_type='marketplace.wb.advertising.sync',
-        idempotency_key=f'wb-ads:{store.id}:{run_id}:start',
+    advertising_job, _ = enqueue_sync_job(
+        db, store=store, group='advertising', now=now, suffix=f'{run_id}:start',
         payload={'store_id':store.id,'date_from':date_from,'date_to':date_to,'run_id':run_id},
-        workspace_id=store.workspace_id,
-        store_id=store.id,
         priority=46,
-        max_attempts=5,
     )
     return {
         'job_id':finance_job.id,

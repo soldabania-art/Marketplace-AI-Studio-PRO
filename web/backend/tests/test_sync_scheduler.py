@@ -1,7 +1,12 @@
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from threading import Barrier
+
+import pytest
 
 from app.data_health_incidents import reconcile_health_incidents
+from app.data_health import expected_coverage
 from app.db import Base, SessionLocal, engine
 from app.job_queue import safe_job_error
 from app.models import (
@@ -16,7 +21,7 @@ from app.models import (
     User,
     Workspace,
 )
-from app.sync_scheduler import schedule_due_syncs_once
+from app.sync_scheduler import enqueue_sync_job, schedule_due_syncs_once
 
 Base.metadata.create_all(bind=engine)
 
@@ -82,15 +87,19 @@ def test_scheduler_queues_due_read_only_syncs_once_per_window_and_resolves_incid
     with SessionLocal() as db:
         jobs = db.query(BackgroundJob).filter(BackgroundJob.store_id == store_id).all()
         assert {job.job_type for job in jobs} == {
-            'marketplace.wb.analytics.sync', 'marketplace.wb.finance.sync', 'marketplace.wb.advertising.sync'}
-        assert len(jobs) == 3
+            'marketplace.wb.analytics.sync', 'marketplace.wb.finance.sync',
+            'marketplace.wb.advertising.sync', 'marketplace.wb.feedbacks.sync'}
+        assert len(jobs) == 4
         assert all((job.payload or {}).get('origin') == 'scheduler' for job in jobs)
         assert db.query(DataHealthIncident).filter(DataHealthIncident.store_id == store_id, DataHealthIncident.status == 'open').count() == 5
         for job in jobs:
             job.status = JobStatus.succeeded; job.finished_at = now
+        coverage = expected_coverage('finance', now=now + timedelta(minutes=1), period_days=30)
         for snapshot_type, payload in (
             ('catalog', {'count': 1}), ('stocks', {'count': 1}), ('sales_velocity_7d', {'count': 1}),
-            ('finance_realization_sync', {'complete': True}), ('advertising_sync', {'complete': True}),
+            ('finance_realization_sync', {**coverage, 'complete': True}),
+            ('advertising_sync', {**coverage, 'complete': True}),
+            ('feedbacks', {'count': 1, 'items': []}),
         ):
             db.add(MarketplaceSnapshot(store_id=store_id, marketplace='wildberries', snapshot_type=snapshot_type,
                 payload=payload, created_at=now, source_updated_at=now))
@@ -185,3 +194,37 @@ def test_finance_recovery_runs_receive_distinct_page_namespaces():
         assert second.payload['run_id'] != first_run_id
         assert first_run_id in first.idempotency_key
         assert second.payload['run_id'] in second.idempotency_key
+
+
+@pytest.mark.skipif(engine.dialect.name != 'postgresql', reason='concurrent root sync admission requires PostgreSQL advisory locks')
+def test_concurrent_root_sync_admission_reuses_one_active_job_postgresql():
+    _, store_id = _connected_store()
+    barrier = Barrier(2)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+
+    def admit(origin):
+        with SessionLocal() as db:
+            store = db.get(Store, store_id)
+            barrier.wait(timeout=5)
+            job, created = enqueue_sync_job(
+                db,
+                store=store,
+                group='analytics',
+                now=now,
+                payload={'store_id': store.id, 'origin': origin},
+                priority=55,
+            )
+            return job.id, created
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(admit, ('scheduler', 'browser')))
+
+    assert len({job_id for job_id, _ in results}) == 1
+    assert sum(int(created) for _, created in results) == 1
+    with SessionLocal() as db:
+        active = db.query(BackgroundJob).filter(
+            BackgroundJob.store_id == store_id,
+            BackgroundJob.job_type == 'marketplace.wb.analytics.sync',
+            BackgroundJob.status.in_([JobStatus.queued, JobStatus.running, JobStatus.retry]),
+        ).all()
+        assert len(active) == 1

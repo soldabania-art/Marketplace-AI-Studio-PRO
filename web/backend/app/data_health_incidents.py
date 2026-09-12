@@ -57,8 +57,12 @@ def reconcile_health_incidents(db: Session, *, workspace_id: str, store_id: str,
     for item in sources:
         source_key, state = item['key'], item['status']
         row = by_source.get(source_key)
-        if state in {'stale', 'error'}:
-            state_message = 'синхронизация завершилась ошибкой' if state == 'error' else 'данные устарели'
+        if state in {'stale', 'incomplete', 'error'}:
+            state_message = {
+                'error': 'синхронизация завершилась ошибкой',
+                'incomplete': 'период загружен не полностью',
+                'stale': 'данные устарели',
+            }[state]
             message = f"{labels[source_key]}: {state_message}. AI Director ограничил решения до восстановления источника."
             is_new_or_reopened = row is None or row.status != 'open'
             if row is None:

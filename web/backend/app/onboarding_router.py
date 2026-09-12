@@ -1,17 +1,17 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
-from .data_health import store_data_health
+from .data_health import expected_coverage, store_data_health
 from .db import get_db
 from .marketplace_sync import latest_snapshot
-from .job_queue import enqueue
 from .models import BackgroundJob, BusinessOperatingProfile, JobStatus, MarketplaceConnection, OperationalAuditEvent, User
 from .security import get_current_user
 from .store_access import require_store_admin, resolve_store
+from .sync_scheduler import enqueue_sync_job
 
 router = APIRouter(prefix='/onboarding', tags=['onboarding'])
 
@@ -109,11 +109,6 @@ def _import_progress(db: Session, store_id: str, health: dict) -> dict:
         sources = [source_map[item] for item in source_keys]
         job = _latest_job(db, store_id, job_type)
         complete = all(item['status'] in {'healthy', 'delayed'} for item in sources)
-        if key in {'finance', 'advertising'}:
-            snapshot_type = 'finance_realization_sync' if key == 'finance' else 'advertising_sync'
-            snapshot = latest_snapshot(db, store_id=store_id, marketplace='wildberries', snapshot_type=snapshot_type)
-            snapshot_payload = dict(snapshot.payload or {}) if snapshot else {}
-            complete = complete and snapshot_payload.get('complete') is True and snapshot_payload.get('date_to') == datetime.now(timezone.utc).date().isoformat()
         if complete:
             state = 'complete'; total += weight
         elif job and job.status == JobStatus.dead:
@@ -128,18 +123,6 @@ def _import_progress(db: Session, store_id: str, health: dict) -> dict:
             'job': {'id': job.id, 'status': job.status.value, 'attempts': job.attempts, 'max_attempts': job.max_attempts} if job else None})
     return {'progress_percent': total, 'complete': total == 100, 'groups': groups,
         'resumable': True, 'message': 'Импорт продолжится в фоне после закрытия страницы.'}
-
-
-def _active_or_enqueue(db: Session, *, store, job_type: str, idempotency_key: str, payload: dict, priority: int) -> BackgroundJob:
-    active = db.query(BackgroundJob).filter(
-        BackgroundJob.store_id == store.id,
-        BackgroundJob.job_type == job_type,
-        BackgroundJob.status.in_([JobStatus.queued, JobStatus.running, JobStatus.retry]),
-    ).order_by(BackgroundJob.created_at.desc()).first()
-    if active:
-        return active
-    return enqueue(db, job_type=job_type, idempotency_key=idempotency_key, payload=payload,
-        workspace_id=store.workspace_id, store_id=store.id, priority=priority, max_attempts=5)
 
 
 def _actions(*, connected: bool, health: dict, profile: BusinessOperatingProfile | None, metrics: dict) -> list[dict]:
@@ -235,13 +218,16 @@ def start_import(store_id: str, user: User = Depends(get_current_user), db: Sess
     ).first()
     if connection is None:
         raise HTTPException(409, 'Сначала подключите Wildberries к выбранному магазину.')
-    now = datetime.now(timezone.utc); today = now.date(); begin = today - timedelta(days=29); run_id = f'onboarding:{begin}:{today}'
+    now = datetime.now(timezone.utc)
+    coverage = expected_coverage('finance', now=now, period_days=30)
+    begin, today = coverage['date_from'], coverage['date_to']
+    run_id = f'onboarding:{begin}:{today}:{int(now.timestamp() // 3600)}'
     recovery_slot = int(now.timestamp() // 3600)
-    common = {'store_id': store.id, 'date_from': begin.isoformat(), 'date_to': today.isoformat(), 'run_id': run_id, 'origin': 'onboarding'}
+    common = {'store_id': store.id, 'date_from': begin, 'date_to': today, 'run_id': run_id, 'origin': 'onboarding'}
     jobs = {
-        'core': _active_or_enqueue(db, store=store, job_type='marketplace.wb.analytics.sync', idempotency_key=f'onboarding-core:{store.id}:{today}:{recovery_slot}', payload={'store_id': store.id, 'origin': 'onboarding'}, priority=50),
-        'finance': _active_or_enqueue(db, store=store, job_type='marketplace.wb.finance.sync', idempotency_key=f'onboarding-finance:{store.id}:{today}:{recovery_slot}', payload=common | {'rrd_id': 0, 'page_number': 1}, priority=51),
-        'advertising': _active_or_enqueue(db, store=store, job_type='marketplace.wb.advertising.sync', idempotency_key=f'onboarding-advertising:{store.id}:{today}:{recovery_slot}', payload=common | {'campaign_ids': [], 'date_index': 0, 'batch_index': 0}, priority=52),
+        'core': enqueue_sync_job(db, store=store, group='analytics', now=now, suffix=f'onboarding:{recovery_slot}', payload={'store_id': store.id, 'origin': 'onboarding'}, priority=50)[0],
+        'finance': enqueue_sync_job(db, store=store, group='finance', now=now, suffix=f'{run_id}:start', payload=common | {'rrd_id': 0, 'page_number': 1}, priority=51)[0],
+        'advertising': enqueue_sync_job(db, store=store, group='advertising', now=now, suffix=f'{run_id}:start', payload=common | {'campaign_ids': [], 'date_index': 0, 'batch_index': 0}, priority=52)[0],
     }
     db.add(OperationalAuditEvent(workspace_id=store.workspace_id, store_id=store.id, user_id=user.id,
         event_type='onboarding.import.requested', entity_type='store', entity_id=store.id,

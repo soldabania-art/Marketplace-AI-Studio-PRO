@@ -2,14 +2,14 @@ import asyncio
 import hashlib
 import logging
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from .config import get_settings
-from .data_health import store_data_health
+from .data_health import expected_coverage, refresh_due, store_data_health
 from .data_health_incidents import reconcile_health_incidents
 from .db import SessionLocal
 from .job_queue import enqueue
-from .models import BackgroundJob, MarketplaceConnection, Store
+from .models import BackgroundJob, JobStatus, MarketplaceConnection, Store
 from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
@@ -34,20 +34,66 @@ def _bucket(now: datetime, seconds: int) -> int:
     return int(now.timestamp() // max(60, seconds))
 
 
-def _due(source: dict, interval_seconds: int) -> bool:
-    if source['status'] in {'missing', 'stale', 'error'}:
-        return True
-    return source['status'] == 'delayed' and int(source.get('age_seconds') or 0) >= interval_seconds
-
-
 def _was_missing(db, key: str) -> bool:
     return db.query(BackgroundJob.id).filter(BackgroundJob.idempotency_key == key).first() is None
+
+
+def _sync_job_lock_key(store_id: str, job_type: str) -> int:
+    raw = int.from_bytes(hashlib.blake2b(f'job:{store_id}:{job_type}'.encode(), digest_size=8).digest(), 'big')
+    return raw if raw < 2**63 else raw - 2**64
+
+
+def enqueue_sync_job(
+    db,
+    *,
+    store,
+    group: str,
+    payload: dict,
+    now: datetime | None = None,
+    suffix: str | None = None,
+    priority: int,
+) -> tuple[BackgroundJob, bool]:
+    """Deduplicate a root sync across scheduler, Director and browser endpoints."""
+    settings = get_settings()
+    specs = {
+        'analytics': ('marketplace.wb.analytics.sync', settings.sync_analytics_interval_seconds),
+        'feedbacks': ('marketplace.wb.feedbacks.sync', settings.sync_feedbacks_interval_seconds),
+        'finance': ('marketplace.wb.finance.sync', settings.sync_finance_interval_seconds),
+        'advertising': ('marketplace.wb.advertising.sync', settings.sync_advertising_interval_seconds),
+    }
+    if group not in specs:
+        raise ValueError(f'Unsupported sync group: {group}')
+    job_type, interval = specs[group]
+    if db.get_bind().dialect.name == 'postgresql':
+        db.execute(text('SELECT pg_advisory_xact_lock(:key)'), {'key': _sync_job_lock_key(store.id, job_type)})
+    active = db.query(BackgroundJob).filter(
+        BackgroundJob.store_id == store.id,
+        BackgroundJob.job_type == job_type,
+        BackgroundJob.status.in_([JobStatus.queued, JobStatus.running, JobStatus.retry]),
+    ).order_by(BackgroundJob.created_at.desc()).first()
+    if active:
+        return active, False
+    current = now or datetime.now(timezone.utc)
+    namespace = suffix or str(_bucket(current, interval))
+    key = f'wb-sync:{group}:{store.id}:{namespace}'
+    is_new = _was_missing(db, key)
+    job = enqueue(
+        db,
+        job_type=job_type,
+        idempotency_key=key,
+        payload=payload,
+        workspace_id=store.workspace_id,
+        store_id=store.id,
+        priority=priority,
+        max_attempts=5,
+    )
+    return job, is_new
 
 
 def schedule_due_syncs_once(now: datetime | None = None) -> dict[str, int]:
     """Schedule read-only marketplace jobs; unique keys make concurrent workers safe."""
     settings = get_settings(); now = now or datetime.now(timezone.utc)
-    totals = {'stores': 0, 'analytics': 0, 'finance': 0, 'advertising': 0, 'incidents_opened': 0, 'incidents_resolved': 0}
+    totals = {'stores': 0, 'analytics': 0, 'finance': 0, 'advertising': 0, 'feedbacks': 0, 'incidents_opened': 0, 'incidents_resolved': 0}
     db = SessionLocal()
     try:
         rows = db.query(MarketplaceConnection, Store).join(Store, Store.id == MarketplaceConnection.store_id).filter(
@@ -64,27 +110,34 @@ def schedule_due_syncs_once(now: datetime | None = None) -> dict[str, int]:
                 incident_stats = reconcile_health_incidents(db, workspace_id=store.workspace_id, store_id=store.id, sources=health['sources'], now=now)
                 totals['incidents_opened'] += incident_stats['opened']; totals['incidents_resolved'] += incident_stats['resolved']
                 sources = {item['key']: item for item in health['sources']}
-                if any(_due(sources[key], settings.sync_analytics_interval_seconds) for key in ('catalog', 'stocks', 'sales')):
-                    key = f"auto-wb-analytics:{store.id}:{_bucket(now, settings.sync_analytics_interval_seconds)}"
-                    is_new = _was_missing(db, key)
-                    enqueue(db, job_type='marketplace.wb.analytics.sync', idempotency_key=key,
-                        payload={'store_id': store.id, 'origin': 'scheduler'}, workspace_id=store.workspace_id,
-                        store_id=store.id, priority=65, max_attempts=5)
+                if any(refresh_due(sources[key], settings.sync_analytics_interval_seconds) for key in ('catalog', 'stocks', 'sales')):
+                    _, is_new = enqueue_sync_job(db, store=store, group='analytics', now=now,
+                        payload={'store_id': store.id, 'origin': 'scheduler'}, priority=65)
                     totals['analytics'] += int(is_new)
-                period_to = now.date(); period_from = period_to - timedelta(days=29)
-                common = {'store_id': store.id, 'date_from': period_from.isoformat(), 'date_to': period_to.isoformat(), 'run_id': f'auto:{period_from}:{period_to}', 'origin': 'scheduler'}
-                if _due(sources['finance'], settings.sync_finance_interval_seconds):
-                    suffix = f"recovery:{_bucket(now, settings.sync_dead_retry_interval_seconds)}" if sources['finance']['status'] == 'error' else str(period_to)
-                    key = f'auto-wb-finance:{store.id}:{suffix}'; is_new = _was_missing(db, key)
-                    enqueue(db, job_type='marketplace.wb.finance.sync', idempotency_key=key,
-                        payload=common | {'rrd_id': 0, 'page_number': 1}, workspace_id=store.workspace_id, store_id=store.id, priority=70, max_attempts=5)
+                coverage = expected_coverage('finance', now=now, period_days=30)
+                period_from, period_to = coverage['date_from'], coverage['date_to']
+                if refresh_due(sources['finance'], settings.sync_finance_interval_seconds):
+                    suffix = f"recovery:{_bucket(now, settings.sync_dead_retry_interval_seconds)}" if sources['finance']['status'] == 'error' else f'period:{period_to}'
+                    run_id = f'auto:finance:{period_from}:{period_to}:{suffix}'
+                    _, is_new = enqueue_sync_job(db, store=store, group='finance', now=now,
+                        suffix=f'{run_id}:start',
+                        payload={'store_id': store.id, 'date_from': period_from, 'date_to': period_to,
+                                 'run_id': run_id, 'origin': 'scheduler', 'rrd_id': 0, 'page_number': 1},
+                        priority=70)
                     totals['finance'] += int(is_new)
-                if _due(sources['advertising'], settings.sync_advertising_interval_seconds):
-                    suffix = f"recovery:{_bucket(now, settings.sync_dead_retry_interval_seconds)}" if sources['advertising']['status'] == 'error' else str(period_to)
-                    key = f'auto-wb-advertising:{store.id}:{suffix}'; is_new = _was_missing(db, key)
-                    enqueue(db, job_type='marketplace.wb.advertising.sync', idempotency_key=key,
-                        payload=common | {'campaign_ids': [], 'date_index': 0, 'batch_index': 0}, workspace_id=store.workspace_id, store_id=store.id, priority=71, max_attempts=5)
+                if refresh_due(sources['advertising'], settings.sync_advertising_interval_seconds):
+                    suffix = f"recovery:{_bucket(now, settings.sync_dead_retry_interval_seconds)}" if sources['advertising']['status'] == 'error' else f'period:{period_to}'
+                    run_id = f'auto:advertising:{period_from}:{period_to}:{suffix}'
+                    _, is_new = enqueue_sync_job(db, store=store, group='advertising', now=now,
+                        suffix=f'{run_id}:start',
+                        payload={'store_id': store.id, 'date_from': period_from, 'date_to': period_to,
+                                 'run_id': run_id, 'origin': 'scheduler', 'campaign_ids': [],
+                                 'date_index': 0, 'batch_index': 0}, priority=71)
                     totals['advertising'] += int(is_new)
+                if refresh_due(sources['feedbacks'], settings.sync_feedbacks_interval_seconds):
+                    _, is_new = enqueue_sync_job(db, store=store, group='feedbacks', now=now,
+                        payload={'store_id': store.id, 'origin': 'scheduler'}, priority=64)
+                    totals['feedbacks'] += int(is_new)
         return totals
     finally:
         db.close()

@@ -1,16 +1,15 @@
 # TROVENDI — очередь разработки после аудита
 
-Дата: 12.09.2026. Проверенный `main`: `00ad0318abe7cebe353015afdb7f68847054f960`. [Решение и доказательства](ARCHITECTURE_REVIEW_2026-09-12.md).
+Дата: 12.09.2026. Проверенный `main`: `ac0bd409f39168376b162bba5e8ff16052a1dca3`. [Решение и доказательства](ARCHITECTURE_REVIEW_2026-09-12.md).
 
 Концепция одобрена; коммерческий запуск не одобрен. Первичный клиент — действующий продавец Wildberries. Ближайший процесс: подключение → полнота данных → детерминированная экономика → подтверждённые проблемы → задачи с доказательствами → разрешённое действие → статус и результат.
 
-Фактическое состояние issues на момент обновления: #1 и #3 закрыты; #2 и #4 повторно открыты и имеют отдельные PR для независимой приёмки; #5–#22 открыты. Следующий кодовый приоритет после приёмки исправлений — только T05. Внешний блокер не разрешает обходить security gate.
+Фактическое состояние issues на момент обновления: #1–#4 закрыты; #5–#22 открыты. T02/T04 последовательно интегрированы и проверены на общем `main`. Текущий кодовый приоритет — только T05. Внешний блокер не разрешает обходить security gate.
 
 | Состояние | Задачи |
 | --- | --- |
-| Закрыто | [T01 / #1](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/1), [T03 / #3](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/3) |
-| Повторно открыто, PR на независимой приёмке | [T02 / #2](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/2) → [PR #28](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/28); [T04 / #4](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/4) → [PR #29](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/29) |
-| Следующая после приёмки | [T05 / #5](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/5) |
+| Закрыто и интегрировано | [T01 / #1](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/1), [T02 / #2](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/2), [T03 / #3](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/3), [T04 / #4](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/4) |
+| Текущая задача | [T05 / #5](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/5) |
 | Открыто, выполнять по зависимостям | T06–T22 |
 
 
@@ -71,7 +70,7 @@
 
 ## T02 · P0 · Подключить Emergency STOP ко всем внешним публикациям
 
-**Статус:** REOPENED · исправление на независимой приёмке в [PR #28](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/28) · [GitHub #2](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/2). **Зависимости:** T01.
+**Статус:** CLOSED · интегрировано merge SHA `0652d810b5a1f6b521e27c04826c8a2cd035849f` · [PR #28](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/28) · [GitHub #2](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/2). **Зависимости:** T01.
 
 **Файлы:** web/backend/app/card_factory_router.py; director_router.py; models.py; web/components/DailyDirectorWorkspace.js.
 
@@ -95,7 +94,7 @@
 
 ## T04 · P0 · Запретить превращение некорректных финансовых данных в ноль
 
-**Статус:** REOPENED · исправление на независимой приёмке в [PR #29](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/29) · [GitHub #4](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/4). **Зависимости:** T01.
+**Статус:** CLOSED · интегрировано merge SHA `0e4e6ea40aa201e4ad1beda75710a2b0d3566ead` · [PR #29](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/29) · [GitHub #4](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/4). **Зависимости:** T01.
 
 **Файлы:** web/backend/app/wb_finance.py; wb_promotion.py; marketplace_sync.py; profit_center_router.py.
 
@@ -107,7 +106,7 @@
 
 ## T05 · P0 · Проверять утверждения AI по фактам, а не только ID и числам
 
-**Статус:** NEXT AFTER T02/T04 ACCEPTANCE · [GitHub #5](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/5). **Зависимости:** T03.
+**Статус:** IN PROGRESS · отдельный regression-first PR · [GitHub #5](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/5). **Зависимости:** T03.
 
 **Файлы:** web/backend/app/ai_card_factory.py; beginner_router.py; review_ai.py; web/backend/tests/test_ai_card_factory.py.
 
@@ -352,14 +351,8 @@
 Не писать «всё готово», если готов только каталог, prompt, frontend shell или локальный mock. Не закрывать эпик по одной миграции.
 
 
-## Уточнение владельца и текущая доработка
+## Последняя интеграция
 
-Исполнитель проекта — GPT 5.6 Sol. Главный разработчик самостоятельно доводит обнаруженные при приёмке дефекты до проверяемого результата; не возвращает владельцу только промпт для другого исполнителя.
+PR #28/T02 и PR #29/T04 последовательно слиты, затем слит PR #30. Итоговый `main`: `ac0bd409f39168376b162bba5e8ff16052a1dca3`. Совместный [Web Cloud #319](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/actions/runs/34692105098) завершён успешно: SQLite 189 passed/7 skipped, PostgreSQL 196 passed, frontend/build success; [Vercel](https://vercel.com/soldabania-5646/marketplace-ai-studio-pro/FErLnV3jymmPUxzyjhrbS8QPkSua) success.
 
-PR #28: устранено блокирующее ожидание scope-lock через pg_try_advisory_xact_lock и явный HTTP 409 EXTERNAL_WRITE_BUSY; добавлены PostgreSQL проверки двух сессий в одном event loop и освобождения после commit/rollback/cancellation. Head `3d4335fcbcaf454e8d50a2ac68fe124338ddf90f`.
-
-PR #29: неоднозначные nm/nms отклоняются; проверка и нормализация используют общий разбор. Добавлены регрессии aliases и сохранности БД. Head `01e95dde52c8e7eeafcdeade4255557da324116f`.
-
-Эти изменения требуют полного CI на указанных SHA и повторной приёмки; прежние зелёные запуски их не подтверждают. T05 пока не начинается.
-
-T01: код CI внедрён, но GitHub Ruleset с обязательными проверками остаётся BLOCKED_EXTERNAL до подтверждённого включения владельцем репозитория. CLOSED issue #1 не доказывает запрет слияния красных PR.
+T05 теперь активна. T06 и остальные функциональные задачи не начинать до отдельного решения. GitHub Ruleset остаётся BLOCKED_EXTERNAL до подтверждённого включения; CLOSED T01 не заменяет эту инфраструктурную проверку.

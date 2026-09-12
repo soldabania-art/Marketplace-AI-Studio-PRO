@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi import HTTPException
 
-from app.profit_center_router import ProductCostRequest, TaxProfileRequest, _financial_risks, _public_amounts, _public_import_summary, _tax_kopecks, _totals, _validated_import_mapping, _verified_cost, save_tax_profile
+from app.profit_center_router import ProductCostRequest, TaxProfileRequest, _financial_risks, _public_amounts, _public_import_summary, _sync_is_complete, _tax_kopecks, _totals, _validated_import_mapping, _verified_cost, save_tax_profile
 
 
 def line(**values):
@@ -32,6 +32,14 @@ def test_missing_money_is_zero_not_invented():
     totals=_totals([line(quantity=3)])
     assert totals['wb_net_kopecks']==0
     assert _public_amounts(totals)['gross']=='0.00'
+
+
+def test_profit_never_marks_unknown_or_partial_import_as_complete():
+    assert _sync_is_complete(True,{'complete':True,'schema_state':'valid','rejected_count':0}) is True
+    assert _sync_is_complete(True,{'complete':True,'schema_state':'documented_empty','rejected_count':0}) is True
+    assert _sync_is_complete(True,{'complete':True,'schema_state':'unknown','rejected_count':0}) is False
+    assert _sync_is_complete(True,{'complete':True,'schema_state':'partial','rejected_count':1}) is False
+    assert _sync_is_complete(False,{'complete':True,'schema_state':'valid','rejected_count':0}) is False
 
 
 def test_advertising_deduction_is_exposed_for_double_charge_reconciliation():

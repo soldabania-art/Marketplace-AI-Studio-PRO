@@ -1,0 +1,14 @@
+[
+  {
+    "advertId": 77,
+    "name": "Поиск",
+    "days": [
+      {
+        "date": "2026-09-08",
+        "apps": [
+          {"nm": [{"nmId": 123, "sum": "10.25", "sumPrice": "100", "views": 10, "clicks": 2, "orders": 1, "shks": 1}]}
+        ]
+      }
+    ]
+  }
+]

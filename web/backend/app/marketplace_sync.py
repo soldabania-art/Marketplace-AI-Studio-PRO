@@ -83,7 +83,25 @@ async def sync_wb_finance(payload: dict) -> None:
         if not store:
             raise RuntimeError('Store was not found')
         token = decrypt_connection(connection)
-        rows = await fetch_financial_report_page(token, date_from=date_from, date_to=date_to, rrd_id=rrd_id)
+        page = await fetch_financial_report_page(token, date_from=date_from, date_to=date_to, rrd_id=rrd_id)
+        if not page.safe_to_apply:
+            save_snapshot(db, store_id=store_id, marketplace='wildberries', snapshot_type='finance_realization_sync', payload={
+                'date_from':date_from,'date_to':date_to,'run_id':run_id,'complete':False,'page_number':page_number,
+                'schema_state':page.schema_state,'raw_count':page.raw_count,'accepted_count':page.accepted_count,
+                'rejected_count':page.rejected_count,'rrd_id':rrd_id,'evidence':page.evidence,
+            })
+            raise RuntimeError(f'Wildberries finance page rejected: {page.schema_state}')
+        rows = page.items
+        complete = page.schema_state == 'documented_empty'
+        next_rrd_id = rrd_id if page.cursor is None else page.cursor
+        if rows and next_rrd_id <= rrd_id:
+            save_snapshot(db, store_id=store_id, marketplace='wildberries', snapshot_type='finance_realization_sync', payload={
+                'date_from':date_from,'date_to':date_to,'run_id':run_id,'complete':False,'page_number':page_number,
+                'schema_state':'partial','raw_count':page.raw_count,'accepted_count':page.accepted_count,
+                'rejected_count':page.rejected_count,'rrd_id':rrd_id,
+                'evidence':[{'code':'non_advancing_cursor','current':rrd_id,'returned':next_rrd_id}],
+            })
+            raise RuntimeError('Wildberries returned a non-advancing finance cursor')
         inserted = 0
         updated = 0
         for item in rows:
@@ -101,12 +119,6 @@ async def sync_wb_finance(payload: dict) -> None:
                     setattr(row, key, value)
                 updated += 1
         db.commit()
-        complete = not rows
-        next_rrd_id = rrd_id
-        if rows:
-            next_rrd_id = int(rows[-1]['source_line_id'])
-            if next_rrd_id <= rrd_id:
-                raise RuntimeError('Wildberries returned a non-advancing finance cursor')
         save_snapshot(
             db,
             store_id=store_id,
@@ -119,6 +131,11 @@ async def sync_wb_finance(payload: dict) -> None:
                 'complete': complete,
                 'page_number': page_number,
                 'page_rows': len(rows),
+                'schema_state': page.schema_state,
+                'raw_count': page.raw_count,
+                'accepted_count': page.accepted_count,
+                'rejected_count': page.rejected_count,
+                'evidence': page.evidence,
                 'inserted_rows': inserted,
                 'updated_rows': updated,
                 'rrd_id': next_rrd_id,
@@ -163,16 +180,33 @@ async def sync_wb_advertising(payload: dict) -> None:
         if not store: raise RuntimeError('Store was not found')
         token=decrypt_connection(connection)
         if not campaign_ids:
-            campaign_ids=await fetch_campaign_ids(token)
-            if not campaign_ids:
-                save_snapshot(db,store_id=store_id,marketplace='wildberries',snapshot_type='advertising_sync',payload={'date_from':date_from,'date_to':date_to,'run_id':run_id,'complete':True,'campaign_count':0,'page_number':0,'page_rows':0})
+            campaign_page=await fetch_campaign_ids(token)
+            if not campaign_page.safe_to_apply:
+                save_snapshot(db,store_id=store_id,marketplace='wildberries',snapshot_type='advertising_sync',payload={
+                    'date_from':date_from,'date_to':date_to,'run_id':run_id,'complete':False,'campaign_count':0,
+                    'page_number':0,'page_rows':0,'schema_state':campaign_page.schema_state,'evidence':campaign_page.evidence,
+                    'raw_count':campaign_page.raw_count,'accepted_count':campaign_page.accepted_count,'rejected_count':campaign_page.rejected_count,
+                })
+                raise RuntimeError(f'Wildberries campaign page rejected: {campaign_page.schema_state}')
+            campaign_ids=[item['campaign_id'] for item in campaign_page.items]
+            if campaign_page.schema_state == 'documented_empty':
+                save_snapshot(db,store_id=store_id,marketplace='wildberries',snapshot_type='advertising_sync',payload={'date_from':date_from,'date_to':date_to,'run_id':run_id,'complete':True,'campaign_count':0,'page_number':0,'page_rows':0,'schema_state':'documented_empty','raw_count':0,'accepted_count':0,'rejected_count':0,'evidence':[]})
                 return
         intervals=date_chunks(date_from,date_to)
         batches=[campaign_ids[index:index+50] for index in range(0,len(campaign_ids),50)]
         if date_index>=len(intervals) or batch_index>=len(batches):
             raise ValueError('advertising cursor is outside the requested range')
         begin,end=intervals[date_index]
-        rows=await fetch_advertising_stats(token,ids=batches[batch_index],date_from=begin,date_to=end)
+        page=await fetch_advertising_stats(token,ids=batches[batch_index],date_from=begin,date_to=end)
+        if not page.safe_to_apply:
+            save_snapshot(db,store_id=store_id,marketplace='wildberries',snapshot_type='advertising_sync',payload={
+                'date_from':date_from,'date_to':date_to,'run_id':run_id,'complete':False,'campaign_count':len(campaign_ids),
+                'page_number':date_index*len(batches)+batch_index+1,'page_rows':0,'schema_state':page.schema_state,
+                'raw_count':page.raw_count,'accepted_count':page.accepted_count,'rejected_count':page.rejected_count,
+                'date_index':date_index,'batch_index':batch_index,'evidence':page.evidence,
+            })
+            raise RuntimeError(f'Wildberries advertising page rejected: {page.schema_state}')
+        rows=page.items
         inserted=0; updated=0
         existing_rows=db.query(MarketplaceAdvertisingLine).filter(
             MarketplaceAdvertisingLine.store_id==store_id,
@@ -204,6 +238,8 @@ async def sync_wb_advertising(payload: dict) -> None:
             'date_from':date_from,'date_to':date_to,'run_id':run_id,'complete':complete,
             'campaign_count':len(campaign_ids),'date_chunks':len(intervals),'campaign_batches':len(batches),
             'page_number':page_number,'page_rows':len(rows),'inserted_rows':inserted,'updated_rows':updated,'deleted_rows':deleted,
+            'schema_state':page.schema_state,'raw_count':page.raw_count,'accepted_count':page.accepted_count,
+            'rejected_count':page.rejected_count,'evidence':page.evidence,
             'date_index':date_index,'batch_index':batch_index,
         })
         if not complete:

@@ -237,6 +237,15 @@ def _line_in_period(row: MarketplaceFinancialLine, date_from: str, date_to: str)
     return bool(value and date_from <= value <= date_to)
 
 
+def _sync_is_complete(coverage_matches: bool, payload: dict) -> bool:
+    return bool(
+        coverage_matches
+        and payload.get('complete')
+        and payload.get('schema_state') in {'valid','documented_empty'}
+        and not payload.get('rejected_count')
+    )
+
+
 def _is_advertising_deduction(row: MarketplaceFinancialLine) -> bool:
     text=f'{getattr(row,"operation","") or ""} {getattr(row,"document_type","") or ""}'.lower()
     return any(marker in text for marker in ('реклам','продвиж','advert'))
@@ -608,8 +617,8 @@ def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get
     for row in advertising_lines:
         if row.nm_id: ads_by_nm.setdefault(int(row.nm_id),[]).append(row)
         else: unallocated_ads.append(row)
-    finance_complete=bool(finance_matches and finance_payload.get('complete'))
-    advertising_complete=bool(advertising_matches and advertising_payload.get('complete'))
+    finance_complete=_sync_is_complete(finance_matches,finance_payload)
+    advertising_complete=_sync_is_complete(advertising_matches,advertising_payload)
     products = []
     confirmed_products = 0
     for nm_id, product_lines in by_nm.items():
@@ -658,8 +667,8 @@ def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get
         'marketplace': 'wildberries',
         'period': {'days': days, 'date_from': date_from, 'date_to': date_to},
         'sync': {
-            'finance':{'started':bool(finance_sync),'coverage_matches':finance_matches,'complete':finance_complete,'page_number':finance_payload.get('page_number'),'last_snapshot_at':finance_sync.created_at if finance_sync else None,'next_rrd_id':finance_payload.get('rrd_id')},
-            'advertising':{'started':bool(advertising_sync),'coverage_matches':advertising_matches,'complete':advertising_complete,'page_number':advertising_payload.get('page_number'),'last_snapshot_at':advertising_sync.created_at if advertising_sync else None,'campaign_count':advertising_payload.get('campaign_count')},
+            'finance':{'started':bool(finance_sync),'coverage_matches':finance_matches,'complete':finance_complete,'schema_state':finance_payload.get('schema_state'),'rejected_count':finance_payload.get('rejected_count'),'evidence':finance_payload.get('evidence') or [],'page_number':finance_payload.get('page_number'),'last_snapshot_at':finance_sync.created_at if finance_sync else None,'next_rrd_id':finance_payload.get('rrd_id')},
+            'advertising':{'started':bool(advertising_sync),'coverage_matches':advertising_matches,'complete':advertising_complete,'schema_state':advertising_payload.get('schema_state'),'rejected_count':advertising_payload.get('rejected_count'),'evidence':advertising_payload.get('evidence') or [],'page_number':advertising_payload.get('page_number'),'last_snapshot_at':advertising_sync.created_at if advertising_sync else None,'campaign_count':advertising_payload.get('campaign_count')},
         },
         'source_line_count': len(lines),
         'advertising_line_count':len(advertising_lines),

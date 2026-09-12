@@ -117,6 +117,7 @@ class StopAwareDb:
         return PublicationQuery(self.row)
 
     def expire_all(self): pass
+    def get_bind(self): return SimpleNamespace(dialect=SimpleNamespace(name='sqlite'))
     def add(self, item): self.events.append(item)
     def commit(self): self.commits += 1
     def flush(self): pass
@@ -177,8 +178,9 @@ def test_emergency_stop_blocks_direct_publish_api_before_any_wb_call(monkeypatch
     }
 
 
-def test_stop_enabled_during_long_card_preflight_blocks_writer(monkeypatch):
-    row = _publication()
+@pytest.mark.parametrize('initial_status', [PublicationStatus.prepared, PublicationStatus.failed])
+def test_stop_enabled_during_long_card_preflight_blocks_writer_and_retry(monkeypatch, initial_status):
+    row = _publication(status=initial_status)
     store = SimpleNamespace(id='s1', workspace_id='w1')
     db = StopAwareDb(row, [_control(False), _control(True)])
     writes = []
@@ -186,7 +188,10 @@ def test_stop_enabled_during_long_card_preflight_blocks_writer(monkeypatch):
     monkeypatch.setattr('app.card_factory_router._connection',lambda db,store_id:SimpleNamespace())
     monkeypatch.setattr('app.card_factory_router.decrypt_connection',lambda connection:'token')
     async def fetch(*args, **kwargs): return {'title':'Old','description':'Old'}
-    async def write(*args, **kwargs): writes.append('write'); return {}
+    async def write(*args, **kwargs):
+        kwargs['before_send']()
+        writes.append('write')
+        return {}
     monkeypatch.setattr('app.card_factory_router.fetch_wb_card',fetch)
     monkeypatch.setattr('app.card_factory_router.update_wb_card',write)
     monkeypatch.setattr('app.card_factory_router.build_card_update',lambda card,**kwargs:{'title':card['title'],'description':card['description']})
@@ -200,7 +205,7 @@ def test_stop_enabled_during_long_card_preflight_blocks_writer(monkeypatch):
 
     assert error.value.status_code == 423
     assert writes == []
-    assert row.status == PublicationStatus.prepared
+    assert row.status == initial_status
 
 
 def test_explicit_resume_allows_card_writer(monkeypatch):
@@ -212,7 +217,10 @@ def test_explicit_resume_allows_card_writer(monkeypatch):
     monkeypatch.setattr('app.card_factory_router._connection',lambda db,store_id:SimpleNamespace())
     monkeypatch.setattr('app.card_factory_router.decrypt_connection',lambda connection:'token')
     async def fetch(*args, **kwargs): return {'title':'Old','description':'Old'}
-    async def write(*args, **kwargs): writes.append('write'); return {'accepted':True}
+    async def write(*args, **kwargs):
+        kwargs['before_send']()
+        writes.append('write')
+        return {'accepted':True}
     monkeypatch.setattr('app.card_factory_router.fetch_wb_card',fetch)
     monkeypatch.setattr('app.card_factory_router.update_wb_card',write)
     monkeypatch.setattr('app.card_factory_router.build_card_update',lambda card,**kwargs:{'title':card['title'],'description':card['description']})

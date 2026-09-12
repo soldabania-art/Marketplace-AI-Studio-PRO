@@ -487,14 +487,18 @@ async def publish_card(publication_id: str, payload: ConfirmPublicationRequest, 
         db.commit()
         raise HTTPException(409, publication.error)
 
-    require_external_write_allowed(db, **guard, lock=True)
-    publication.status = PublicationStatus.submitting
-    publication.approved_at = datetime.now(timezone.utc)
-    publication.attempt_count += 1
-    publication.error = ""
-    db.flush()
+    def admit_dispatch() -> None:
+        # wb_content invokes this only after its rate-limit wait. The transaction
+        # lock is then held through the provider request, defining whether STOP
+        # or this dispatch won the race. An already-started request is not cancelled.
+        require_external_write_allowed(db, **guard, lock=True)
+        publication.status = PublicationStatus.submitting
+        publication.approved_at = datetime.now(timezone.utc)
+        publication.attempt_count += 1
+        publication.error = ""
+        db.flush()
     try:
-        response = await update_wb_card(token, proposed)
+        response = await update_wb_card(token, proposed, before_send=admit_dispatch)
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code if exc.response is not None else 502
         publication.status = PublicationStatus.failed
@@ -697,11 +701,13 @@ async def publish_media(publication_id: str, payload: ConfirmPublicationRequest,
         raw, content_type, dimensions = await _download_and_validate_asset(publication.asset_payload or {})
     except httpx.HTTPError as exc:
         raise HTTPException(502, "Не удалось получить сохранённый визуал TROVENDI.") from exc
-    require_external_write_allowed(db, **guard, lock=True)
-    publication.status = PublicationStatus.submitting
-    publication.attempt_count += 1
-    publication.approved_at = datetime.now(timezone.utc)
-    db.flush()
+    def admit_dispatch() -> None:
+        # The final STOP admission happens after the WB limiter wait and before HTTP.
+        require_external_write_allowed(db, **guard, lock=True)
+        publication.status = PublicationStatus.submitting
+        publication.attempt_count += 1
+        publication.approved_at = datetime.now(timezone.utc)
+        db.flush()
     try:
         response = await upload_wb_media_file(
             token,
@@ -709,6 +715,7 @@ async def publish_media(publication_id: str, payload: ConfirmPublicationRequest,
             photo_number=int((publication.diff_payload or {}).get("target_position") or 1),
             raw=raw,
             content_type=content_type,
+            before_send=admit_dispatch,
         )
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code if exc.response is not None else 502

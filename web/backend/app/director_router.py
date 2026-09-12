@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from .db import get_db
 from .director_service import build_director, compare_measurement
+from .external_write_guard import lock_external_write_scope
 from .job_queue import enqueue
 from .marketplace_sync import latest_snapshot
 from .models import AutomationControl, DirectorAction, DirectorRun, OperationalAuditEvent, User
@@ -259,6 +260,9 @@ def decide_action(action_id: str, payload: DecisionRequest, user: User = Depends
 def set_automation_control(payload: ControlRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     store = resolve_store(db, user, payload.store_id); require_store_admin(db, user, store)
     _validate_control(payload.stopped, payload.confirmation)
+    lock_external_write_scope(
+        db, workspace_id=store.workspace_id, store_id=store.id, marketplace='wildberries',
+    )
     row = db.query(AutomationControl).filter(AutomationControl.store_id == store.id, AutomationControl.marketplace == 'wildberries').with_for_update().first()
     if row is None:
         row = AutomationControl(workspace_id=store.workspace_id, store_id=store.id, marketplace='wildberries',

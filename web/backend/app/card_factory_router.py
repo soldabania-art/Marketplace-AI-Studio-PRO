@@ -780,6 +780,14 @@ def prepare_media_publication(payload: PrepareMediaPublicationRequest, user: Use
     _validate_stored_asset_binding(asset, generation, store.id)
     if generation.fact_set_sha256 != fact_set["sha256"]:
         raise HTTPException(409, "Карточка изменилась после генерации визуала. Создайте новую версию.")
+    previous_attempt = db.query(MediaPublication).filter(
+        MediaPublication.store_id == store.id,
+        MediaPublication.generation_id == generation.id,
+        MediaPublication.attempt_count > 0,
+        MediaPublication.status.in_([PublicationStatus.submitting, PublicationStatus.submitted]),
+    ).first()
+    if previous_attempt:
+        raise HTTPException(409, "Эта генерация уже отправлялась; используйте сверку существующей публикации.")
     source_urls = _photo_urls(source)
     if len(source_urls) >= 30:
         raise HTTPException(409, "В карточке уже 30 изображений — это предел Wildberries.")
@@ -857,32 +865,15 @@ async def _reconcile_media_state(db: Session, publication: MediaPublication, tok
                 "Запрос мог быть принят WB, но идентичность изображения не подтверждена API."
             )
         elif observed_status == "pending":
-            approved_at = publication.approved_at
-            if approved_at and approved_at.tzinfo is None:
-                approved_at = approved_at.replace(tzinfo=timezone.utc)
-            age_seconds = (now - approved_at).total_seconds() if approved_at else 0
-            recovery_seconds = max(
-                0,
-                int(getattr(get_settings(), "media_submitting_recovery_seconds", 120)),
-            )
-            if approved_at and age_seconds >= recovery_seconds:
-                publication.status = PublicationStatus.failed
-                publication.verification_status = "not_confirmed"
-                evidence = {
-                    **evidence,
-                    "outcome": "not_confirmed",
-                    "safe_retry_requires_new_confirmation": True,
-                    "message": (
-                        "После контрольного чтения изображение не обнаружено; зависшая отправка "
-                        "восстановлена без автоматического повтора."
-                    ),
-                }
-                publication.error = evidence["message"]
-            else:
-                publication.verification_status = "pending"
-                publication.error = (
-                    "Результат отправки пока неизвестен. Повторная загрузка заблокирована до сверки."
-                )
+            # Read visibility has no documented deadline. Absence is not rejection.
+            publication.verification_status = "not_confirmed"
+            evidence = {
+                **evidence, "outcome": "not_confirmed",
+                "safe_retry_requires_new_confirmation": False,
+                "retry_blocked": True,
+                "message": "Результат отправки неизвестен. Отсутствие фото не разрешает повторную загрузку.",
+            }
+            publication.error = evidence["message"]
         else:
             publication.status = PublicationStatus.stale
             publication.verification_status = observed_status
@@ -977,7 +968,11 @@ async def publish_media(publication_id: str, payload: ConfirmPublicationRequest,
         publication.attempt_count += 1
         publication.approved_at = datetime.now(timezone.utc)
         publication.error = ""
-        db.flush()
+        # Persist intent before HTTP, so process death cannot restore prepared.
+        db.commit()
+        # Commit released the transaction scope lock: recheck STOP before sending.
+        # A refusal leaves durable submitting and therefore cannot cause a retry.
+        require_external_write_allowed(db, **guard, lock=True)
 
     try:
         response = await upload_wb_media_file(
@@ -990,7 +985,7 @@ async def publish_media(publication_id: str, payload: ConfirmPublicationRequest,
         )
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code if exc.response is not None else 502
-        publication.status = PublicationStatus.failed
+        publication.status = PublicationStatus.submitting if status >= 500 else PublicationStatus.failed
         publication.error = f"WB отклонил изображение (HTTP {status})."
         db.commit()
         if status in {401, 403}:

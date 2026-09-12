@@ -301,6 +301,8 @@ def test_timeout_after_accept_reconciles_before_any_retry(monkeypatch):
 
     async def upload(*args, **kwargs):
         kwargs["before_send"]()
+        assert db.commits >= 1, "submission intent must survive a process crash before HTTP"
+        assert row.status == PublicationStatus.submitting
         uploads.append("upload")
         raise httpx.ReadTimeout("outcome unknown", request=httpx.Request("POST", "https://wb.test"))
 
@@ -358,8 +360,9 @@ def test_stuck_submitting_recovers_by_reading_without_write(monkeypatch):
     ))
 
     assert uploads == []
-    assert result["status"] == PublicationStatus.failed.value
+    assert result["status"] == PublicationStatus.submitting.value
     assert result["verification_status"] == "not_confirmed"
+    assert result["verification"]["retry_blocked"] is True
 
 
 def test_visual_generation_records_digest_before_blob_finalize(monkeypatch):

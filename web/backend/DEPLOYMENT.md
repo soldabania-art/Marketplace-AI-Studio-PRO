@@ -41,7 +41,7 @@ TROVENDI uses one container image with separate process roles.
 - `MARKETPLACE_OPENAI_IMAGE_QUALITY`, `MARKETPLACE_OPENAI_IMAGE_SIZE` — trial defaults are `low` and `1024x1024`
 - `MARKETPLACE_OPENAI_IMAGE_ESTIMATED_COST_MICROUSD` — current provider estimate used for budgets and audit
 - `MARKETPLACE_ASSET_BLOB_HOSTS` — comma-separated exact hostnames of the dedicated public Vercel Blob store; wildcards and generic `*.blob.vercel-storage.com` trust are forbidden
-- `MARKETPLACE_MEDIA_SUBMITTING_RECOVERY_SECONDS` — minimum age before a read-only check may release an unchanged stuck media submission for a new explicit confirmation (default `120`)
+- `MARKETPLACE_MEDIA_SUBMITTING_RECOVERY_SECONDS` — legacy compatibility setting; elapsed time never authorizes a retry of an uncertain upload. Read-only reconciliation preserves the blocked state until the outcome is established.
 - `MARKETPLACE_DOCUMENT_SCAN_WEBHOOK_SECRET` — long independent secret used to authenticate malware scan results
 - Frontend: `DOCUMENT_BLOB_READ_WRITE_TOKEN` must belong to a dedicated **private** Blob store used only for document evidence
 - VAPID settings when Web Push is enabled

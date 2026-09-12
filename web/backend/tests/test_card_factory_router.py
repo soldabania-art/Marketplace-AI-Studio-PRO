@@ -5,7 +5,9 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app.card_factory_router import ConfirmPublicationRequest, GenerateCardRequest, _find_card, _load_card, _media_verification_result, _photo_urls, _publication_payload, _verification_result, generate, generations, publish_card, publish_media
+from app.ai_card_factory import build_fact_set
+from app.ai_generation_service import stable_hash
+from app.card_factory_router import ConfirmPublicationRequest, GenerateCardRequest, PreparePublicationRequest, _find_card, _load_card, _media_verification_result, _photo_urls, _publication_payload, _verification_result, generate, generations, prepare_publication, publish_card, publish_media
 from app.external_write_guard import require_external_write_allowed
 from app.models import AutomationControl, OperationalAuditEvent, PublicationStatus
 
@@ -131,14 +133,20 @@ def _control(stopped, *, store_id='s1', workspace_id='w1'):
 
 
 def _publication(**overrides):
+    proposed = {'title': 'New', 'description': 'New'}
+    payload_sha256 = stable_hash(proposed)
     values = dict(
         id='p1', generation_id='g1', store_id='s1', subject_id='42', marketplace='wildberries',
-        status=PublicationStatus.prepared, payload_sha256='a'*64, diff_payload={}, attempt_count=0,
-        error='', approved_at=None, submitted_at=None, created_at=datetime.now(timezone.utc),
-        source_payload={'title':'Old','description':'Old'}, proposed_payload={'title':'New','description':'New'},
-        fact_set_sha256='facts', source_card_sha256='source', provider_response={},
-        verification_status='not_checked', verification_payload={}, verification_attempt_count=0,
-        last_verified_at=None, verified_at=None, asset_payload={},
+        status=PublicationStatus.prepared, payload_sha256=payload_sha256,
+        diff_payload={'grounding': {
+            'status': 'verified', 'publish_ready': True, 'fact_set_sha256': 'facts',
+            'payload_sha256': payload_sha256,
+        }},
+        attempt_count=0, error='', approved_at=None, submitted_at=None,
+        created_at=datetime.now(timezone.utc), source_payload={'title':'Old','description':'Old'},
+        proposed_payload=proposed, fact_set_sha256='facts', source_card_sha256='source',
+        provider_response={}, verification_status='not_checked', verification_payload={},
+        verification_attempt_count=0, last_verified_at=None, verified_at=None, asset_payload={},
     )
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -163,7 +171,7 @@ def test_emergency_stop_blocks_direct_publish_api_before_any_wb_call(monkeypatch
 
     with pytest.raises(HTTPException) as error:
         asyncio.run(endpoint(row.id, ConfirmPublicationRequest(
-            store_id='s1', payload_sha256='a'*64, confirmation=confirmation,
+            store_id='s1', payload_sha256=row.payload_sha256, confirmation=confirmation,
         ), user=SimpleNamespace(id='u1'), db=db))
 
     assert error.value.status_code == 423
@@ -196,11 +204,11 @@ def test_stop_enabled_during_long_card_preflight_blocks_writer_and_retry(monkeyp
     monkeypatch.setattr('app.card_factory_router.update_wb_card',write)
     monkeypatch.setattr('app.card_factory_router.build_card_update',lambda card,**kwargs:{'title':card['title'],'description':card['description']})
     monkeypatch.setattr('app.card_factory_router.build_fact_set',lambda card:{'sha256':'facts'})
-    monkeypatch.setattr('app.card_factory_router.stable_hash',lambda card:'source')
+    monkeypatch.setattr('app.card_factory_router.stable_hash', lambda card: row.payload_sha256 if card.get('title') == 'New' else 'source')
 
     with pytest.raises(HTTPException) as error:
         asyncio.run(publish_card('p1', ConfirmPublicationRequest(
-            store_id='s1', payload_sha256='a'*64, confirmation='ОПУБЛИКОВАТЬ',
+            store_id='s1', payload_sha256=row.payload_sha256, confirmation='ОПУБЛИКОВАТЬ',
         ), user=SimpleNamespace(id='u1'), db=db))
 
     assert error.value.status_code == 423
@@ -225,10 +233,10 @@ def test_explicit_resume_allows_card_writer(monkeypatch):
     monkeypatch.setattr('app.card_factory_router.update_wb_card',write)
     monkeypatch.setattr('app.card_factory_router.build_card_update',lambda card,**kwargs:{'title':card['title'],'description':card['description']})
     monkeypatch.setattr('app.card_factory_router.build_fact_set',lambda card:{'sha256':'facts'})
-    monkeypatch.setattr('app.card_factory_router.stable_hash',lambda card:'source')
+    monkeypatch.setattr('app.card_factory_router.stable_hash', lambda card: row.payload_sha256 if card.get('title') == 'New' else 'source')
 
     result = asyncio.run(publish_card('p1', ConfirmPublicationRequest(
-        store_id='s1', payload_sha256='a'*64, confirmation='ОПУБЛИКОВАТЬ',
+        store_id='s1', payload_sha256=row.payload_sha256, confirmation='ОПУБЛИКОВАТЬ',
     ), user=SimpleNamespace(id='u1'), db=db))
 
     assert writes == ['write']
@@ -325,3 +333,81 @@ def test_media_publish_requires_separate_exact_confirmation(monkeypatch):
     assert error.value.status_code==422
     assert row.status==PublicationStatus.prepared
     assert row.attempt_count==0
+
+
+def test_direct_publish_rejects_legacy_or_edited_payload_without_grounding_proof(monkeypatch):
+    row = _publication(diff_payload={})
+    store = SimpleNamespace(id="s1", workspace_id="w1")
+    calls = []
+    _patch_publish_dependencies(monkeypatch, store)
+    monkeypatch.setattr("app.card_factory_router.require_external_write_allowed", lambda *args, **kwargs: calls.append("guard"))
+    monkeypatch.setattr(
+        "app.card_factory_router._connection",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("WB access must not begin")),
+    )
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(publish_card(
+            row.id,
+            ConfirmPublicationRequest(
+                store_id="s1", payload_sha256=row.payload_sha256, confirmation="ОПУБЛИКОВАТЬ",
+            ),
+            user=SimpleNamespace(id="u1"),
+            db=PublicationDb(row),
+        ))
+    assert error.value.status_code == 409
+    assert calls == []
+
+
+def test_prepare_publication_revalidates_saved_generation_before_creating_diff(monkeypatch):
+    source = {"nm_id": 42, "title": "Сумка", "description": "Сумка"}
+    fact_set = build_fact_set(source)
+    invented = "Сумка из натуральной кожи"
+    generation = SimpleNamespace(
+        id="11111111-1111-1111-1111-111111111111", fact_set_sha256=fact_set["sha256"],
+        result_payload={
+            "wb_title": invented, "ozon_title": invented, "description": invented,
+            "seo_phrases": [], "visual_plan": ["Preview"], "used_fact_ids": ["card.title"],
+            "claims": [{"field": "description", "text": invented, "fact_id": "card.title"}],
+        },
+    )
+    store = SimpleNamespace(id="s1", workspace_id="w1")
+    snapshot = SimpleNamespace(created_at=datetime.now(timezone.utc))
+    monkeypatch.setattr("app.card_factory_router._resolve_connected_store", lambda *args: store)
+    monkeypatch.setattr("app.card_factory_router.require_entitlement", lambda *args: None)
+    monkeypatch.setattr("app.card_factory_router._load_card", lambda *args: (source, snapshot))
+
+    with pytest.raises(HTTPException) as error:
+        prepare_publication(
+            PreparePublicationRequest(store_id="s1", nm_id=42, generation_id="11111111-1111-1111-1111-111111111111"),
+            user=SimpleNamespace(id="u1"),
+            db=PublicationDb(generation),
+        )
+
+    assert error.value.status_code == 422
+    assert error.value.detail["code"] == "AI_GROUNDING_REVIEW_REQUIRED"
+    assert error.value.detail["human_preview_available"] is True
+
+
+def test_direct_publish_rejects_proposed_payload_changed_after_grounding(monkeypatch):
+    row = _publication()
+    row.proposed_payload = {"title": "Сумка из кожи", "description": "Изменено после проверки"}
+    store = SimpleNamespace(id="s1", workspace_id="w1")
+    calls = []
+    _patch_publish_dependencies(monkeypatch, store)
+    monkeypatch.setattr(
+        "app.card_factory_router.require_external_write_allowed",
+        lambda *args, **kwargs: calls.append("guard"),
+    )
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(publish_card(
+            row.id,
+            ConfirmPublicationRequest(
+                store_id="s1", payload_sha256=row.payload_sha256, confirmation="ОПУБЛИКОВАТЬ",
+            ),
+            user=SimpleNamespace(id="u1"),
+            db=PublicationDb(row),
+        ))
+
+    assert error.value.status_code == 409
+    assert calls == []

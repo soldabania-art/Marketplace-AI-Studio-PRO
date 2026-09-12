@@ -286,6 +286,31 @@ def list_projects(store_id: str, user: User = Depends(get_current_user), db: Ses
     return {"store_id": store.id, "projects": [serialize_project(project) for project in projects]}
 
 
+def sanitize_project_state(state: dict) -> dict:
+    """Preserve a draft while preventing client-owned readiness flags from authorizing publication."""
+    def sanitize(value):
+        if isinstance(value, dict):
+            clean = {}
+            for key, item in value.items():
+                if key in {"publish_ready", "ready_to_publish", "grounding_verified"}:
+                    clean[key] = False
+                elif key == "grounding_status":
+                    clean[key] = "manual_review"
+                else:
+                    clean[key] = sanitize(item)
+            return clean
+        if isinstance(value, list):
+            return [sanitize(item) for item in value]
+        return value
+
+    clean_state = sanitize(state)
+    clean_state["_server_safety"] = {
+        "publish_ready": False,
+        "reason": "client_saved_state_unverified",
+    }
+    return clean_state
+
+
 @router.post("/projects", status_code=201)
 def create_project(payload: BeginnerProjectCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     store = resolve_store(db, user, payload.store_id)
@@ -294,7 +319,7 @@ def create_project(payload: BeginnerProjectCreate, user: User = Depends(get_curr
         created_by_user_id=user.id,
         title=payload.title.strip(),
         stage=payload.stage,
-        state=payload.state,
+        state=sanitize_project_state(payload.state),
     )
     db.add(project)
     db.commit()
@@ -310,7 +335,7 @@ def update_project(project_id: str, payload: BeginnerProjectPatch, user: User = 
     if payload.stage is not None:
         project.stage = payload.stage
     if payload.state is not None:
-        project.state = payload.state
+        project.state = sanitize_project_state(payload.state)
     db.commit()
     db.refresh(project)
     return serialize_project(project)

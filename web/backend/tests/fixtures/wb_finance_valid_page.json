@@ -1,0 +1,13 @@
+[
+  {
+    "rrdId": 987654321,
+    "reportId": 42,
+    "nmId": 123,
+    "vendorCode": "SKU Bél",
+    "docTypeName": "Продажа",
+    "quantity": 1,
+    "retailAmount": "1234.56",
+    "forPay": "900.10",
+    "saleDate": "2026-09-08T14:10:00Z"
+  }
+]

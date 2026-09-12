@@ -93,7 +93,12 @@ def test_documented_empty_advertising_page_is_safe_and_distinct_from_corruption(
     assert page.items==[]
 
 
-def test_corrupt_nested_advertising_page_preserves_saved_rows_and_checksum(monkeypatch):
+@pytest.mark.parametrize('app_payload', [
+    {'nm':[{'nmId':123,'sum':'10.00'},None]},
+    {'nm':[], 'nms':[None]},
+    {'nm':[], 'nms':[{'nmId':123,'sum':'10.00'},None]},
+])
+def test_corrupt_nested_advertising_page_preserves_saved_rows_and_checksum(monkeypatch, app_payload):
     suffix=uuid.uuid4().hex
     with SessionLocal() as db:
         user=User(email=f'ads-{suffix}@example.com',password_hash='test')
@@ -113,7 +118,7 @@ def test_corrupt_nested_advertising_page_preserves_saved_rows_and_checksum(monke
         ))
         db.commit();store_id=store.id
 
-    corrupt=[{'advertId':77,'name':'Поиск','days':[{'date':'2026-09-08','apps':[{'nm':[{'nmId':123,'sum':'10.00'},None]}]}]}]
+    corrupt=[{'advertId':77,'name':'Поиск','days':[{'date':'2026-09-08','apps':[app_payload]}]}]
     async def corrupt_page(*args,**kwargs): return parse_advertising_stats_page(corrupt)
     monkeypatch.setattr('app.marketplace_sync.decrypt_connection',lambda value:'token')
     monkeypatch.setattr('app.marketplace_sync.fetch_advertising_stats',corrupt_page)
@@ -159,3 +164,16 @@ def test_invalid_advertising_page_never_deletes_previous_rows(monkeypatch):
     assert deleted==[]
     assert snapshots[0]['payload']['complete'] is False
     assert snapshots[0]['payload']['schema_state']=='unknown'
+
+
+@pytest.mark.parametrize('first', [[], None, 0, {}, [{'nmId':123,'sum':'1'}]])
+@pytest.mark.parametrize('alias', ['nm', 'nms'])
+def test_competing_product_aliases_are_never_applied(first, alias):
+    other = 'nms' if alias == 'nm' else 'nm'
+    page = parse_advertising_stats_page([{'advertId':77,'days':[
+        {'date':'2026-09-08','apps':[{alias:first, other:[None]}]}
+    ]}])
+    assert page.schema_state == 'partial'
+    assert not page.safe_to_apply
+    assert page.items == []
+    assert 'ambiguous' in page.evidence[0]['reason']

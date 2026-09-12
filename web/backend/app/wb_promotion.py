@@ -8,19 +8,27 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import httpx
 
 from .rate_limit import wait_marketplace_slot
+from .marketplace_page import MarketplacePageResult
 
 WB_CAMPAIGN_COUNT_URL='https://advert-api.wildberries.ru/adv/v1/promotion/count'
 WB_FULL_STATS_URL='https://advert-api.wildberries.ru/adv/v3/fullstats'
+SCHEMA_SOURCE_URL='https://dev.wildberries.ru/docs/openapi/promotion'
 
 
 def _int(value) -> int:
-    try: return int(Decimal(str(value or 0).replace(',','.')))
-    except (InvalidOperation,TypeError,ValueError): return 0
+    if value is None or value == '': return 0
+    try: parsed=Decimal(str(value).replace(',','.'))
+    except (InvalidOperation,TypeError,ValueError) as exc: raise ValueError('invalid integer') from exc
+    if not parsed.is_finite() or parsed != parsed.to_integral_value(): raise ValueError('invalid integer')
+    return int(parsed)
 
 
 def _kopecks(value) -> int:
-    try: return int((Decimal(str(value or 0).replace(',','.'))*100).quantize(Decimal('1'),rounding=ROUND_HALF_UP))
-    except (InvalidOperation,TypeError,ValueError): return 0
+    if value is None or value == '': return 0
+    try: parsed=Decimal(str(value).replace(',','.'))
+    except (InvalidOperation,TypeError,ValueError) as exc: raise ValueError('invalid money') from exc
+    if not parsed.is_finite(): raise ValueError('non-finite money')
+    return int((parsed*100).quantize(Decimal('1'),rounding=ROUND_HALF_UP))
 
 
 def date_chunks(date_from: str,date_to: str,max_days: int=31) -> list[tuple[str,str]]:
@@ -35,17 +43,17 @@ def date_chunks(date_from: str,date_to: str,max_days: int=31) -> list[tuple[str,
 
 
 def campaign_ids(payload) -> list[int]:
+    if not isinstance(payload,dict) or not isinstance(payload.get('adverts'),list):
+        raise ValueError('unknown campaign count schema')
     found=set()
-    def walk(value):
-        if isinstance(value,list):
-            for item in value: walk(item)
-        elif isinstance(value,dict):
-            for key in ('advertId','advert_id'):
-                campaign_id=_int(value.get(key))
-                if campaign_id>0: found.add(campaign_id)
-            for key,item in value.items():
-                if key not in {'advertId','advert_id'}: walk(item)
-    walk(payload)
+    for group in payload['adverts']:
+        if not isinstance(group,dict) or not isinstance(group.get('advert_list'),list):
+            raise ValueError('invalid campaign group')
+        for item in group['advert_list']:
+            if not isinstance(item,dict): raise ValueError('invalid campaign row')
+            campaign_id=_int(item.get('advertId'))
+            if campaign_id<=0: raise ValueError('missing advertId')
+            found.add(campaign_id)
     return sorted(found)
 
 
@@ -57,7 +65,7 @@ def _campaigns(payload) -> list[dict]:
     return []
 
 
-def normalize_advertising_stats(payload) -> list[dict]:
+def _normalize_advertising_stats(payload) -> list[dict]:
     grouped=defaultdict(lambda:{'spend_kopecks':0,'attributed_revenue_kopecks':0,'views':0,'clicks':0,'orders':0,'units':0,'source_rows':[],'campaign_name':''})
     for campaign in _campaigns(payload):
         campaign_id=_int(campaign.get('advertId') or campaign.get('advert_id') or campaign.get('id'))
@@ -102,15 +110,55 @@ def normalize_advertising_stats(payload) -> list[dict]:
     return sorted(result,key=lambda item:(item['event_date'],item['campaign_id'],item['nm_id'] or 0))
 
 
-async def fetch_campaign_ids(token: str) -> list[int]:
+def parse_advertising_stats_page(payload) -> MarketplacePageResult:
+    if not isinstance(payload,list):
+        return MarketplacePageResult([],0,0,0,None,'unknown',[{'code':'unknown_schema','expected':'JSON array','actual':type(payload).__name__}])
+    if not payload:
+        return MarketplacePageResult([],0,0,0,None,'documented_empty')
+    items=[]; evidence=[]; accepted_campaigns=0
+    for index,campaign in enumerate(payload):
+        try:
+            if not isinstance(campaign,dict): raise ValueError('campaign must be an object')
+            if _int(campaign.get('advertId'))<=0: raise ValueError('missing advertId')
+            if not isinstance(campaign.get('days'),list): raise ValueError('days must be an array')
+            for day in campaign['days']:
+                if not isinstance(day,dict): raise ValueError('day must be an object')
+                event_date=str(day.get('date') or '')
+                if len(event_date)<10: raise ValueError('missing day date')
+                if not isinstance(day.get('apps'),list): raise ValueError('apps must be an array')
+                for app in day['apps']:
+                    if not isinstance(app,dict): raise ValueError('app must be an object')
+                    rows=app.get('nm') if app.get('nm') is not None else app.get('nms',[])
+                    if not isinstance(rows,(list,dict)): raise ValueError('nm must be an array or object')
+            normalized=_normalize_advertising_stats([campaign])
+            items.extend(normalized); accepted_campaigns+=1
+        except (ValueError,InvalidOperation) as exc:
+            evidence.append({'code':'rejected_campaign','row':index,'reason':str(exc)[:200]})
+    rejected=len(payload)-accepted_campaigns
+    return MarketplacePageResult(items,len(payload),len(items),rejected,None,'partial' if rejected else 'valid',evidence)
+
+
+def normalize_advertising_stats(payload) -> list[dict]:
+    page=parse_advertising_stats_page(payload)
+    if not page.safe_to_apply: raise ValueError(f'advertising schema is {page.schema_state}')
+    return page.items
+
+
+async def fetch_campaign_ids(token: str) -> MarketplacePageResult:
     await wait_marketplace_slot('wildberries',token,'promotion-read',min_interval_seconds=20.0)
     async with httpx.AsyncClient(timeout=60.0) as client:
         response=await client.get(WB_CAMPAIGN_COUNT_URL,headers={'Authorization':token})
     response.raise_for_status()
-    return campaign_ids(response.json() if response.content else {})
+    payload=response.json() if response.content else None
+    try:
+        ids=campaign_ids(payload)
+    except ValueError as exc:
+        return MarketplacePageResult([],0,0,0,None,'unknown',[{'code':'campaign_schema_error','reason':str(exc)}])
+    state='documented_empty' if not ids else 'valid'
+    return MarketplacePageResult([{'campaign_id':value} for value in ids],len(ids),len(ids),0,None,state)
 
 
-async def fetch_advertising_stats(token: str,*,ids:list[int],date_from:str,date_to:str) -> list[dict]:
+async def fetch_advertising_stats(token: str,*,ids:list[int],date_from:str,date_to:str) -> MarketplacePageResult:
     if not ids or len(ids)>50: raise ValueError('ids must contain from 1 to 50 campaigns')
     if len(date_chunks(date_from,date_to))!=1: raise ValueError('advertising period must not exceed 31 days')
     await wait_marketplace_slot('wildberries',token,'promotion-read',min_interval_seconds=20.0)
@@ -118,4 +166,4 @@ async def fetch_advertising_stats(token: str,*,ids:list[int],date_from:str,date_
     async with httpx.AsyncClient(timeout=90.0) as client:
         response=await client.get(WB_FULL_STATS_URL,params=params,headers={'Authorization':token})
     response.raise_for_status()
-    return normalize_advertising_stats(response.json() if response.content else [])
+    return parse_advertising_stats_page(response.json() if response.content else None)

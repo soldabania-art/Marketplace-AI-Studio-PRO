@@ -177,14 +177,15 @@ def _common_prefix_length(left: str, right: str) -> int:
 
 
 def _word_matches(word: str, source_words: set[str]) -> bool:
-    if word in source_words:
-        return True
-    if len(word) < 5:
-        return False
-    return any(
-        len(candidate) >= 5 and _common_prefix_length(word, candidate) >= 4
-        for candidate in source_words
-    )
+    # Explicit, reviewed equivalence only. Prefix similarity is not evidence.
+    cotton = {"хлопок", "хлопковая", "хлопковый", "хлопковое", "хлопковые"}
+    return word in source_words or (word in cotton and bool(source_words & cotton))
+
+
+def _claim_tokens(value: str) -> list[str]:
+    cotton = {"хлопок", "хлопковая", "хлопковый", "хлопковое", "хлопковые"}
+    return ["хлопок" if word in cotton else word for word in
+            re.findall(r"\w+|[^\w\s]", value.lower().replace("ё", "е"))]
 
 
 def _claim_target(result: dict, field: str) -> str:
@@ -232,6 +233,7 @@ def assess_grounding(result: dict, fact_set: dict) -> dict:
     covered: dict[str, set[str]] = {
         "wb_title": set(), "ozon_title": set(), "description": set(), "seo_phrases": set()
     }
+    spans = {field: [] for field in covered}
     for index, claim in enumerate(claims):
         prefix = f"claims[{index}]"
         before = len(errors)
@@ -272,6 +274,13 @@ def assess_grounding(result: dict, fact_set: dict) -> dict:
         if fact_negative != claim_negative:
             errors.append(f"{prefix}: отрицание не соответствует подтверждённому значению")
 
+        # Preserve order, numeric signs, units and relationships within an attribute.
+        tokens = _claim_tokens(text)
+        label = _text(fact.get("label"))
+        permitted = [fact_value, f"{label} {fact_value}", f"{label}: {fact_value}"]
+        if tokens not in [_claim_tokens(value) for value in permitted]:
+            errors.append(f"{prefix}: требуется точное значение атрибута или ручная проверка")
+
         source_words = set(_words(source_text))
         unmatched = {
             word for word in _substantive_words(text)
@@ -282,8 +291,19 @@ def assess_grounding(result: dict, fact_set: dict) -> dict:
 
         if len(errors) == before:
             covered[field].update(_substantive_words(text))
+            spans[field].extend((match.start(), match.end()) for match in
+                                re.finditer(re.escape(text), target, re.IGNORECASE))
 
     for field in covered:
+        target = _claim_target(result, field)
+        mask = [False] * len(target)
+        for start, end in spans[field]:
+            mask[start:end] = [True] * (end - start)
+        # Only separators may be outside a verified claim. Negations, numbers,
+        # units and connectors must not acquire meaning outside their evidence.
+        if any(not mask[i] and not (char.isspace() or char in ",.;:!?()")
+               for i, char in enumerate(target)):
+            errors.append(f"{field}: непокрытый фрагмент требует ручной проверки")
         target_words = _substantive_words(_claim_target(result, field))
         uncovered = {
             word for word in target_words

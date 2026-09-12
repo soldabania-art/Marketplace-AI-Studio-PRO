@@ -170,3 +170,23 @@ def test_unclaimed_free_text_stays_visible_but_is_not_publish_ready():
     assert report["publish_ready"] is False
     assert report["status"] == "manual_review"
     assert report["errors"]
+
+
+@pytest.mark.parametrize("source,target,claim", [
+    ("Сумка", "Не Сумка", "Сумка"),
+    ("Ширина 30 см, высота 20 см", "Ширина 20 см, высота 30 см", "Ширина 20 см, высота 30 см"),
+    ("Водопроницаемая", "Водонепроницаемая", "Водонепроницаемая"),
+    ("Сумка", "Сумка 30 см", "Сумка"),
+    ("Температура -20", "Температура 20", "Температура 20"),
+])
+def test_claim_validation_preserves_complete_assertion(source, target, claim):
+    facts = _claim_fact_set(
+        {"id":"attribute","label":"Свойство","value":source},
+        {"id":"other","label":"Размер","value":"30 см"},
+    )
+    claims = [{"field":field,"text":claim,"fact_id":"attribute"}
+              for field in ("wb_title","ozon_title","description")]
+    result = _claim_result(target, claims)
+    report = ai_card_factory.assess_grounding(result, facts)
+    assert report["publish_ready"] is False
+    assert report["status"] == "manual_review"

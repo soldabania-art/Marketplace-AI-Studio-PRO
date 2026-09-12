@@ -6,35 +6,27 @@ import { useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
-  BarChart3,
   Check,
   CheckCircle2,
   ChevronRight,
   CircleDashed,
   Clock3,
-  Database,
   Eye,
   FileCheck2,
   Fingerprint,
   Gauge,
   LockKeyhole,
   Menu,
-  Minus,
-  PackageCheck,
   Pause,
-  Play,
   RefreshCw,
-  Search,
   ShieldCheck,
-  Sparkles,
   Store,
-  TrendingDown,
   WifiOff,
   X,
 } from "lucide-react";
 
-const directionHref = (direction, screen = "home", state = "complete") =>
-  `/design-reference?direction=${direction}&screen=${screen}&state=${state}`;
+const routeHref = (screen = "home", state = "complete") =>
+  `/design-reference?screen=${screen}&state=${state}`;
 
 const longProduct =
   "Сумка-шоппер женская повседневная с внутренним карманом и усиленными ручками — коллекция «Северный ветер»";
@@ -79,9 +71,9 @@ function LedgerGraphic() {
           />
         </pattern>
         <linearGradient id="ledger-line" x1="0" x2="1">
-          <stop stopColor="#718079" />
-          <stop offset=".58" stopColor="#24c58c" />
-          <stop offset="1" stopColor="#c7f36b" />
+          <stop stopColor="#71D7F7" />
+          <stop offset=".58" stopColor="#345CFF" />
+          <stop offset="1" stopColor="#FFFFFF" />
         </linearGradient>
       </defs>
       <rect width="680" height="420" rx="28" fill="url(#ledger-grid)" />
@@ -97,7 +89,7 @@ function LedgerGraphic() {
       <path
         className="ledgerPath"
         pathLength="1"
-        d="M120 104C226 104 221 210 338 210S463 316 574 316"
+        d="M120 104C226 104 221 210 338 210S451 316 540 316"
         fill="none"
         stroke="url(#ledger-line)"
         strokeWidth="3"
@@ -158,11 +150,11 @@ function LedgerGraphic() {
         </text>
       </g>
       <g className="ledgerNode result">
-        <circle cx="574" cy="316" r="11" />
-        <text x="598" y="309">
+        <circle cx="540" cy="316" r="11" />
+        <text x="564" y="309">
           ЭФФЕКТ ДЕЙСТВИЯ
         </text>
-        <text x="598" y="329">
+        <text x="564" y="329">
           ещё не измерен
         </text>
       </g>
@@ -173,159 +165,10 @@ function LedgerGraphic() {
   );
 }
 
-function SignalGraphic() {
-  return (
-    <svg
-      className="signalGraphic"
-      viewBox="0 0 680 420"
-      role="img"
-      aria-labelledby="signal-title signal-desc"
-    >
-      <title id="signal-title">Радар операционных сигналов</title>
-      <desc id="signal-desc">
-        Три сигнала разной срочности на координатной сетке.
-      </desc>
-      <defs>
-        <radialGradient id="pulse">
-          <stop stopColor="#34d399" stopOpacity=".6" />
-          <stop offset="1" stopColor="#34d399" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-      <g className="signalGrid">
-        <path d="M0 70H680M0 140H680M0 210H680M0 280H680M0 350H680M113 0V420M226 0V420M339 0V420M452 0V420M565 0V420" />
-      </g>
-      <circle cx="338" cy="210" r="156" />
-      <circle cx="338" cy="210" r="108" />
-      <circle cx="338" cy="210" r="58" />
-      <path
-        className="signalSweep"
-        d="M338 210L526 116A210 210 0 0 1 548 190Z"
-      />
-      <g className="signalPing critical">
-        <circle cx="460" cy="134" r="28" />
-        <circle cx="460" cy="134" r="7" />
-        <text x="492" y="130">
-          МАРЖА
-        </text>
-        <text x="492" y="148">
-          −18 420 ₽
-        </text>
-      </g>
-      <g className="signalPing">
-        <circle cx="245" cy="270" r="24" />
-        <circle cx="245" cy="270" r="7" />
-        <text x="109" y="264">
-          ОСТАТОК
-        </text>
-        <text x="109" y="282">
-          9 дней
-        </text>
-      </g>
-      <g className="signalPing quiet">
-        <circle cx="380" cy="318" r="20" />
-        <circle cx="380" cy="318" r="6" />
-        <text x="410" y="315">
-          ОТЗЫВЫ
-        </text>
-        <text x="410" y="333">
-          актуально
-        </text>
-      </g>
-      <text className="signalCode" x="28" y="38">
-        SIGNAL ROOM / LIVE READ
-      </text>
-    </svg>
-  );
-}
-
-function DirectionSwitcher({ direction }) {
-  return (
-    <div className="directionSwitch" aria-label="Визуальные направления">
-      <Link
-        href={directionHref("ledger")}
-        aria-current={direction === "ledger" ? "page" : undefined}
-      >
-        <span>01</span> Operational Ledger <small>рекомендуем</small>
-      </Link>
-      <Link
-        href={directionHref("signal")}
-        aria-current={direction === "signal" ? "page" : undefined}
-      >
-        <span>02</span> Signal Room
-      </Link>
-    </div>
-  );
-}
-
-function ConceptIntro({ direction }) {
-  const ledger = direction === "ledger";
-  return (
-    <section className="conceptIntro">
-      <div>
-        <span className="conceptIndex">
-          D01 / НАПРАВЛЕНИЕ {ledger ? "01" : "02"}
-        </span>
-        <h1>
-          {ledger ? (
-            <>
-              Спокойная точность.
-              <br />
-              <em>Каждое решение оставляет след.</em>
-            </>
-          ) : (
-            <>
-              Живой пульт.
-              <br />
-              <em>Сигнал раньше отчёта.</em>
-            </>
-          )}
-        </h1>
-        <p>
-          {ledger
-            ? "Редакционная композиция соединяет финансовый реестр и карту доказательств. Воздух, крупные цифры и строгие линии делают сложные решения понятными без ощущения «ещё одной SaaS-панели»."
-            : "Более контрастная диспетчерская: плотная сетка, радар сигналов и моноширинные служебные подписи. Хорошо передаёт скорость, но создаёт выше когнитивную нагрузку в ежедневной работе."}
-        </p>
-        <div className="conceptReasons">
-          <span>
-            <Check />{" "}
-            {ledger
-              ? "Фокус на доказательстве и деньгах"
-              : "Максимальная оперативность"}
-          </span>
-          <span>
-            <Check />{" "}
-            {ledger
-              ? "Лучше для длинных сессий и mobile"
-              : "Сильный технологичный характер"}
-          </span>
-          <span>
-            <Minus />{" "}
-            {ledger
-              ? "Не имитирует банковский терминал"
-              : "Плотнее и тревожнее"}
-          </span>
-        </div>
-        {ledger && (
-          <Link className="d01-primary" href={directionHref("ledger", "home")}>
-            <Play /> Открыть связанный прототип
-          </Link>
-        )}
-      </div>
-      <div className="conceptCanvas">
-        {ledger ? <LedgerGraphic /> : <SignalGraphic />}
-        <div className="canvasLabel">
-          <span>Синтетические данные</span>
-          <b>{ledger ? "РЕКОМЕНДАЦИЯ" : "АЛЬТЕРНАТИВА"}</b>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function ProductHeader({ screen }) {
   return (
     <header className="prototypeHeader">
-      <Link href={directionHref("ledger", "home")} className="protoBrand">
+      <Link href={routeHref("home")} className="protoBrand">
         <Mark />
         <span>
           TROVENDI<small>AI COMMERCE OS</small>
@@ -333,19 +176,19 @@ function ProductHeader({ screen }) {
       </Link>
       <nav aria-label="Сценарий прототипа">
         <Link
-          href={directionHref("ledger", "home")}
+          href={routeHref("home")}
           aria-current={screen === "home" ? "page" : undefined}
         >
           Главная
         </Link>
         <Link
-          href={directionHref("ledger", "connect", "partial")}
+          href={routeHref("connect", "partial")}
           aria-current={screen === "connect" ? "page" : undefined}
         >
           Подключение
         </Link>
         <Link
-          href={directionHref("ledger", "director", "partial")}
+          href={routeHref("director", "partial")}
           aria-current={screen === "director" ? "page" : undefined}
         >
           AI Director
@@ -361,13 +204,11 @@ function ProductHeader({ screen }) {
           </summary>
           <div>
             <b>Маршрут демонстрации</b>
-            <Link href={directionHref("ledger", "home")}>
-              Обещание продукта
-            </Link>
-            <Link href={directionHref("ledger", "connect", "partial")}>
+            <Link href={routeHref("home")}>Обещание продукта</Link>
+            <Link href={routeHref("connect", "partial")}>
               Полнота подключения
             </Link>
-            <Link href={directionHref("ledger", "director", "partial")}>
+            <Link href={routeHref("director", "partial")}>
               Решение Director
             </Link>
             <small>Локально, без запросов к WB</small>
@@ -412,14 +253,11 @@ function HomeScreen() {
           <div className="heroActions">
             <Link
               className="d01-primary"
-              href={directionHref("ledger", "connect", "partial")}
+              href={routeHref("connect", "partial")}
             >
               Начать с подключения <ArrowRight />
             </Link>
-            <Link
-              className="textLink"
-              href={directionHref("ledger", "director", "complete")}
-            >
+            <Link className="textLink" href={routeHref("director", "complete")}>
               Посмотреть пример решения
             </Link>
           </div>
@@ -459,9 +297,42 @@ function HomeScreen() {
               <Clock3 />
             </div>
           </div>
-          <Link href={directionHref("ledger", "director", "complete")}>
+          <Link href={routeHref("director", "complete")}>
             Разобрать доказательства <ArrowRight />
           </Link>
+        </div>
+      </section>
+      <section className="traceStory" aria-labelledby="trace-title">
+        <div className="traceStoryCopy">
+          <span className="overline">TROVENDI TRACE / КОНТУР РЕШЕНИЯ</span>
+          <h3 id="trace-title">От источника до измеримого результата.</h3>
+          <p>
+            Каждое решение сохраняет происхождение данных, подтверждение
+            владельца и ограничения измерения. Форма работает даже без цвета:
+            входящие линии сходятся в решение и продолжаются к результату.
+          </p>
+        </div>
+        <div className="traceCanvas">
+          <LedgerGraphic />
+          <div className="traceMobile" aria-hidden="true">
+            <div>
+              <span>01 · ИСТОЧНИКИ</span>
+              <b>Финансы · реклама · себестоимость</b>
+            </div>
+            <i />
+            <div>
+              <span>02 · РЕШЕНИЕ</span>
+              <b>Проверить две кампании</b>
+            </div>
+            <i />
+            <div>
+              <span>03 · РЕЗУЛЬТАТ</span>
+              <b>Эффект ещё не измерен</b>
+            </div>
+          </div>
+          <span className="traceCanvasNote">
+            УСЛОВНЫЕ ДЕМО-ДАННЫЕ · БЕЗ ЗАПИСИ В WB
+          </span>
         </div>
       </section>
       <TraceRail active={1} />
@@ -508,8 +379,8 @@ function HomeScreen() {
             <Link
               href={
                 row[0] === "01"
-                  ? directionHref("ledger", "director", "complete")
-                  : directionHref("ledger", "connect", "partial")
+                  ? routeHref("director", "complete")
+                  : routeHref("connect", "partial")
               }
               role="row"
               key={row[0]}
@@ -538,7 +409,7 @@ function HomeScreen() {
         </div>
         <div className="marketplaceList">
           <Link
-            href={directionHref("ledger", "connect", "partial")}
+            href={routeHref("connect", "partial")}
             className="marketplace available"
           >
             <span className="marketMonogram">WB</span>
@@ -700,16 +571,10 @@ function ConnectScreen({ state }) {
           </div>
         )}
         <div className="panelActions">
-          <Link
-            className="quietButton"
-            href={directionHref("ledger", "connect", "loading")}
-          >
+          <Link className="quietButton" href={routeHref("connect", "loading")}>
             <RefreshCw /> Показать загрузку
           </Link>
-          <Link
-            className="d01-primary"
-            href={directionHref("ledger", "director", "partial")}
-          >
+          <Link className="d01-primary" href={routeHref("director", "partial")}>
             Открыть частичный Director <ArrowRight />
           </Link>
         </div>
@@ -732,7 +597,7 @@ function StateSwitcher({ state }) {
       {directorStates.map(([key, label]) => (
         <Link
           key={key}
-          href={directionHref("ledger", "director", key)}
+          href={routeHref("director", key)}
           aria-current={state === key ? "true" : undefined}
         >
           {label}
@@ -1093,8 +958,8 @@ function Prototype({ screen, state }) {
           Только синтетические данные. Интеграции, публикации и финансовые
           действия не выполняются.
         </p>
-        <Link href={directionHref("signal")}>
-          Сравнить с Signal Room <ArrowRight />
+        <Link href={routeHref("home")}>
+          В начало маршрута <ArrowRight />
         </Link>
       </footer>
     </section>
@@ -1103,33 +968,15 @@ function Prototype({ screen, state }) {
 
 export default function D01DesignReference() {
   const params = useSearchParams();
-  const direction = params.get("direction") === "signal" ? "signal" : "ledger";
   const screen = ["home", "connect", "director"].includes(params.get("screen"))
     ? params.get("screen")
-    : null;
+    : "home";
   const state = directorStates.some(([key]) => key === params.get("state"))
     ? params.get("state")
     : "complete";
   return (
-    <main className={`d01 d01-${direction}${screen ? " has-prototype" : ""}`}>
-      <div className="referenceBar">
-        <div>
-          <Mark />
-          <span>
-            <b>TROVENDI</b>
-            <small>VISUAL REFERENCE / D01</small>
-          </span>
-        </div>
-        <DirectionSwitcher direction={direction} />
-        <Link href="/" className="exitReference">
-          Выйти из демо <X />
-        </Link>
-      </div>
-      {!screen || direction === "signal" ? (
-        <ConceptIntro direction={direction} />
-      ) : (
-        <Prototype screen={screen} state={state} />
-      )}
+    <main className="d01 d01-final has-prototype">
+      <Prototype screen={screen} state={state} />
     </main>
   );
 }

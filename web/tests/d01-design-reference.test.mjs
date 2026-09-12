@@ -12,15 +12,18 @@ const css = fs.readFileSync(
 );
 
 test("D01 stays an isolated synthetic prototype without backend calls", () => {
-  assert.match(component, /Синтетические данные/);
+  assert.match(component, /демонстрационные данные/);
   assert.doesNotMatch(component, /fetch\s*\(/);
-  assert.match(component, /directionHref\(["']ledger["'],\s*["']connect["']/);
-  assert.match(component, /directionHref\(["']ledger["'],\s*["']director["']/);
+  assert.match(component, /routeHref\(["']connect["']/);
+  assert.match(component, /routeHref\(["']director["']/);
+  assert.doesNotMatch(component, /direction=/);
 });
 
-test("D01 exposes both directions and required interface states", () => {
-  assert.match(component, /Operational Ledger/);
-  assert.match(component, /Signal Room/);
+test("D01 exposes one final TROVENDI direction and required interface states", () => {
+  assert.doesNotMatch(component, /Signal Room|DirectionSwitcher|SignalGraphic/);
+  assert.match(component, /traceStory/);
+  assert.match(component, /traceMobile/);
+  assert.match(component, /КОНТУР РЕШЕНИЯ/);
   for (const state of ["complete", "partial", "loading", "error", "unknown"])
     assert.match(component, new RegExp(`["']${state}["']`));
   assert.match(component, /Сумка-шоппер женская повседневная/);
@@ -35,11 +38,22 @@ test("D01 includes keyboard focus, mobile and reduced-motion rules", () => {
   assert.match(css, /:focus-visible/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /@media\s*\(max-width:\s*760px\)/);
-  assert.match(
-    css,
-    /\.has-prototype\s*>\s*\.referenceBar\s*\{\s*display:\s*none/,
-  );
+  assert.match(css, /\.traceMobile/);
+  assert.match(css, /\.prototypeHeader/);
   assert.match(css, /\.inlineControl/);
+});
+
+test("D01 fixes the approved cloud ink blue and cyan tokens", () => {
+  for (const token of [
+    "--paper: #f6f8fc",
+    "--panel: #ffffff",
+    "--ink: #111827",
+    "--blue: #345cff",
+    "--cyan: #71d7f7",
+    "--emerald: #11845b",
+  ]) {
+    assert.match(css, new RegExp(token));
+  }
 });
 
 test("D01 demo controls provide local reactions without writes", () => {

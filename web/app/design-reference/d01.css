@@ -1,18 +1,454 @@
 .d01 {
-  --ink: #17201d;
-  --paper: #f3f1ea;
-  --paper-2: #e9e7df;
-  --emerald: #087c5a;
-  --emerald-2: #10b981;
-  --lime: #c7f36b;
-  --line: #c9cec7;
-  --muted: #66706b;
-  --danger: #b93838;
+  --paper: #f6f8fc;
+  --paper-2: #eef2f8;
+  --panel: #ffffff;
+  --ink: #111827;
+  --blue: #345cff;
+  --blue-deep: #2849d8;
+  --cyan: #71d7f7;
+  --emerald: #11845b;
+  --lime: #71d7f7;
+  --line: #d8dfea;
+  --muted: #566176;
+  --warning: #9a6700;
+  --danger: #c0363f;
+  --unknown: #667085;
   min-height: 100vh;
   background: var(--paper);
   color: var(--ink);
   font-family: Manrope, Arial, sans-serif;
   letter-spacing: -0.015em;
+}
+
+/* Final D01 direction: international cloud / ink / electric blue. */
+.d01-final {
+  background: var(--paper);
+  color: var(--ink);
+}
+.d01-final .prototype {
+  background:
+    linear-gradient(
+        90deg,
+        transparent 0 49.9%,
+        rgba(52, 92, 255, 0.045) 50%,
+        transparent 50.1%
+      )
+      top / 100% 720px no-repeat,
+    var(--paper);
+}
+.d01-final .prototypeHeader {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: var(--line);
+}
+.d01-final .prototypeHeader nav a {
+  min-width: 112px;
+  font-size: 13px;
+}
+.d01-final .prototypeHeader nav a[aria-current="page"] {
+  border-bottom-color: var(--blue);
+}
+.d01-final .protoBrand {
+  color: var(--ink);
+}
+.d01-final .protoBrand small,
+.d01-final .demoFlag,
+.d01-final .protoMenu small {
+  color: var(--muted);
+}
+.d01-final .protoMenu > div,
+.d01-final .connectPanel,
+.d01-final .decisionCard,
+.d01-final .productEvidence,
+.d01-final .controlCard,
+.d01-final .resultCard,
+.d01-final .sourceMini {
+  background: var(--panel);
+}
+.d01-final .d01-mark .markFrame,
+.d01-final .d01-mark .markTrace {
+  stroke: var(--ink);
+}
+.d01-final .d01-mark circle {
+  fill: var(--panel);
+  stroke: var(--blue);
+}
+.d01-final .d01-mark .markResult {
+  fill: var(--blue);
+  stroke: var(--blue);
+}
+.d01-final .overline,
+.d01-final .sectionTitle > span,
+.d01-final .sectionLine > span,
+.d01-final .rowNo,
+.d01-final .decisionRank span,
+.d01-final .panelHead > div > span {
+  color: var(--blue);
+}
+.d01-final .d01-primary,
+.d01-final .approve {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff !important;
+}
+.d01-final .d01-primary:hover,
+.d01-final .approve:hover {
+  background: var(--blue-deep);
+}
+.d01-final .protoHeroCopy h2 em {
+  color: var(--blue);
+}
+.d01-final .directorTitle h2 em {
+  color: var(--ink);
+}
+.d01-final .protoHeroCopy > p,
+.d01-final .sectionTitle p,
+.d01-final .connectIntro > p,
+.d01-final .decisionCard > p {
+  color: var(--muted);
+}
+.d01-final .decisionPlate {
+  background: var(--ink);
+  box-shadow: 20px 22px 0 #dce4f5;
+}
+.d01-final .decisionPlate::before {
+  background: var(--cyan);
+  border: 5px solid var(--paper);
+}
+.d01-final .decisionPlate > a {
+  color: var(--cyan);
+}
+.d01-final .plateRows svg {
+  color: var(--cyan);
+}
+.d01-final .traceRail .active span {
+  color: var(--blue);
+}
+.traceStory {
+  display: grid;
+  grid-template-columns: minmax(270px, 0.56fr) minmax(600px, 1.44fr);
+  gap: clamp(40px, 7vw, 100px);
+  align-items: center;
+  padding: 80px 0;
+  border-top: 1px solid var(--line);
+}
+.traceStoryCopy h3 {
+  max-width: 520px;
+  margin: 18px 0;
+  font-family: Unbounded, Manrope, sans-serif;
+  font-size: clamp(32px, 3.4vw, 50px);
+  line-height: 1.08;
+  letter-spacing: -0.045em;
+}
+.traceStoryCopy p {
+  max-width: 520px;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.72;
+}
+.traceCanvas {
+  position: relative;
+  min-width: 0;
+  padding: 28px 32px 42px;
+  overflow: hidden;
+  background: var(--ink);
+  border: 1px solid #293247;
+  box-shadow: 14px 16px 0 #dce4f5;
+}
+.traceCanvas::before {
+  content: "";
+  position: absolute;
+  inset: 13px;
+  border: 1px solid rgba(113, 215, 247, 0.18);
+  pointer-events: none;
+}
+.traceCanvasNote {
+  position: absolute;
+  left: 32px;
+  bottom: 18px;
+  color: #93a0b8;
+  font: 10px monospace;
+  letter-spacing: 0.1em;
+}
+.traceMobile {
+  display: none;
+}
+.d01-final .ledgerGraphic .ledgerEyebrow,
+.d01-final .ledgerGraphic .ledgerCaption {
+  fill: #8c9ab4;
+}
+.d01-final .ledgerGraphic .ledgerNode text {
+  fill: #e7ecf5;
+}
+.d01-final .ledgerGraphic .ledgerNode text:last-child {
+  fill: #94a0b5;
+}
+.d01-final .ledgerGraphic .ledgerNode circle {
+  fill: var(--ink);
+  stroke: var(--cyan);
+}
+.d01-final .ledgerGraphic .ledgerNode.muted circle {
+  stroke: #d9a441;
+}
+.d01-final .ledgerGraphic .ledgerNode.result circle {
+  fill: var(--emerald);
+  stroke: #b5f0d9;
+}
+.d01-final .ledgerGraphic .ledgerFocus circle:not(.focusOrbit) {
+  fill: #fff;
+  stroke: var(--blue);
+}
+.d01-final .ledgerGraphic .ledgerFocus .focusOrbit {
+  stroke: var(--cyan);
+}
+.d01-final .ledgerGraphic .ledgerFocus text {
+  fill: var(--ink);
+}
+.d01-final .ledgerGraphic .ledgerFocus text:last-child {
+  fill: var(--blue);
+}
+.d01-final .ledgerGraphic .ledgerDecision rect {
+  fill: #1b2334;
+  stroke: #53617c;
+}
+.d01-final .ledgerGraphic .ledgerDecision text:last-child {
+  fill: #fff;
+}
+.d01-final .ledgerGraphic .ledgerBranch {
+  color: #8290aa;
+}
+.d01-final .securityNote,
+.d01-final .inlineControl {
+  background: #eef3ff;
+  border-color: var(--blue);
+}
+.d01-final .securityNote > svg,
+.d01-final .inlineControl > svg {
+  color: var(--blue);
+}
+.d01-final .marketplace.available .marketMonogram {
+  background: var(--blue);
+  border-color: var(--blue);
+}
+.d01-final .marketplace.available em,
+.d01-final .safe,
+.d01-final .confidence,
+.d01-final .credentialDemo b,
+.d01-final .sourceState,
+.d01-final .sourceIcon.ready {
+  color: var(--emerald);
+}
+.d01-final .sourceIcon.ready {
+  background: #e9f7f1;
+}
+.d01-final .sourceIcon.partial {
+  background: #fff4d6;
+  color: var(--warning);
+}
+.d01-final .sourceIcon.error {
+  background: #fdebed;
+  color: var(--danger);
+}
+.d01-final .warnText,
+.d01-final .sourceState.partial,
+.d01-final .decisionRank b {
+  color: var(--warning) !important;
+}
+.d01-final .sourceState.error {
+  color: var(--danger);
+}
+.d01-final .credentialDemo > div,
+.d01-final .evidenceBlock {
+  background: #f5f7fb;
+}
+.d01-final .connectAlert {
+  background: #fff7e3;
+  border-color: #ebd08c;
+  color: #75520b;
+}
+.d01-final .directorError {
+  background: #fdebed;
+  border-color: #edb8bd;
+  color: #852830;
+}
+.d01-final .demoReaction {
+  border-color: #a6d7c2;
+  color: #116544;
+}
+.d01-final .demoReaction.rejected {
+  border-color: #e7b2b8;
+  color: #812e35;
+}
+.d01-final .stateSwitcher a[aria-current="true"] {
+  border-color: #b9c8fb;
+  color: var(--blue);
+  box-shadow: inset 0 -2px 0 var(--blue);
+}
+.d01-final .decisionCard {
+  border-top-color: var(--blue);
+}
+.d01-final .moneyFinding > div:first-child {
+  box-shadow: inset 0 3px 0 var(--cyan);
+}
+.d01-final .moneyFinding > div:nth-child(2) {
+  box-shadow: inset 0 3px 0 var(--blue);
+}
+.d01-final .moneyFinding > div:nth-child(3) {
+  box-shadow: inset 0 3px 0 var(--ink);
+}
+.d01-final .loadingCard > span,
+.d01-final .loadingCard > div,
+.d01-final .sourceSkeleton i {
+  background: #e7ebf3;
+}
+.d01-final a:focus-visible,
+.d01-final button:focus-visible,
+.d01-final summary:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 5px #111827;
+}
+
+/* Workspace typography is deliberately quieter than the landing composition. */
+.d01-final .trustLine,
+.d01-final .plateRows > div,
+.d01-final .ledgerTable > a,
+.d01-final .marketplace,
+.d01-final .sourceTable b,
+.d01-final .sourceState,
+.d01-final .connectAlert span,
+.d01-final .directorError span,
+.d01-final .decisionCard > p,
+.d01-final .evidenceBlock dl > div,
+.d01-final .decisionAction b,
+.d01-final .controlCard p,
+.d01-final .sourceMini > div:not(.sectionLine) {
+  font-size: 13px;
+}
+.d01-final .sourceTable small,
+.d01-final .decisionAction small,
+.d01-final .productTable,
+.d01-final .resultCard li b,
+.d01-final .stateSwitcher a,
+.d01-final .demoFlag {
+  font-size: 12px;
+}
+.d01-final .moneyFinding span,
+.d01-final .sectionLine > span,
+.d01-final .evidenceHead,
+.d01-final .decisionRank span,
+.d01-final .decisionRank b {
+  font-size: 10px;
+}
+.d01-final .moneyFinding small,
+.d01-final .productTable small,
+.d01-final .resultCard li small,
+.d01-final .inlineControl small {
+  font-size: 11px;
+}
+
+@media (max-width: 1100px) {
+  .traceStory {
+    grid-template-columns: 1fr;
+  }
+  .traceStoryCopy p {
+    max-width: 760px;
+  }
+}
+
+@media (max-width: 760px) {
+  .d01-final .prototype {
+    background: var(--paper);
+  }
+  .d01-final .prototypeHeader nav {
+    background: rgba(17, 24, 39, 0.97);
+  }
+  .d01-final .prototypeHeader nav a[aria-current="page"] {
+    border-top-color: var(--cyan);
+  }
+  .d01-final .demoFlag {
+    font-size: 9px;
+  }
+  .d01-final .protoHeroCopy h2 {
+    font-size: 39px;
+    line-height: 1.03;
+  }
+  .d01-final .protoHeroCopy > p,
+  .traceStoryCopy p {
+    font-size: 15px;
+  }
+  .d01-final .decisionPlate {
+    box-shadow: 8px 9px 0 #dce4f5;
+  }
+  .traceStory {
+    padding: 58px 0;
+    gap: 24px;
+  }
+  .traceStoryCopy h3 {
+    font-size: 31px;
+  }
+  .traceCanvas {
+    margin: 0 -16px;
+    padding: 24px 18px 48px;
+    box-shadow: none;
+  }
+  .traceCanvas > .ledgerGraphic {
+    display: none;
+  }
+  .traceMobile {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    gap: 10px;
+  }
+  .traceMobile > div {
+    padding: 14px;
+    border: 1px solid #43506a;
+    color: #fff;
+  }
+  .traceMobile > div:nth-of-type(2) {
+    border-color: var(--blue);
+    background: #1a2340;
+  }
+  .traceMobile > div:nth-of-type(3) {
+    border-color: var(--emerald);
+  }
+  .traceMobile span,
+  .traceMobile b {
+    display: block;
+  }
+  .traceMobile span {
+    color: var(--cyan);
+    font: 10px monospace;
+    letter-spacing: 0.1em;
+  }
+  .traceMobile b {
+    margin-top: 6px;
+    font-size: 13px;
+  }
+  .traceMobile i {
+    width: 1px;
+    height: 14px;
+    margin: -10px 0 -10px 28px;
+    background: var(--cyan);
+  }
+  .traceCanvasNote {
+    left: 18px;
+    font-size: 9px;
+  }
+  .d01-final .directorTitle h2 {
+    font-size: 30px;
+  }
+  .d01-final .decisionCard h3 {
+    font-size: 21px;
+  }
+  .d01-final .decisionCard > p,
+  .d01-final .evidenceBlock dl > div,
+  .d01-final .sourceTable b,
+  .d01-final .sourceState,
+  .d01-final .connectAlert span,
+  .d01-final .directorError span {
+    font-size: 12px;
+  }
 }
 .d01 * {
   box-sizing: border-box;

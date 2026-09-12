@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     job_worker_concurrency: int = 8
     job_idle_poll_seconds: float = 1.0
     job_lease_seconds: int = 300
+    job_heartbeat_seconds: float = 30.0
     job_retry_base_seconds: int = 10
     job_retry_max_seconds: int = 900
     job_priority_aging_seconds: int = 300

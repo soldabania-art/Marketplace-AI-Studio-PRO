@@ -1,0 +1,5 @@
+[
+  {"rrdId": 1001, "nmId": 10, "retailAmount": "100.00", "forPay": "80.00"},
+  {"rrdId": 1002, "nmId": 11, "retailAmount": "not-money", "forPay": "NaN"},
+  {"nmId": 12, "retailAmount": "50.00"}
+]

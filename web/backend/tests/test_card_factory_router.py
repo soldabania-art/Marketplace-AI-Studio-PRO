@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app.card_factory_router import ConfirmPublicationRequest, _find_card, _load_card, _media_verification_result, _photo_urls, _publication_payload, _verification_result, publish_card, publish_media
+from app.card_factory_router import ConfirmPublicationRequest, GenerateCardRequest, _find_card, _load_card, _media_verification_result, _photo_urls, _publication_payload, _verification_result, generate, generations, publish_card, publish_media
 from app.external_write_guard import require_external_write_allowed
 from app.models import AutomationControl, OperationalAuditEvent, PublicationStatus
 
@@ -225,6 +225,33 @@ def test_explicit_resume_allows_card_writer(monkeypatch):
 
     assert writes == ['write']
     assert result['status'] == PublicationStatus.submitted.value
+
+
+def test_regeneration_cannot_bypass_exhausted_trial(monkeypatch):
+    provider_calls = []
+    store = SimpleNamespace(id='s1', workspace_id='w1')
+    monkeypatch.setattr('app.card_factory_router._resolve_connected_store', lambda db,user,store_id: store)
+    monkeypatch.setattr('app.card_factory_router._load_card', lambda db,store_id,nm_id: ({'nm_id':nm_id}, SimpleNamespace()))
+    monkeypatch.setattr('app.card_factory_router.build_fact_set', lambda source: {'sha256':'facts'})
+    monkeypatch.setattr('app.card_factory_router.reserve_trial_card', lambda db,workspace_id: (_ for _ in ()).throw(HTTPException(402, 'exhausted')))
+    monkeypatch.setattr('app.card_factory_router.generate_grounded_copy', lambda facts: provider_calls.append('generate'))
+    with pytest.raises(HTTPException) as error:
+        generate(GenerateCardRequest(store_id='s1', nm_id=42), user=SimpleNamespace(id='u1'), db=SimpleNamespace())
+    assert error.value.status_code == 402
+    assert provider_calls == []
+
+
+def test_saved_generation_history_remains_readable_without_ai_entitlement(monkeypatch):
+    saved = SimpleNamespace(id='g-saved')
+    class HistoryQuery:
+        def filter(self, *args): return self
+        def order_by(self, *args): return self
+        def limit(self, value): return self
+        def all(self): return [saved]
+    db = SimpleNamespace(query=lambda model: HistoryQuery())
+    monkeypatch.setattr('app.card_factory_router.resolve_store', lambda db,user,store_id: SimpleNamespace(id='s1'))
+    monkeypatch.setattr('app.card_factory_router.public_generation', lambda row: {'id':row.id})
+    assert generations(store_id='s1', user=SimpleNamespace(id='u1'), db=db) == {'items':[{'id':'g-saved'}]}
 
 
 def test_stop_from_another_tenant_does_not_match_current_scope():

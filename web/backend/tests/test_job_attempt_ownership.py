@@ -217,3 +217,61 @@ def test_two_workers_fence_stale_status_domain_write_and_child_enqueue():
     assert [row.snapshot_type for row in snapshots] == ["t08a-new-worker"]
     assert [row.idempotency_key for row in children] == [f"t08a-new-child:{job_id}"]
     assert stale_errors == [JobOwnershipLost]
+
+
+@pytest.mark.skipif(engine.dialect.name != "postgresql", reason="requires PostgreSQL row locks")
+@pytest.mark.parametrize("commit_result", [True, False])
+def test_ownership_is_held_until_domain_transaction_ends(commit_result):
+    from concurrent.futures import ThreadPoolExecutor
+    from sqlalchemy import event
+    from app.job_queue import JobAttempt, _CURRENT_ATTEMPT
+
+    _empty_jobs()
+    workspace_id, store_id = _store()
+    job_id = _job("test.t08a.commit-race", workspace_id=workspace_id, store_id=store_id)
+    started = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        owner = _claim_one(db, "worker-a", 300, now=started)
+        attempt = JobAttempt(job_id, "worker-a", owner.attempt_id, owner.attempts, threading.Event())
+
+    def try_reclaim():
+        with SessionLocal() as other:
+            claimed = _claim_one(other, "worker-b", 300, now=started + timedelta(seconds=301))
+            return claimed.id if claimed else None
+
+    class RollbackProbe(Exception):
+        pass
+
+    # This listener runs after the global ownership check, before actual COMMIT.
+    def after_fence(db):
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            assert pool.submit(try_reclaim).result(timeout=5) is None
+        if not commit_result:
+            raise RollbackProbe()
+
+    with SessionLocal() as db:
+        event.listen(db, "before_commit", after_fence)
+        token = _CURRENT_ATTEMPT.set(attempt)
+        try:
+            db.add(MarketplaceSnapshot(
+                store_id=store_id, marketplace="wildberries",
+                snapshot_type="t08a-commit-race", payload={"owner": "worker-a"},
+            ))
+            if commit_result:
+                db.commit()
+            else:
+                with pytest.raises(RollbackProbe):
+                    db.commit()
+                db.rollback()
+        finally:
+            _CURRENT_ATTEMPT.reset(token)
+            event.remove(db, "before_commit", after_fence)
+
+    # Both COMMIT and ROLLBACK must release the fence; a crashed lease is recoverable.
+    assert try_reclaim() == job_id
+    with SessionLocal() as db:
+        count = db.query(MarketplaceSnapshot).filter(
+            MarketplaceSnapshot.store_id == store_id,
+            MarketplaceSnapshot.snapshot_type == "t08a-commit-race",
+        ).count()
+        assert count == int(commit_result)

@@ -916,9 +916,8 @@ async def publish_media(publication_id: str, payload: ConfirmPublicationRequest,
     if payload.confirmation.strip().upper() != "ОПУБЛИКОВАТЬ ФОТО":
         raise HTTPException(422, "Для публикации введите ОПУБЛИКОВАТЬ ФОТО.")
 
-    connection = _connection(db, store.id)
-    token = decrypt_connection(connection)
     if publication.status == PublicationStatus.submitting:
+        token = decrypt_connection(_connection(db, store.id))
         try:
             return await _reconcile_media_state(db, publication, token)
         except (httpx.HTTPError, ValueError) as exc:
@@ -943,6 +942,7 @@ async def publish_media(publication_id: str, payload: ConfirmPublicationRequest,
     }
     require_external_write_allowed(db, **guard)
 
+    token = decrypt_connection(_connection(db, store.id))
     source = publication.source_payload or {}
     try:
         live = await fetch_wb_card(

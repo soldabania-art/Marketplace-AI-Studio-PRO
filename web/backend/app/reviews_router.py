@@ -1,5 +1,3 @@
-from datetime import datetime, timezone
-
 import json
 
 import httpx
@@ -9,19 +7,21 @@ from sqlalchemy.orm import Session
 from .db import get_db
 from .ai_generation_service import begin_generation, complete_generation, fail_generation, public_generation, stable_hash
 from .billing_service import require_entitlement
-from .job_queue import enqueue
+from .config import get_settings
+from .data_health import evaluate_source_snapshot, refresh_due
 from .marketplace_sync import latest_snapshot
 from .models import AIGeneration, GenerationStatus, MarketplaceConnection, User
 from .review_ai import build_review_fact_set, generate_review_analysis
 from .security import get_current_user
 from .store_access import resolve_store
+from .sync_scheduler import enqueue_sync_job
 
 router = APIRouter(prefix="/reviews", tags=["reviews"])
 
 
 def _queue(db: Session, store):
-    bucket = int(datetime.now(timezone.utc).timestamp() // 900)
-    return enqueue(db, job_type="marketplace.wb.feedbacks.sync", idempotency_key=f"wb-feedbacks:{store.id}:{bucket}", payload={"store_id": store.id}, workspace_id=store.workspace_id, store_id=store.id, priority=54, max_attempts=5)
+    job, _ = enqueue_sync_job(db, store=store, group="feedbacks", payload={"store_id": store.id, "origin": "reviews"}, priority=54)
+    return job
 
 
 @router.get("")
@@ -35,8 +35,10 @@ def reviews(store_id: str | None = None, user: User = Depends(get_current_user),
         job = _queue(db, store)
         return {"store_id": store.id, "store_name": store.name, "sync_required": True, "refresh_job_id": job.id, "freshness": None, "metrics": None, "reviews": []}
     items = list((snapshot.payload or {}).get("items") or [])
-    age = max(0, int((datetime.now(timezone.utc) - (snapshot.created_at if snapshot.created_at.tzinfo else snapshot.created_at.replace(tzinfo=timezone.utc))).total_seconds()))
-    refresh = _queue(db, store) if age > 3600 else None
+    health = evaluate_source_snapshot(snapshot, "feedbacks")
+    age = health["age_seconds"]
+    due = refresh_due(health, get_settings().sync_feedbacks_interval_seconds)
+    refresh = _queue(db, store) if due else None
     ratings = [int(item.get("rating") or 0) for item in items]
     metrics = {
         "loaded": len(items),
@@ -44,7 +46,7 @@ def reviews(store_id: str | None = None, user: User = Depends(get_current_user),
         "low_rating": sum(rating <= 3 for rating in ratings),
         "average_rating": round(sum(ratings) / len(ratings), 2) if ratings else None,
     }
-    return {"store_id": store.id, "store_name": store.name, "marketplace": "wildberries", "read_only": True, "sync_required": age > 3600, "refresh_job_id": refresh.id if refresh else None, "freshness": {"created_at": snapshot.created_at, "age_seconds": age}, "metrics": metrics, "reviews": items[:200]}
+    return {"store_id": store.id, "store_name": store.name, "marketplace": "wildberries", "read_only": True, "sync_required": due, "refresh_job_id": refresh.id if refresh else None, "freshness": {"created_at": snapshot.created_at, "age_seconds": age, "status": health["status"]}, "metrics": metrics, "reviews": items[:200]}
 
 
 @router.get("/analysis")

@@ -1,14 +1,12 @@
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from .db import get_db
-from .job_queue import enqueue
 from .marketplace_sync import latest_snapshot
 from .models import MarketplaceConnection, User
 from .security import get_current_user
 from .store_access import resolve_store
+from .sync_scheduler import enqueue_sync_job
 
 router=APIRouter(prefix='/sync',tags=['marketplace-sync'])
 
@@ -17,8 +15,7 @@ def queue_wb_sync(store_id:str|None=None,user:User=Depends(get_current_user),db:
     store=resolve_store(db,user,store_id)
     connection=db.query(MarketplaceConnection).filter(MarketplaceConnection.store_id==store.id,MarketplaceConnection.marketplace=='wildberries',MarketplaceConnection.enabled.is_(True)).first()
     if not connection: raise HTTPException(409,'Wildberries не подключён к выбранному магазину.')
-    bucket=int(datetime.now(timezone.utc).timestamp()//300)
-    job=enqueue(db,job_type='marketplace.wb.analytics.sync',idempotency_key=f'wb-sync:{store.id}:{bucket}',payload={'store_id':store.id},workspace_id=store.workspace_id,store_id=store.id,priority=60,max_attempts=5)
+    job,_=enqueue_sync_job(db,store=store,group='analytics',payload={'store_id':store.id,'origin':'manual_sync'},priority=60)
     return {'queued':True,'job_id':job.id,'status':job.status.value,'store_id':store.id}
 
 @router.get('/wildberries/status')

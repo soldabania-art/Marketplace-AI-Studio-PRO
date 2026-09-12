@@ -1,6 +1,6 @@
 import hashlib
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,13 +10,14 @@ from sqlalchemy.orm import Session
 from .db import get_db
 from .director_service import build_director, compare_measurement
 from .external_write_guard import lock_external_write_scope
-from .job_queue import enqueue
+from .data_health import evaluate_source_snapshot
 from .marketplace_sync import latest_snapshot
 from .models import AutomationControl, DirectorAction, DirectorRun, OperationalAuditEvent, User
 from .profit_center_router import ProfitSyncRequest, profit_center, start_profit_sync
 from .security import get_current_user
 from .seller_data_router import _connection
 from .store_access import require_store_admin, resolve_store
+from .sync_scheduler import enqueue_sync_job
 from .wb_analytics import build_network_supply_inputs
 
 router = APIRouter(prefix='/director', tags=['director'])
@@ -39,14 +40,16 @@ class ActionRequest(BaseModel):
     store_id: str = Field(min_length=1, max_length=36)
 
 
-def _source(snapshot, name: str, *, complete: bool | None = None, coverage_matches: bool = True) -> dict:
-    if snapshot is None: state, age = 'missing', None
-    else:
-        created = snapshot.created_at
-        if created.tzinfo is None: created = created.replace(tzinfo=timezone.utc)
-        age = max(0, int((datetime.now(timezone.utc) - created).total_seconds()))
-        state = 'incomplete' if complete is False or not coverage_matches else ('stale' if age > 900 else 'live')
-    return {'name': name, 'state': state, 'last_snapshot_at': snapshot.created_at.isoformat() if snapshot and snapshot.created_at else None, 'age_seconds': age}
+def _source(snapshot, name: str, *, now: datetime | None = None, period_days: int = 30) -> dict:
+    health = evaluate_source_snapshot(snapshot, name, now=now, period_days=period_days)
+    state = 'live' if health['status'] in {'healthy', 'delayed'} else health['status']
+    return {
+        'name': name, 'state': state, 'health_status': health['status'],
+        'last_snapshot_at': snapshot.created_at.isoformat() if snapshot and snapshot.created_at else None,
+        'age_seconds': health['age_seconds'], 'complete': health['complete'],
+        'coverage_matches': health['coverage_matches'],
+        'coverage_expected': health['coverage_expected'], 'coverage_actual': health['coverage_actual'],
+    }
 
 
 def _control_payload(control: AutomationControl | None) -> dict:
@@ -124,16 +127,13 @@ def _current_result(db: Session, store, user: User) -> dict:
     snapshot = lambda name: latest_snapshot(db, store_id=store.id, marketplace='wildberries', snapshot_type=name)
     catalog, stocks, sales, feedbacks = snapshot('catalog'), snapshot('stocks'), snapshot('sales_velocity_7d'), snapshot('feedbacks')
     finance, advertising = snapshot('finance_realization_sync'), snapshot('advertising_sync')
-    end = date.today(); date_from, date_to = (end - timedelta(days=29)).isoformat(), end.isoformat()
-    finance_payload = dict(finance.payload or {}) if finance else {}
-    advertising_payload = dict(advertising.payload or {}) if advertising else {}
+    now = datetime.now(timezone.utc)
     sources = [
-        _source(catalog, 'catalog'), _source(stocks, 'stocks'), _source(sales, 'sales_velocity_7d'),
-        _source(finance, 'finance_realization_sync', complete=bool(finance_payload.get('complete')) if finance else None,
-                coverage_matches=finance_payload.get('date_from') == date_from and finance_payload.get('date_to') == date_to),
-        _source(advertising, 'advertising_sync', complete=bool(advertising_payload.get('complete')) if advertising else None,
-                coverage_matches=advertising_payload.get('date_from') == date_from and advertising_payload.get('date_to') == date_to),
-        _source(feedbacks, 'feedbacks'),
+        _source(catalog, 'catalog', now=now), _source(stocks, 'stocks', now=now),
+        _source(sales, 'sales_velocity_7d', now=now),
+        _source(finance, 'finance_realization_sync', now=now, period_days=30),
+        _source(advertising, 'advertising_sync', now=now, period_days=30),
+        _source(feedbacks, 'feedbacks', now=now),
     ]
     catalog_items = list((catalog.payload or {}).get('items') or []) if catalog else []
     stock_rows = list((stocks.payload or {}).get('rows') or []) if stocks else []
@@ -176,16 +176,12 @@ def execute_action(action_id: str, payload: ActionRequest, user: User = Depends(
         return {'id': row.id, 'status': row.status, 'execution': (row.result_payload or {}).get('execution'), 'message': 'Обновление уже поставлено в очередь.'}
     if row.status != 'proposed': raise HTTPException(409, 'Эту рекомендацию уже обработали.')
     if executor_group == 'analytics':
-        bucket = int(datetime.now(timezone.utc).timestamp() // 300)
-        job = enqueue(db, job_type='marketplace.wb.analytics.sync', idempotency_key=f'wb-sync:{store.id}:{bucket}',
-                      payload={'store_id': store.id}, workspace_id=store.workspace_id, store_id=store.id,
-                      priority=55, max_attempts=5)
+        job, _ = enqueue_sync_job(db, store=store, group='analytics',
+                                  payload={'store_id': store.id, 'origin': 'director'}, priority=55)
         jobs = {'analytics': job.id}
     elif executor_group == 'feedbacks':
-        bucket = int(datetime.now(timezone.utc).timestamp() // 900)
-        job = enqueue(db, job_type='marketplace.wb.feedbacks.sync', idempotency_key=f'wb-feedbacks:{store.id}:{bucket}',
-                      payload={'store_id': store.id}, workspace_id=store.workspace_id, store_id=store.id,
-                      priority=54, max_attempts=5)
+        job, _ = enqueue_sync_job(db, store=store, group='feedbacks',
+                                  payload={'store_id': store.id, 'origin': 'director'}, priority=54)
         jobs = {'feedbacks': job.id}
     else:
         queued = start_profit_sync(ProfitSyncRequest(store_id=store.id, period_days=30), user=user, db=db)

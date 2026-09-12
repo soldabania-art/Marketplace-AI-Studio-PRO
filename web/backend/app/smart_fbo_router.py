@@ -6,12 +6,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from .db import get_db
-from .job_queue import enqueue
+from .config import get_settings
+from .data_health import evaluate_source_snapshot, refresh_due
 from .marketplace_sync import latest_snapshot
 from .models import MarketplaceConnection, User
 from .security import get_current_user
 from .smart_fbo import SupplyInput, recommend_many
 from .store_access import resolve_store
+from .sync_scheduler import enqueue_sync_job
 from .wb_analytics import build_network_supply_inputs
 
 router=APIRouter(prefix='/smart-fbo',tags=['smart-fbo'])
@@ -31,8 +33,8 @@ def _connection(db,store_id):
     return row
 
 def _queue_refresh(db,store):
-    bucket=int(datetime.now(timezone.utc).timestamp()//300)
-    return enqueue(db,job_type='marketplace.wb.analytics.sync',idempotency_key=f'wb-sync:{store.id}:{bucket}',payload={'store_id':store.id},workspace_id=store.workspace_id,store_id=store.id,priority=50,max_attempts=5)
+    job,_=enqueue_sync_job(db,store=store,group='analytics',payload={'store_id':store.id,'origin':'smart_fbo'},priority=50)
+    return job
 
 @router.get('/live')
 def snapshot_plan(store_id:str|None=None,lead_time_days:Annotated[int,Query(ge=0,le=90)]=7,target_cover_days:Annotated[int,Query(ge=1,le=180)]=21,safety_days:Annotated[int,Query(ge=0,le=90)]=5,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
@@ -40,9 +42,14 @@ def snapshot_plan(store_id:str|None=None,lead_time_days:Annotated[int,Query(ge=0
     store=resolve_store(db,current_user,store_id); _connection(db,store.id)
     stocks_snap=latest_snapshot(db,store_id=store.id,marketplace='wildberries',snapshot_type='stocks')
     sales_snap=latest_snapshot(db,store_id=store.id,marketplace='wildberries',snapshot_type='sales_velocity_7d')
+    now=datetime.now(timezone.utc)
+    source_health={
+        'stocks':evaluate_source_snapshot(stocks_snap,'stocks',now=now),
+        'sales':evaluate_source_snapshot(sales_snap,'sales',now=now),
+    }
     if not stocks_snap or not sales_snap:
         job=_queue_refresh(db,store)
-        return {'store_id':store.id,'store_name':store.name,'marketplace':'wildberries','mode':'snapshot_pending','live_marketplace_data':False,'sync_required':True,'job_id':job.id,'recommendations':[],'notice':'Данные магазина ещё синхронизируются. Smart FBO не обращается к WB напрямую из интерфейса.'}
+        return {'store_id':store.id,'store_name':store.name,'marketplace':'wildberries','mode':'snapshot_pending','live_marketplace_data':False,'sync_required':True,'job_id':job.id,'source_health':source_health,'recommendations':[],'notice':'Данные магазина ещё синхронизируются. Smart FBO не обращается к WB напрямую из интерфейса.'}
     stocks=list((stocks_snap.payload or {}).get('rows') or [])
     sales={int(row['nm_id']):row for row in ((sales_snap.payload or {}).get('items') or []) if row.get('nm_id') is not None}
     facts=build_network_supply_inputs(stocks,sales)
@@ -50,7 +57,7 @@ def snapshot_plan(store_id:str|None=None,lead_time_days:Annotated[int,Query(ge=0
     facts_by_sku={r['sku']:r for r in facts}
     for row in recommendations:
         fact=facts_by_sku.get(row['sku'],{}); row['nm_id']=fact.get('nm_id'); row['title']=fact.get('title',''); row['orders_period']=fact.get('orders_period',0); row['sales_period_days']=fact.get('period_days',7); row['warehouse_stocks']=fact.get('warehouse_stocks',[]); row['warehouse_allocation_status']='pending_regional_demand'
-    oldest=min(stocks_snap.created_at,sales_snap.created_at); age=max(0,int((datetime.now(timezone.utc)-oldest).total_seconds()))
-    stale=age>900
-    refresh_job=_queue_refresh(db,store) if stale else None
-    return {'store_id':store.id,'store_name':store.name,'marketplace':'wildberries','mode':'deterministic_snapshot_v1','live_marketplace_data':True,'sync_required':stale,'refresh_job_id':refresh_job.id if refresh_job else None,'snapshot_age_seconds':age,'sources':{'stock_snapshot_id':stocks_snap.id,'sales_snapshot_id':sales_snap.id},'summary':{'products_with_sales_history':len(sales),'stock_rows':len(stocks),'critical':sum(1 for r in recommendations if r['urgency']=='critical'),'recommended_units':sum(r['recommended_qty'] for r in recommendations)},'recommendations':recommendations,'notice':'Расчёт выполнен из сохранённых данных WB. Интерфейс не расходует лимиты WB; устаревшие данные обновляются через очередь.'}
+    age=max(item['age_seconds'] or 0 for item in source_health.values())
+    due=any(refresh_due(item,get_settings().sync_analytics_interval_seconds) for item in source_health.values())
+    refresh_job=_queue_refresh(db,store) if due else None
+    return {'store_id':store.id,'store_name':store.name,'marketplace':'wildberries','mode':'deterministic_snapshot_v1','live_marketplace_data':True,'sync_required':due,'refresh_job_id':refresh_job.id if refresh_job else None,'snapshot_age_seconds':age,'source_health':source_health,'sources':{'stock_snapshot_id':stocks_snap.id,'sales_snapshot_id':sales_snap.id},'summary':{'products_with_sales_history':len(sales),'stock_rows':len(stocks),'critical':sum(1 for r in recommendations if r['urgency']=='critical'),'recommended_units':sum(r['recommended_qty'] for r in recommendations)},'recommendations':recommendations,'notice':'Расчёт выполнен из сохранённых данных WB. Интерфейс не расходует лимиты WB; устаревшие данные обновляются через очередь.'}

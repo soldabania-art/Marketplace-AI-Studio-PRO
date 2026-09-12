@@ -81,7 +81,7 @@ def build_director(*, store_id: str, store_name: str, sources: list[dict],
     for name, (title, href) in missing_source_labels.items():
         source = source_by_name.get(name) or {'state': 'missing'}
         if source['state'] in {'missing', 'stale', 'incomplete'}:
-            state_label = {'missing': 'источник отсутствует', 'stale': 'данные старше 15 минут',
+            state_label = {'missing': 'источник отсутствует', 'stale': 'превышен срок свежести источника',
                            'incomplete': 'загрузка не завершена'}[source['state']]
             actions.append(action(
                 action_id=f'source:{name}', kind='data_health', title=title,

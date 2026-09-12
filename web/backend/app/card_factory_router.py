@@ -460,6 +460,7 @@ async def publish_card(publication_id: str, payload: ConfirmPublicationRequest, 
         or grounding.get("publish_ready") is not True
         or grounding.get("fact_set_sha256") != publication.fact_set_sha256
         or grounding.get("payload_sha256") != publication.payload_sha256
+        or stable_hash(publication.proposed_payload or {}) != publication.payload_sha256
     ):
         raise HTTPException(
             409,

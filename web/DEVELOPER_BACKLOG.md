@@ -1,10 +1,18 @@
 # TROVENDI — очередь разработки после аудита
 
-Дата: 12.09.2026. Исходный SHA: `f090a4b`. [Решение и доказательства](ARCHITECTURE_REVIEW_2026-09-12.md).
+Дата: 12.09.2026. Проверенный `main`: `00ad0318abe7cebe353015afdb7f68847054f960`. [Решение и доказательства](ARCHITECTURE_REVIEW_2026-09-12.md).
 
-Концепция одобрена; коммерческий запуск не одобрен до применимых release gates. Все задачи ниже **OPEN** на момент передачи. Закрывается не номер теста, а проверяемый контракт. 149 backend/4 CSV — baseline, не замена новых regression cases.
+Концепция одобрена; коммерческий запуск не одобрен. Первичный клиент — действующий продавец Wildberries. Ближайший процесс: подключение → полнота данных → детерминированная экономика → подтверждённые проблемы → задачи с доказательствами → разрешённое действие → статус и результат.
 
-Первая задача — **T01**, затем **T02 → T03 → T04**. Далее первая доступная по зависимостям. Внешний блокер не разрешает обходить security gate. P0 — блокер соответствующего продаваемого сценария, P1 — доведение продукта, P2 — расширение. Отключённый модуль не должен продаваться как готовый.
+Фактическое состояние issues на момент обновления: #1 и #3 закрыты; #2 и #4 повторно открыты и имеют отдельные PR для независимой приёмки; #5–#22 открыты. Следующий кодовый приоритет после приёмки исправлений — только T05. Внешний блокер не разрешает обходить security gate.
+
+| Состояние | Задачи |
+| --- | --- |
+| Закрыто | [T01 / #1](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/1), [T03 / #3](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/3) |
+| Повторно открыто, PR на независимой приёмке | [T02 / #2](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/2) → [PR #28](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/28); [T04 / #4](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/4) → [PR #29](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/29) |
+| Следующая после приёмки | [T05 / #5](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/5) |
+| Открыто, выполнять по зависимостям | T06–T22 |
+
 
 | ID | Приоритет | Задача | Зависимости | GitHub |
 | --- | --- | --- | --- | --- |
@@ -31,9 +39,27 @@
 | T21 | P1 | Довести Beginner Studio до честного сохраняемого результата | T03, T05, T15 | [Issue #21](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/21) |
 | T22 | P1 | Сделать поддержку полноценной очередью обработки инцидентов | T13 | [Issue #22](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/22) |
 
+## Горизонты поставки и коммерческие проверки
+
+| Горизонт | Проверяемый результат |
+| --- | --- |
+| Ближайший релиз | Надёжный WB, достоверная экономика, ежедневные доказательные задачи и безопасное исполнение |
+| Следующий этап | Подписка и лимиты, учёт AI-себестоимости, платный пилот, документы и ограниченный пилот фулфилментов |
+| Позднее | Ozon; затем один зарубежный рынок после отдельной проверки спроса |
+| Отложено | Beginner-first без продаж, конструктор магазинов, массовые страны, собственные склады, кредитование/расчёты, неограниченная автономная реклама, собственная базовая AI-модель |
+
+Коммерческие workstreams не заменяют продуктовые gates и не содержат придуманных результатов:
+
+- **CV01 · Интервью.** Подготовить скрипт и таблицу фиксации для действующих WB-продавцов. Критерий: роль и объём операций подтверждены, текущий процесс потерь описан на реальном примере, цена проблемы и доступ к решению отделены от мнения. Контакты без отдельного поручения не инициировать.
+- **CV02 · Платный пилот.** Подготовить границы, длительность, данные, поддержку, stop-критерии и согласие на измерение. Критерий старта: клиент, сумма и тариф зафиксированы договором/офертой; любые цены до этого — гипотезы. CI не является разрешением коммерческого запуска.
+- **CV03 · AI unit economics.** Для каждой генерации учитывать provider/model, токены или единицы, стоимость, кэш/повтор, лимит подписки и связанную задачу. Критерий: стоимость на активированный магазин и полезную завершённую задачу воспроизводима без LLM-оценки.
+- **CV04 · Активация и продление.** Определить события: магазин подключён, полнота данных достаточна, первая подтверждённая проблема просмотрена, задача одобрена, выполнение завершено, результат измерен, подписка продлена. Критерий: события tenant-scoped, дедуплицированы и не содержат секретов.
+
+Будущий реестр результатов для каждой задачи хранит: проблему и исходные данные; рекомендацию; подтверждение и исполнителя; статус выполнения; затраты; метод измерения; наблюдаемый результат; ограничения вывода. Нельзя записывать рост прибыли как эффект AI без достаточной доказательности.
+
 ## T01 · P0 · Сделать CI обязательной проверкой PR и миграций PostgreSQL
 
-**Статус:** OPEN · [GitHub #1](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/1). **Зависимости:** нет.
+**Статус:** CLOSED · [GitHub #1](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/1). **Зависимости:** нет.
 
 **Файлы:** .github/workflows/web-cloud.yml; web/package.json; web/backend/migrations; web/backend/tests.
 
@@ -45,7 +71,7 @@
 
 ## T02 · P0 · Подключить Emergency STOP ко всем внешним публикациям
 
-**Статус:** OPEN · [GitHub #2](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/2). **Зависимости:** T01.
+**Статус:** REOPENED · исправление на независимой приёмке в [PR #28](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/28) · [GitHub #2](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/2). **Зависимости:** T01.
 
 **Файлы:** web/backend/app/card_factory_router.py; director_router.py; models.py; web/components/DailyDirectorWorkspace.js.
 
@@ -57,7 +83,7 @@
 
 ## T03 · P0 · Закрыть доступ просроченных тарифов к новой AI-генерации
 
-**Статус:** OPEN · [GitHub #3](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/3). **Зависимости:** T01.
+**Статус:** CLOSED · [GitHub #3](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/3). **Зависимости:** T01.
 
 **Файлы:** web/backend/app/trial_service.py; billing_service.py; card_factory_router.py; beginner_router.py.
 
@@ -69,7 +95,7 @@
 
 ## T04 · P0 · Запретить превращение некорректных финансовых данных в ноль
 
-**Статус:** OPEN · [GitHub #4](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/4). **Зависимости:** T01.
+**Статус:** REOPENED · исправление на независимой приёмке в [PR #29](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/29) · [GitHub #4](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/4). **Зависимости:** T01.
 
 **Файлы:** web/backend/app/wb_finance.py; wb_promotion.py; marketplace_sync.py; profit_center_router.py.
 
@@ -81,7 +107,7 @@
 
 ## T05 · P0 · Проверять утверждения AI по фактам, а не только ID и числам
 
-**Статус:** OPEN · [GitHub #5](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/5). **Зависимости:** T03.
+**Статус:** NEXT AFTER T02/T04 ACCEPTANCE · [GitHub #5](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/5). **Зависимости:** T03.
 
 **Файлы:** web/backend/app/ai_card_factory.py; beginner_router.py; review_ai.py; web/backend/tests/test_ai_card_factory.py.
 

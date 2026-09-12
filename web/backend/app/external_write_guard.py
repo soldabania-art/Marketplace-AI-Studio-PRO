@@ -23,11 +23,16 @@ def lock_external_write_scope(
     """Serialize STOP changes and dispatch admission, including a missing control row."""
     bind = db.get_bind()
     if bind.dialect.name == "postgresql":
-        db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _scope_lock_key(
+        acquired = db.execute(text("SELECT pg_try_advisory_xact_lock(:key)"), {"key": _scope_lock_key(
             workspace_id=workspace_id,
             store_id=store_id,
             marketplace=marketplace,
-        )})
+        )}).scalar_one()
+        if not acquired:
+            raise HTTPException(409, detail={
+                "code": "EXTERNAL_WRITE_BUSY",
+                "message": "Отправка или изменение STOP уже выполняется. Повторите после её завершения; новое действие не начато.",
+            })
 
 
 def require_external_write_allowed(

@@ -21,7 +21,7 @@ from .marketplace_sync import latest_snapshot
 from .models import AIGeneration, CardPublication, GenerationStatus, MarketplaceConnection, MediaPublication, PublicationStatus, User, UserSession
 from .security import get_current_user, require_step_up_session
 from .store_access import require_store_admin, resolve_store
-from .trial_service import ensure_ai_access, refund_trial_card, reserve_trial_card
+from .trial_service import refund_trial_card, reserve_trial_card
 from .wb_content import build_card_update, fetch_wb_card, update_wb_card, upload_wb_media_file
 
 router = APIRouter(prefix="/card-factory", tags=["card-factory"])
@@ -240,12 +240,7 @@ def generate(payload: GenerateCardRequest, user: User = Depends(get_current_user
     store = _resolve_connected_store(db, user, payload.store_id)
     source, snapshot = _load_card(db, store.id, payload.nm_id)
     fact_set = build_fact_set(source)
-    previous = db.query(AIGeneration).filter(AIGeneration.store_id == store.id, AIGeneration.feature == "card_factory_copy", AIGeneration.subject_id == str(payload.nm_id), AIGeneration.status == GenerationStatus.completed).first()
-    trial_started_now = False
-    if previous:
-        ensure_ai_access(db, store.workspace_id, allow_exhausted=True)
-    else:
-        _, trial_started_now = reserve_trial_card(db, store.workspace_id)
+    _, trial_started_now = reserve_trial_card(db, store.workspace_id)
     generation = None
     completed = False
     try:
@@ -271,7 +266,7 @@ def generate(payload: GenerateCardRequest, user: User = Depends(get_current_user
             fail_generation(db, generation, exc)
         raise
     finally:
-        if not completed and not previous:
+        if not completed:
             refund_trial_card(db, store.workspace_id, trial_started_now)
     return {
         "generation_id": generation.id,

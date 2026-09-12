@@ -38,7 +38,10 @@ class Query:
     def filter(self, *args):
         return self
 
-    def with_for_update(self):
+    def populate_existing(self):
+        return self
+
+    def with_for_update(self, **kwargs):
         return self
 
     def order_by(self, *args):
@@ -407,3 +410,26 @@ def test_visual_generation_records_digest_before_blob_finalize(monkeypatch):
     assert result["generation_id"] == GENERATION_ID
     assert captured["generated_sha256"] == hashlib.sha256(raw).hexdigest()
     assert captured["generated_bytes"] == len(raw)
+
+
+def test_concurrent_finalize_reloads_winner_and_cannot_replace_it(monkeypatch):
+    raw = webp_bytes("green")
+    winner = generation(raw)
+    run_finalize(finalize_payload(), winner, monkeypatch, raw)
+    stored = dict(winner.result_payload)
+    stored["url"] = URL.replace(OWN_HOST, OWN_HOST + ":443")
+    row = generation(raw)
+    base_db = Db
+    class RaceDb(base_db):
+        def __init__(self, value):
+            super().__init__(value)
+            self.reads = 0
+        def query(self, *args):
+            self.reads += 1
+            if self.reads == 2:
+                self.row.result_payload = dict(stored)
+            return Query(self.row)
+    monkeypatch.setitem(globals(), "Db", RaceDb)
+    with pytest.raises(HTTPException, match="зафиксировал"):
+        run_finalize(finalize_payload(), row, monkeypatch, raw)
+    assert row.result_payload == stored

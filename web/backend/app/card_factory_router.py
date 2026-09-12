@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import OperationalError
 
 from .ai_card_factory import assess_grounding, build_fact_set, generate_grounded_copy, generate_product_visual
 from .ai_generation_service import begin_generation, complete_generation, fail_generation, public_generation, stable_hash
@@ -446,6 +447,26 @@ async def finalize_visual(payload: FinalizeVisualRequest, user: User = Depends(g
     if digest != generated_sha256 or len(raw) != generated_bytes:
         raise HTTPException(409, "Blob-объект не совпадает с исходным AI-изображением по контрольной сумме.")
     content_type, dimensions = _inspect_webp(raw)
+    # Download outside the row lock; then reload and serialize finalization.
+    try:
+        generation = db.query(AIGeneration).filter(
+            AIGeneration.id == payload.generation_id,
+            AIGeneration.store_id == store.id,
+        ).populate_existing().with_for_update(nowait=True).first()
+    except OperationalError as exc:
+        db.rollback()
+        raise HTTPException(409, "Фиксация этой генерации уже выполняется.") from exc
+    if not generation:
+        raise HTTPException(404, "Генерация больше не доступна.")
+    current = dict(generation.result_payload or {})
+    if current.get("storage_status") == "stored":
+        _validate_stored_asset_binding(current, generation, store.id)
+        if current.get("url") != payload.url or current.get("pathname") != payload.pathname:
+            raise HTTPException(409, "Другой запрос уже зафиксировал неизменяемый объект.")
+        return {"generation": public_generation(generation), "publish_requires_confirmation": True}
+    _, expected_digest, expected_bytes = _asset_binding(generation, store.id)
+    if digest != expected_digest or len(raw) != expected_bytes:
+        raise HTTPException(409, "Генерация изменилась во время проверки.")
     current.update({
         "storage_status": "stored",
         "url": payload.url,

@@ -1,6 +1,12 @@
 import asyncio
+import json
+from pathlib import Path
 
-from app.wb_finance import fetch_financial_report_page, normalize_financial_row
+import pytest
+
+from app.wb_finance import fetch_financial_report_page, normalize_financial_row, parse_financial_report_page
+
+FIXTURES=Path(__file__).with_name('fixtures')
 
 
 def test_normalize_financial_row_keeps_source_and_exact_kopecks():
@@ -60,10 +66,36 @@ def test_finance_reader_posts_cursor_and_handles_current_response(monkeypatch):
 
     monkeypatch.setattr('app.wb_finance.wait_marketplace_slot',wait)
     monkeypatch.setattr('app.wb_finance.httpx.AsyncClient',lambda **kwargs:Client())
-    rows=asyncio.run(fetch_financial_report_page('secret',date_from='2026-09-01',date_to='2026-09-09',rrd_id=11))
-    assert rows[0]['source_line_id']=='77'
-    assert rows[0]['payout_kopecks']==1050
+    page=asyncio.run(fetch_financial_report_page('secret',date_from='2026-09-01',date_to='2026-09-09',rrd_id=11))
+    assert page.items[0]['source_line_id']=='77'
+    assert page.items[0]['payout_kopecks']==1050
+    assert (page.raw_count,page.accepted_count,page.rejected_count,page.cursor,page.schema_state)==(1,1,0,77,'valid')
     assert sent['kwargs']['json']=={'dateFrom':'2026-09-01','dateTo':'2026-09-09','rrdId':11}
     assert sent['kwargs']['headers']=={'Authorization':'secret'}
     assert sent['wait'][0][2]=='finance-sales-report'
     assert sent['wait'][1]['min_interval_seconds']==60.0
+
+
+def test_finance_partial_page_rejects_malformed_money_missing_cursor_and_non_finite():
+    payload=json.loads((FIXTURES/'wb_finance_partial_invalid.json').read_text())
+    page=parse_financial_report_page(payload)
+    assert page.schema_state=='partial'
+    assert (page.raw_count,page.accepted_count,page.rejected_count)==(3,1,2)
+    assert page.safe_to_apply is False
+    assert page.cursor==1001
+    assert {item['code'] for item in page.evidence}=={'rejected_row'}
+    with pytest.raises(ValueError): normalize_financial_row({'rrdId':1,'forPay':'Infinity'})
+
+
+def test_finance_unknown_http_200_schema_is_not_empty_or_complete():
+    page=parse_financial_report_page({'data':[]},status_code=200)
+    assert page.schema_state=='unknown'
+    assert page.safe_to_apply is False
+    assert page.evidence[0]['code']=='unknown_schema'
+
+
+def test_finance_documented_204_is_the_only_complete_empty_page():
+    page=parse_financial_report_page(None,status_code=204)
+    assert page.schema_state=='documented_empty'
+    assert page.safe_to_apply is True
+    assert page.items==[]

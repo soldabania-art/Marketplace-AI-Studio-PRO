@@ -64,6 +64,27 @@ def test_wb_update_sends_one_complete_card_and_never_logs_token(monkeypatch):
     assert sent['wait'][0][2]=='content-cards-update'
 
 
+def test_card_dispatch_admission_runs_after_rate_limit_and_before_http(monkeypatch):
+    order=[]
+
+    async def wait(*args,**kwargs): order.append('rate-limit-complete')
+
+    class Response:
+        content=b''
+        status_code=200
+        def raise_for_status(self): return None
+
+    class Client:
+        async def __aenter__(self): return self
+        async def __aexit__(self,*args): return None
+        async def post(self,*args,**kwargs): order.append('http-started'); return Response()
+
+    monkeypatch.setattr('app.wb_content.wait_marketplace_slot',wait)
+    monkeypatch.setattr('app.wb_content.httpx.AsyncClient',lambda **kwargs:Client())
+    asyncio.run(update_wb_card('token',{'nmID':123},before_send=lambda:order.append('stop-admission')))
+    assert order==['rate-limit-complete','stop-admission','http-started']
+
+
 def test_live_preflight_reads_only_matching_vendor_card(monkeypatch):
     sent={}
 
@@ -112,3 +133,28 @@ def test_media_upload_appends_one_file_at_explicit_position(monkeypatch):
     assert sent['kwargs']['headers']=={'Authorization':'secret-token','X-Nm-Id':'123','X-Photo-Number':'4'}
     assert sent['kwargs']['files']['uploadfile'][1:]==(b'webp-bytes','image/webp')
     assert sent['wait'][0][2]=='content-media-file'
+
+
+def test_media_dispatch_admission_runs_after_rate_limit_and_before_http(monkeypatch):
+    order=[]
+
+    async def wait(*args,**kwargs): order.append('rate-limit-complete')
+
+    class Response:
+        content=b'{"error":false}'
+        status_code=200
+        def raise_for_status(self): return None
+        def json(self): return {'error':False}
+
+    class Client:
+        async def __aenter__(self): return self
+        async def __aexit__(self,*args): return None
+        async def post(self,*args,**kwargs): order.append('http-started'); return Response()
+
+    monkeypatch.setattr('app.wb_content.wait_marketplace_slot',wait)
+    monkeypatch.setattr('app.wb_content.httpx.AsyncClient',lambda **kwargs:Client())
+    asyncio.run(upload_wb_media_file(
+        'token',nm_id=123,photo_number=4,raw=b'webp',content_type='image/webp',
+        before_send=lambda:order.append('stop-admission'),
+    ))
+    assert order==['rate-limit-complete','stop-admission','http-started']

@@ -133,7 +133,7 @@ def _control(stopped, *, store_id='s1', workspace_id='w1'):
 def _publication(**overrides):
     values = dict(
         id='p1', generation_id='g1', store_id='s1', subject_id='42', marketplace='wildberries',
-        status=PublicationStatus.prepared, payload_sha256='a'*64, diff_payload={}, attempt_count=0,
+        status=PublicationStatus.prepared, payload_sha256='a'*64, diff_payload={'grounding': {'status': 'verified', 'publish_ready': True, 'fact_set_sha256': 'facts', 'payload_sha256': 'a'*64}}, attempt_count=0,
         error='', approved_at=None, submitted_at=None, created_at=datetime.now(timezone.utc),
         source_payload={'title':'Old','description':'Old'}, proposed_payload={'title':'New','description':'New'},
         fact_set_sha256='facts', source_card_sha256='source', provider_response={},

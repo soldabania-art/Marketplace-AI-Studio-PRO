@@ -10,7 +10,7 @@ from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from .ai_card_factory import build_fact_set, generate_grounded_copy, generate_product_visual
+from .ai_card_factory import assess_grounding, build_fact_set, generate_grounded_copy, generate_product_visual
 from .ai_generation_service import begin_generation, complete_generation, fail_generation, public_generation, stable_hash
 from .billing_service import require_entitlement
 from .config import get_settings
@@ -365,6 +365,17 @@ def prepare_publication(payload: PreparePublicationRequest, user: User = Depends
     if generation.fact_set_sha256 != fact_set["sha256"]:
         raise HTTPException(409, "Каталог изменился после генерации. Создайте новую AI-версию перед публикацией.")
     result = generation.result_payload or {}
+    grounding = assess_grounding(result, fact_set)
+    if not grounding["publish_ready"]:
+        raise HTTPException(
+            422,
+            {
+                "code": "AI_GROUNDING_REVIEW_REQUIRED",
+                "message": "AI-текст сохранён для preview, но не подтверждён для публикации.",
+                "errors": grounding["errors"],
+                "human_preview_available": True,
+            },
+        )
     try:
         proposed = build_card_update(source, title=result.get("wb_title") or "", description=result.get("description") or "")
         current = build_card_update(source, title=source.get("title") or "", description=source.get("description") or "")
@@ -379,6 +390,15 @@ def prepare_publication(payload: PreparePublicationRequest, user: User = Depends
     if not diff["title"]["changed"] and not diff["description"]["changed"]:
         raise HTTPException(409, "AI-версия не отличается от текущей карточки WB.")
     payload_sha256 = stable_hash(proposed)
+    grounding_proof = {
+        "status": grounding["status"],
+        "publish_ready": grounding["publish_ready"],
+        "fact_set_sha256": grounding["fact_set_sha256"],
+        "payload_sha256": payload_sha256,
+        "claim_count": grounding["claim_count"],
+        "limitations": grounding["limitations"],
+    }
+    diff["grounding"] = grounding_proof
     existing = db.query(CardPublication).filter(
         CardPublication.store_id == store.id,
         CardPublication.generation_id == generation.id,
@@ -386,6 +406,11 @@ def prepare_publication(payload: PreparePublicationRequest, user: User = Depends
         CardPublication.status == PublicationStatus.prepared,
     ).order_by(CardPublication.created_at.desc()).first()
     if existing:
+        existing_diff = dict(existing.diff_payload or {})
+        existing_diff["grounding"] = grounding_proof
+        existing.diff_payload = existing_diff
+        db.commit()
+        db.refresh(existing)
         return _publication_payload(existing)
     publication = CardPublication(
         workspace_id=store.workspace_id,
@@ -428,6 +453,18 @@ async def publish_card(publication_id: str, payload: ConfirmPublicationRequest, 
         raise HTTPException(409, "Подтверждение относится к другой версии карточки.")
     if payload.confirmation.strip().upper() != "ОПУБЛИКОВАТЬ":
         raise HTTPException(422, "Для публикации введите слово ОПУБЛИКОВАТЬ.")
+
+    grounding = (publication.diff_payload or {}).get("grounding") or {}
+    if (
+        grounding.get("status") != "verified"
+        or grounding.get("publish_ready") is not True
+        or grounding.get("fact_set_sha256") != publication.fact_set_sha256
+        or grounding.get("payload_sha256") != publication.payload_sha256
+    ):
+        raise HTTPException(
+            409,
+            "Публикация не имеет актуального серверного доказательства проверки AI-утверждений.",
+        )
 
     guard = {
         "workspace_id": store.workspace_id,

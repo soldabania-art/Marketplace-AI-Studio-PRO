@@ -115,10 +115,10 @@ async def record_marketplace_backoff(
 ) -> None:
     """Publish a provider 429 cooldown, then stop this logical operation."""
     settings = get_settings()
-    delay = max(1.0, min(
-        float(retry_after_seconds),
-        float(getattr(settings, 'marketplace_retry_after_max_seconds', 900)),
-    ))
+    delay = max(1.0, float(retry_after_seconds))
+    if not math.isfinite(delay):
+        raise MarketplaceLimiterUnavailable('Provider returned an invalid cooldown')
+    # Bound request waiting separately; never shorten the provider's cooldown.
     key = limiter_key(marketplace, token, endpoint_group)
     backend = settings.marketplace_limiter_backend.strip().lower()
     if backend == 'redis':
@@ -135,7 +135,8 @@ async def record_marketplace_backoff(
             return current
             """
             if hasattr(redis, 'eval'):
-                await _redis_command(redis.eval(script, 1, redis_key, ttl_ms))
+                effective_ms = await _redis_command(redis.eval(script, 1, redis_key, ttl_ms))
+                delay = max(delay, float(effective_ms) / 1000.0)
             else:
                 await _redis_command(redis.set(redis_key, '1', px=ttl_ms))
         except asyncio.CancelledError:
@@ -147,7 +148,9 @@ async def record_marketplace_backoff(
     elif backend == 'memory':
         bucket = _BUCKETS.setdefault(key, _Bucket(asyncio.Lock()))
         async with bucket.lock:
-            bucket.next_at = max(bucket.next_at, time.monotonic() + delay)
+            now = time.monotonic()
+            bucket.next_at = max(bucket.next_at, now + delay)
+            delay = max(delay, bucket.next_at - now)
     else:
         raise RuntimeError(f'Unsupported marketplace limiter backend: {backend}')
     raise MarketplaceQuotaExceeded(delay)

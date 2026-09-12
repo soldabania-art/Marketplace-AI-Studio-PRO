@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Callable, Iterator
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
@@ -47,6 +47,16 @@ def advisory_session_lease(session_factory: Callable[[], Session], name: str) ->
     key = advisory_key(name)
     connection = bind.connect()
     db = Session(bind=connection, autoflush=False, autocommit=False, expire_on_commit=False)
+    physical_connection = connection.connection.driver_connection
+
+    def require_original_backend(conn, *args):
+        # SQLAlchemy can transparently reconnect an invalidated Connection.
+        # The replacement backend does not own this session-level lock.
+        if conn.connection.driver_connection is not physical_connection:
+            conn.invalidate()
+            raise RuntimeError(f"PostgreSQL advisory lease was lost: {name}")
+
+    event.listen(connection, "before_cursor_execute", require_original_backend)
     acquired = False
     backend_pid: int | None = None
     body_failed = False
@@ -67,7 +77,10 @@ def advisory_session_lease(session_factory: Callable[[], Session], name: str) ->
         try:
             if db.in_transaction():
                 db.rollback()
-            if acquired and not connection.invalidated:
+            if acquired and connection.invalidated:
+                if not body_failed:
+                    raise RuntimeError(f"PostgreSQL advisory lease was lost: {name}")
+            elif acquired:
                 released = bool(connection.execute(
                     text("SELECT pg_advisory_unlock(:key)"), {"key": key}
                 ).scalar_one())
@@ -82,5 +95,6 @@ def advisory_session_lease(session_factory: Callable[[], Session], name: str) ->
                 raise
             logger.exception("Failed to release advisory lease name=%s pid=%s", name, backend_pid)
         finally:
+            event.remove(connection, "before_cursor_execute", require_original_backend)
             db.close()
             connection.close()

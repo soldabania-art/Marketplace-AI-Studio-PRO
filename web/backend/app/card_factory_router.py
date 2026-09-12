@@ -15,6 +15,7 @@ from .ai_generation_service import begin_generation, complete_generation, fail_g
 from .billing_service import require_entitlement
 from .config import get_settings
 from .db import get_db
+from .external_write_guard import require_external_write_allowed
 from .marketplace_connections import decrypt_connection
 from .marketplace_sync import latest_snapshot
 from .models import AIGeneration, CardPublication, GenerationStatus, MarketplaceConnection, MediaPublication, PublicationStatus, User, UserSession
@@ -433,6 +434,17 @@ async def publish_card(publication_id: str, payload: ConfirmPublicationRequest, 
     if payload.confirmation.strip().upper() != "ОПУБЛИКОВАТЬ":
         raise HTTPException(422, "Для публикации введите слово ОПУБЛИКОВАТЬ.")
 
+    guard = {
+        "workspace_id": store.workspace_id,
+        "store_id": store.id,
+        "marketplace": publication.marketplace,
+        "user_id": user.id,
+        "operation": "card.publish",
+        "entity_type": "card_publication",
+        "entity_id": publication.id,
+    }
+    require_external_write_allowed(db, **guard)
+
     connection = _connection(db, store.id)
     token = decrypt_connection(connection)
     try:
@@ -480,11 +492,12 @@ async def publish_card(publication_id: str, payload: ConfirmPublicationRequest, 
         db.commit()
         raise HTTPException(409, publication.error)
 
+    require_external_write_allowed(db, **guard, lock=True)
     publication.status = PublicationStatus.submitting
     publication.approved_at = datetime.now(timezone.utc)
     publication.attempt_count += 1
     publication.error = ""
-    db.commit()
+    db.flush()
     try:
         response = await update_wb_card(token, proposed)
     except httpx.HTTPStatusError as exc:
@@ -654,6 +667,17 @@ async def publish_media(publication_id: str, payload: ConfirmPublicationRequest,
     if payload.confirmation.strip().upper() != "ОПУБЛИКОВАТЬ ФОТО":
         raise HTTPException(422, "Для публикации введите ОПУБЛИКОВАТЬ ФОТО.")
 
+    guard = {
+        "workspace_id": store.workspace_id,
+        "store_id": store.id,
+        "marketplace": publication.marketplace,
+        "user_id": user.id,
+        "operation": "media.publish",
+        "entity_type": "media_publication",
+        "entity_id": publication.id,
+    }
+    require_external_write_allowed(db, **guard)
+
     connection = _connection(db, store.id)
     token = decrypt_connection(connection)
     source = publication.source_payload or {}
@@ -678,10 +702,11 @@ async def publish_media(publication_id: str, payload: ConfirmPublicationRequest,
         raw, content_type, dimensions = await _download_and_validate_asset(publication.asset_payload or {})
     except httpx.HTTPError as exc:
         raise HTTPException(502, "Не удалось получить сохранённый визуал TROVENDI.") from exc
+    require_external_write_allowed(db, **guard, lock=True)
     publication.status = PublicationStatus.submitting
     publication.attempt_count += 1
     publication.approved_at = datetime.now(timezone.utc)
-    db.commit()
+    db.flush()
     try:
         response = await upload_wb_media_file(
             token,

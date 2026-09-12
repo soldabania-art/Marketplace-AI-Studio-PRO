@@ -61,7 +61,6 @@ def test_photo_analysis_signature_is_bound_to_store():
 def test_beginner_draft_rejects_changed_photo_analysis(monkeypatch):
     original = {"confidence": "medium", "visible_facts": []}
     monkeypatch.setattr("app.beginner_router.resolve_store", lambda db, user, store_id: SimpleNamespace(id=store_id, workspace_id="ws1"))
-    monkeypatch.setattr("app.beginner_router.ensure_ai_access", lambda db, workspace_id, allow_exhausted=False: {})
     payload = BeginnerDraftRequest(
         store_id="store-1",
         analysis={"confidence": "high", "visible_facts": []},
@@ -84,7 +83,7 @@ def test_beginner_draft_uses_grounded_generator(monkeypatch):
 
     monkeypatch.setattr("app.beginner_router.generate_grounded_copy", fake_generate)
     monkeypatch.setattr("app.beginner_router.resolve_store", lambda db, user, store_id: SimpleNamespace(id=store_id, workspace_id="ws1"))
-    monkeypatch.setattr("app.beginner_router.ensure_ai_access", lambda db, workspace_id, allow_exhausted=False: {})
+    monkeypatch.setattr("app.beginner_router.reserve_trial_card", lambda db, workspace_id: ({"cards_remaining": 3}, False))
     monkeypatch.setattr("app.beginner_router.begin_generation", lambda *args, **kwargs: SimpleNamespace(id="generation-2"))
     monkeypatch.setattr("app.beginner_router.complete_generation", lambda *args, **kwargs: None)
     monkeypatch.setattr("app.beginner_router.fail_generation", lambda *args, **kwargs: None)
@@ -99,6 +98,47 @@ def test_beginner_draft_uses_grounded_generator(monkeypatch):
     assert captured["source"] == "beginner_confirmed_intake"
     assert result["publish_requires_confirmation"] is True
     assert result["next_step"] == "unit_economics"
+
+
+@pytest.mark.parametrize("endpoint", ["photo", "draft"])
+def test_exhausted_trial_blocks_both_beginner_ai_endpoints_before_provider(monkeypatch, endpoint):
+    provider_calls = []
+    monkeypatch.setattr("app.beginner_router.resolve_store", lambda db, user, store_id: SimpleNamespace(id=store_id, workspace_id="ws1"))
+    monkeypatch.setattr("app.beginner_router.reserve_trial_card", lambda db, workspace_id: (_ for _ in ()).throw(HTTPException(402, "exhausted")))
+    monkeypatch.setattr("app.beginner_router.analyze_product_photo", lambda image: provider_calls.append("photo"))
+    monkeypatch.setattr("app.beginner_router.generate_grounded_copy", lambda facts: provider_calls.append("draft"))
+    if endpoint == "photo":
+        call = lambda: analyze_photo(PhotoAnalysisRequest(store_id="store-1", image_data_url=_data_url(b"x" * 80)), user=SimpleNamespace(id="u1"), db=SimpleNamespace())
+    else:
+        analysis = {"confidence": "high", "visible_facts": []}
+        payload = BeginnerDraftRequest(
+            store_id="store-1", analysis=analysis, analysis_signature=sign_analysis(analysis, "store-1"),
+            confirmed_facts=[ConfirmedFact(label="Товар", value="Органайзер"), ConfirmedFact(label="Категория", value="Хранение")],
+        )
+        call = lambda: generate_draft(payload, user=SimpleNamespace(id="u1"), db=SimpleNamespace())
+    with pytest.raises(HTTPException) as error:
+        call()
+    assert error.value.status_code == 402
+    assert provider_calls == []
+
+
+def test_beginner_draft_provider_failure_releases_reserved_trial_card(monkeypatch):
+    analysis = {"confidence": "high", "visible_facts": []}
+    refunds = []
+    monkeypatch.setattr("app.beginner_router.resolve_store", lambda db, user, store_id: SimpleNamespace(id=store_id, workspace_id="ws1"))
+    monkeypatch.setattr("app.beginner_router.reserve_trial_card", lambda db, workspace_id: ({"cards_remaining": 4}, True))
+    monkeypatch.setattr("app.beginner_router.begin_generation", lambda *args, **kwargs: SimpleNamespace(id="generation-3"))
+    monkeypatch.setattr("app.beginner_router.generate_grounded_copy", lambda facts: (_ for _ in ()).throw(RuntimeError("provider unavailable")))
+    monkeypatch.setattr("app.beginner_router.fail_generation", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.beginner_router.refund_trial_card", lambda db, workspace_id, started_now: refunds.append((workspace_id, started_now)))
+    payload = BeginnerDraftRequest(
+        store_id="store-1", analysis=analysis, analysis_signature=sign_analysis(analysis, "store-1"),
+        confirmed_facts=[ConfirmedFact(label="Товар", value="Органайзер"), ConfirmedFact(label="Категория", value="Хранение")],
+    )
+    with pytest.raises(HTTPException) as error:
+        generate_draft(payload, user=SimpleNamespace(id="u1"), db=SimpleNamespace())
+    assert error.value.status_code == 503
+    assert refunds == [("ws1", True)]
 
 
 def _economics(**overrides):

@@ -145,3 +145,46 @@ def test_stop_saved_during_rate_wait_prevents_new_http_request(
     assert isinstance(errors[0], HTTPException)
     assert errors[0].status_code == 423
     assert not http_started.is_set()
+
+
+@pytest.mark.parametrize("finish", ["commit", "rollback", "cancel"])
+def test_same_event_loop_scope_contention_is_bounded_and_releases_lock(finish):
+    async def scenario():
+        scope = dict(workspace_id=str(uuid.uuid4()), store_id=str(uuid.uuid4()), marketplace="wildberries")
+        started = asyncio.Event()
+        release = asyncio.Event()
+        ticks = []
+        async def first():
+            with SessionLocal() as db:
+                lock_external_write_scope(db, **scope)
+                started.set()
+                await release.wait()
+                if finish == "cancel":
+                    raise asyncio.CancelledError()
+                getattr(db, finish)()
+        task = asyncio.create_task(first())
+        await started.wait()
+        try:
+            with SessionLocal() as second:
+                # A server-side timeout makes the old blocking implementation fail
+                # deterministically instead of hanging the entire test worker.
+                from sqlalchemy import text
+                second.execute(text("SET LOCAL lock_timeout = '300ms'"))
+                with pytest.raises(HTTPException) as error:
+                    lock_external_write_scope(second, **scope)
+                assert error.value.status_code == 409
+                assert error.value.detail["code"] == "EXTERNAL_WRITE_BUSY"
+            await asyncio.sleep(0)
+            ticks.append("responsive")
+        finally:
+            release.set()
+            if finish == "cancel":
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+            else:
+                await task
+        with SessionLocal() as third:
+            lock_external_write_scope(third, **scope)
+            third.rollback()
+        assert ticks == ["responsive"]
+    asyncio.run(scenario())

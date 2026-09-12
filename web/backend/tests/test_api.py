@@ -584,15 +584,9 @@ def test_beginner_trial_starts_on_success_and_stops_after_five_cards(monkeypatch
         headers=headers,
         json={"store_id": store_id, "image_data_url": image},
     ).status_code == 402
-    monkeypatch.setattr("app.beginner_router.generate_grounded_copy", lambda fact_set: {
-        "wb_title": "Товар",
-        "ozon_title": "Товар",
-        "description": "Описание подтверждённого товара",
-        "seo_phrases": ["товар"],
-        "visual_plan": ["Главное фото"],
-        "used_fact_ids": ["seller.confirmed.0"],
-    })
-    completed_fifth = client.post(
+    draft_provider_calls = []
+    monkeypatch.setattr("app.beginner_router.generate_grounded_copy", lambda fact_set: draft_provider_calls.append(fact_set))
+    blocked_draft = client.post(
         "/api/v1/beginner/generate-draft",
         headers=headers,
         json={
@@ -602,7 +596,8 @@ def test_beginner_trial_starts_on_success_and_stops_after_five_cards(monkeypatch
             "confirmed_facts": [{"label": "Название", "value": "Товар"}, {"label": "Категория", "value": "Категория"}],
         },
     )
-    assert completed_fifth.status_code == 200
+    assert blocked_draft.status_code == 402
+    assert draft_provider_calls == []
 
 
 def test_failed_photo_analysis_does_not_start_or_consume_trial(monkeypatch):

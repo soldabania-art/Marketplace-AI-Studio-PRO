@@ -1,0 +1,215 @@
+import asyncio
+import threading
+import time
+import uuid
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
+from app.db import Base, SessionLocal, engine
+from app.job_queue import (
+    HANDLERS,
+    JobOwnershipLost,
+    _claim_one,
+    _fail,
+    _finish,
+    _heartbeat,
+    current_job_attempt,
+    enqueue,
+    run_one,
+)
+from app.models import BackgroundJob, JobStatus, MarketplaceSnapshot, Store, Workspace
+
+
+Base.metadata.create_all(bind=engine)
+pytestmark = pytest.mark.skipif(
+    engine.dialect.name != "postgresql",
+    reason="T08A ownership and heartbeat require real PostgreSQL workers",
+)
+
+
+def _empty_jobs() -> None:
+    with SessionLocal() as db:
+        db.query(BackgroundJob).delete()
+        db.commit()
+
+
+def _store() -> tuple[str, str]:
+    suffix = uuid.uuid4().hex
+    with SessionLocal() as db:
+        workspace = Workspace(name=f"T08A {suffix}")
+        db.add(workspace)
+        db.flush()
+        store = Store(workspace_id=workspace.id, name=f"Store {suffix}")
+        db.add(store)
+        db.commit()
+        return workspace.id, store.id
+
+
+def _job(job_type: str, *, workspace_id: str | None = None, store_id: str | None = None) -> str:
+    with SessionLocal() as db:
+        row = enqueue(
+            db,
+            job_type=job_type,
+            idempotency_key=f"t08a:{uuid.uuid4().hex}",
+            payload={"store_id": store_id} if store_id else {},
+            workspace_id=workspace_id,
+            store_id=store_id,
+            priority=0,
+            max_attempts=5,
+        )
+        return row.id
+
+
+def test_controlled_heartbeat_prevents_300_second_reclaim_then_crash_recovers():
+    _empty_jobs()
+    job_id = _job("test.t08a.controlled")
+    started = datetime(2026, 9, 12, 10, 0, tzinfo=timezone.utc)
+
+    with SessionLocal() as first_db:
+        first = _claim_one(first_db, "worker-a", 300, now=started)
+        first_attempt = first.attempt_id
+    assert _heartbeat(job_id, "worker-a", first_attempt, now=started + timedelta(seconds=250))
+
+    with SessionLocal() as second_db:
+        assert _claim_one(second_db, "worker-b", 300, now=started + timedelta(seconds=301)) is None
+    with SessionLocal() as second_db:
+        recovered = _claim_one(second_db, "worker-b", 300, now=started + timedelta(seconds=551))
+        second_attempt = recovered.attempt_id
+
+    assert second_attempt != first_attempt
+    assert recovered.attempts == 2
+    with SessionLocal() as stale_db:
+        assert _finish(stale_db, job_id, "worker-a", first_attempt) is False
+        assert _fail(stale_db, job_id, "worker-a", first_attempt, RuntimeError("late failure")) is False
+    with SessionLocal() as owner_db:
+        assert _finish(owner_db, job_id, "worker-b", second_attempt) is True
+
+
+def test_heartbeat_runs_when_handler_blocks_its_event_loop():
+    _empty_jobs()
+    job_type = f"test.t08a.blocking.{uuid.uuid4().hex[:10]}"
+    job_id = _job(job_type)
+    entered = threading.Event()
+    release = threading.Event()
+
+    async def blocking_handler(_payload):
+        entered.set()
+        release.wait(timeout=5)
+
+    previous = HANDLERS.get(job_type)
+    HANDLERS[job_type] = blocking_handler
+    worker = threading.Thread(
+        target=lambda: asyncio.run(run_one("worker-a", lease_seconds=1, heartbeat_seconds=0.1)),
+        daemon=True,
+    )
+    try:
+        worker.start()
+        assert entered.wait(timeout=3)
+        with SessionLocal() as db:
+            initial = db.get(BackgroundJob, job_id).heartbeat_at
+        time.sleep(1.25)
+        with SessionLocal() as db:
+            current = db.get(BackgroundJob, job_id)
+            assert current.heartbeat_at > initial
+            assert _claim_one(db, "worker-b", 1) is None
+    finally:
+        release.set()
+        worker.join(timeout=5)
+        if previous is None:
+            HANDLERS.pop(job_type, None)
+        else:
+            HANDLERS[job_type] = previous
+    assert not worker.is_alive()
+
+
+def test_two_workers_fence_stale_status_domain_write_and_child_enqueue():
+    _empty_jobs()
+    workspace_id, store_id = _store()
+    job_type = f"test.t08a.fencing.{uuid.uuid4().hex[:10]}"
+    job_id = _job(job_type, workspace_id=workspace_id, store_id=store_id)
+    first_entered = asyncio.Event()
+    release_first = asyncio.Event()
+    stale_errors: list[type[Exception]] = []
+
+    async def handler(_payload):
+        attempt = current_job_attempt()
+        if attempt.attempt_number == 1:
+            first_entered.set()
+            await release_first.wait()
+            try:
+                with SessionLocal() as db:
+                    db.add(MarketplaceSnapshot(
+                        store_id=store_id,
+                        marketplace="wildberries",
+                        snapshot_type="t08a-old-worker",
+                        payload={"attempt_id": attempt.attempt_id},
+                    ))
+                    enqueue(
+                        db,
+                        job_type="test.t08a.child",
+                        idempotency_key=f"t08a-old-child:{job_id}",
+                        payload={"parent": job_id},
+                        workspace_id=workspace_id,
+                        store_id=store_id,
+                    )
+            except JobOwnershipLost as exc:
+                stale_errors.append(type(exc))
+                raise
+        else:
+            with SessionLocal() as db:
+                db.add(MarketplaceSnapshot(
+                    store_id=store_id,
+                    marketplace="wildberries",
+                    snapshot_type="t08a-new-worker",
+                    payload={"attempt_id": attempt.attempt_id},
+                ))
+                enqueue(
+                    db,
+                    job_type="test.t08a.child",
+                    idempotency_key=f"t08a-new-child:{job_id}",
+                    payload={"parent": job_id},
+                    workspace_id=workspace_id,
+                    store_id=store_id,
+                )
+
+    previous = HANDLERS.get(job_type)
+    HANDLERS[job_type] = handler
+
+    async def scenario():
+        stale_worker = asyncio.create_task(
+            run_one("worker-a", lease_seconds=1, heartbeat_seconds=60)
+        )
+        await asyncio.wait_for(first_entered.wait(), timeout=3)
+        with SessionLocal() as db:
+            row = db.query(BackgroundJob).filter(BackgroundJob.id == job_id).with_for_update().one()
+            row.heartbeat_at = datetime.now(timezone.utc) - timedelta(seconds=5)
+            row.locked_at = row.heartbeat_at
+            db.commit()
+        assert await run_one("worker-b", lease_seconds=1, heartbeat_seconds=0.1) is True
+        release_first.set()
+        assert await asyncio.wait_for(stale_worker, timeout=5) is True
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        if previous is None:
+            HANDLERS.pop(job_type, None)
+        else:
+            HANDLERS[job_type] = previous
+
+    with SessionLocal() as db:
+        parent = db.get(BackgroundJob, job_id)
+        snapshots = db.query(MarketplaceSnapshot).filter(
+            MarketplaceSnapshot.store_id == store_id,
+            MarketplaceSnapshot.snapshot_type.in_(["t08a-old-worker", "t08a-new-worker"]),
+        ).all()
+        children = db.query(BackgroundJob).filter(
+            BackgroundJob.idempotency_key.in_([f"t08a-old-child:{job_id}", f"t08a-new-child:{job_id}"])
+        ).all()
+
+    assert parent.status == JobStatus.succeeded
+    assert parent.attempts == 2
+    assert [row.snapshot_type for row in snapshots] == ["t08a-new-worker"]
+    assert [row.idempotency_key for row in children] == [f"t08a-new-child:{job_id}"]
+    assert stale_errors == [JobOwnershipLost]

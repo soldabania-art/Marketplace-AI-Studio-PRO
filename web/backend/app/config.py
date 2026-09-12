@@ -68,6 +68,8 @@ class Settings(BaseSettings):
     openai_image_size: str = "1024x1024"
     openai_image_timeout_seconds: float = 120.0
     openai_image_estimated_cost_microusd: int = 5000
+    asset_blob_hosts: str = ""
+    media_submitting_recovery_seconds: int = 120
     document_scan_webhook_secret: str = ""
     model_config = SettingsConfigDict(env_file=".env", env_prefix="MARKETPLACE_", extra="ignore")
 
@@ -106,6 +108,14 @@ class Settings(BaseSettings):
             if not self.frontend_url.lower().startswith("https://"):
                 raise ValueError("MARKETPLACE_FRONTEND_URL must use HTTPS in production")
         return self
+
+    @property
+    def asset_blob_host_set(self) -> set[str]:
+        return {
+            host.strip().lower().rstrip(".")
+            for host in self.asset_blob_hosts.split(",")
+            if host.strip()
+        }
 
     @property
     def admin_email_set(self) -> set[str]:

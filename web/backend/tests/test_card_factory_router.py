@@ -325,3 +325,26 @@ def test_media_publish_requires_separate_exact_confirmation(monkeypatch):
     assert error.value.status_code==422
     assert row.status==PublicationStatus.prepared
     assert row.attempt_count==0
+
+
+def test_direct_publish_rejects_legacy_or_edited_payload_without_grounding_proof(monkeypatch):
+    row = _publication(diff_payload={})
+    store = SimpleNamespace(id="s1", workspace_id="w1")
+    calls = []
+    _patch_publish_dependencies(monkeypatch, store)
+    monkeypatch.setattr("app.card_factory_router.require_external_write_allowed", lambda *args, **kwargs: calls.append("guard"))
+    monkeypatch.setattr(
+        "app.card_factory_router._connection",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("WB access must not begin")),
+    )
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(publish_card(
+            row.id,
+            ConfirmPublicationRequest(
+                store_id="s1", payload_sha256=row.payload_sha256, confirmation="ОПУБЛИКОВАТЬ",
+            ),
+            user=SimpleNamespace(id="u1"),
+            db=PublicationDb(row),
+        ))
+    assert error.value.status_code == 409
+    assert calls == []

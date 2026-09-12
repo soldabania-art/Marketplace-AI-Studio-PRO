@@ -2,6 +2,7 @@ import base64
 from types import SimpleNamespace
 
 import pytest
+import app.beginner_router as beginner_router
 from fastapi import HTTPException
 
 from app.beginner_router import (
@@ -181,3 +182,22 @@ def test_beginner_economics_requires_confirmed_marketplace_rates():
     with pytest.raises(HTTPException) as exc:
         calculate_beginner_economics(_economics(rates_confirmed_by_seller=False))
     assert exc.value.status_code == 400
+
+
+def test_client_saved_beginner_state_cannot_forge_publish_readiness():
+    state = {
+        "draft": {
+            "description": "Сумка из натуральной кожи",
+            "publish_ready": True,
+            "grounding_status": "verified",
+        },
+        "publish_ready": True,
+        "human_note": "Сохранить для ручной проверки",
+    }
+    safe = beginner_router.sanitize_project_state(state)
+    assert safe["draft"]["description"] == state["draft"]["description"]
+    assert safe["human_note"] == state["human_note"]
+    assert safe["publish_ready"] is False
+    assert safe["draft"]["publish_ready"] is False
+    assert safe["_server_safety"]["publish_ready"] is False
+    assert safe["_server_safety"]["reason"] == "client_saved_state_unverified"

@@ -28,23 +28,27 @@ def trial_snapshot(subscription: Subscription) -> dict:
     }
 
 
-def ensure_ai_access(db: Session, workspace_id: str, allow_exhausted: bool = False) -> dict:
-    snapshot = trial_snapshot(workspace_subscription(db, workspace_id))
-    if snapshot.get("unlimited"):
-        return snapshot
+def _require_ai_generation(snapshot: dict) -> dict:
+    if snapshot["plan"] != "trial" and snapshot["read_only"]:
+        raise HTTPException(402, "Тариф завершён. Сохранённые AI-версии доступны только для просмотра.")
     if snapshot["status"] == "expired":
         raise HTTPException(402, "Пробный период завершён. Проекты сохранены в режиме просмотра.")
-    if snapshot["status"] == "exhausted" and not allow_exhausted:
+    if snapshot["status"] == "exhausted":
         raise HTTPException(402, "Пять пробных карточек использованы. Проекты сохранены в режиме просмотра.")
+    if not snapshot["entitlements"].get("card_copy_generation"):
+        raise HTTPException(403, "AI-генерация недоступна на текущем тарифе.")
     return snapshot
+
+
+def ensure_ai_access(db: Session, workspace_id: str) -> dict:
+    return _require_ai_generation(trial_snapshot(workspace_subscription(db, workspace_id)))
 
 
 def reserve_trial_card(db: Session, workspace_id: str) -> tuple[dict, bool]:
     subscription = workspace_subscription(db, workspace_id, lock=True)
-    current = trial_snapshot(subscription)
+    current = _require_ai_generation(trial_snapshot(subscription))
     if current.get("unlimited"):
         return current, False
-    ensure_ai_access(db, workspace_id)
     now = datetime.now(timezone.utc)
     started_now = subscription.trial_started_at is None
     if started_now:
@@ -58,6 +62,10 @@ def reserve_trial_card(db: Session, workspace_id: str) -> tuple[dict, bool]:
 
 def refund_trial_card(db: Session, workspace_id: str, started_now: bool) -> None:
     subscription = workspace_subscription(db, workspace_id, lock=True)
+    if subscription.plan_code != "trial":
+        return
+    if (subscription.trial_ai_cards_used or 0) <= 0:
+        return
     subscription.trial_ai_cards_used = max(0, (subscription.trial_ai_cards_used or 0) - 1)
     if started_now and subscription.trial_ai_cards_used == 0:
         subscription.trial_started_at = None

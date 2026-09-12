@@ -4,6 +4,7 @@ Uses the official /content/v2/get/cards/list endpoint with cursor pagination.
 Only normalized seller-card facts are returned; marketplace tokens are never logged.
 """
 import httpx
+from collections.abc import Callable
 
 from .rate_limit import wait_marketplace_slot
 
@@ -67,9 +68,11 @@ def build_card_update(card:dict,*,title:str,description:str)->dict:
     return result
 
 
-async def update_wb_card(token:str,payload:dict)->dict:
+async def update_wb_card(token:str,payload:dict,*,before_send:Callable[[],None]|None=None)->dict:
     """Submit one complete card update to WB after the caller confirms it."""
     await wait_marketplace_slot('wildberries',token,'content-cards-update',min_interval_seconds=0.6)
+    if before_send:
+        before_send()
     async with httpx.AsyncClient(timeout=30.0) as client:
         response=await client.post(WB_CARDS_UPDATE_URL,json=[payload],headers={'Authorization':token})
     response.raise_for_status()
@@ -82,9 +85,11 @@ async def update_wb_card(token:str,payload:dict)->dict:
     return {'accepted':True,'status_code':response.status_code,'response':body}
 
 
-async def upload_wb_media_file(token:str,*,nm_id:int,photo_number:int,raw:bytes,content_type:str)->dict:
+async def upload_wb_media_file(token:str,*,nm_id:int,photo_number:int,raw:bytes,content_type:str,before_send:Callable[[],None]|None=None)->dict:
     """Append one explicitly approved image without replacing the existing media set."""
     await wait_marketplace_slot('wildberries',token,'content-media-file',min_interval_seconds=0.6)
+    if before_send:
+        before_send()
     headers={'Authorization':token,'X-Nm-Id':str(nm_id),'X-Photo-Number':str(photo_number)}
     files={'uploadfile':(f'trovendi-{nm_id}-{photo_number}.webp',raw,content_type)}
     async with httpx.AsyncClient(timeout=60.0) as client:

@@ -1,15 +1,15 @@
 # TROVENDI — очередь разработки после аудита
 
-Дата: 12.09.2026. Проверенный `main`: `700436f7161972ea1b2dcf9ff83fbdeb975ae822`. [Решение и доказательства](ARCHITECTURE_REVIEW_2026-09-12.md).
+Дата: 12.09.2026. Проверенный `main`: `7f43ce131f879c353842890524b9c030374e4010`. [Решение и доказательства](ARCHITECTURE_REVIEW_2026-09-12.md).
 
 Концепция одобрена; коммерческий запуск не одобрен. Первичный клиент — действующий продавец Wildberries. Ближайший процесс: подключение → полнота данных → детерминированная экономика → подтверждённые проблемы → задачи с доказательствами → разрешённое действие → статус и результат.
 
-Фактическое состояние issues на момент обновления: #1–#7 закрыты; #8–#22 и дочерние #37–#39 открыты. T02–T07 последовательно интегрированы и проверены на общем `main`. Текущий кодовый приоритет — только T08A/#37. Внешний блокер не разрешает обходить security gate.
+Фактическое состояние issues на момент обновления: #1–#7 закрыты; #37 закрыта; #8–#22 и дочерние #38–#39 открыты. T02–T07 последовательно интегрированы и проверены на общем `main`. Текущий кодовый приоритет — только T08B/#38. Внешний блокер не разрешает обходить security gate.
 
 | Состояние | Задачи |
 | --- | --- |
 | Закрыто и интегрировано | [T01 / #1](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/1) — [T07 / #7](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/7) |
-| Текущая задача | [T08A / #37](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/37) |
+| Текущая задача | [T08B / #38](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/38) |
 | Открыто, выполнять по зависимостям | [T08B/#38](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/38), [T08C/#39](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/39), T09–T22 |
 
 
@@ -152,13 +152,13 @@
 
 **Граница:** Без Kafka и массового выделения микросервисов; разбить на PR heartbeat, transaction boundary, scheduler locks.
 
-### T08A · ACTIVE · Heartbeat и владение попыткой
+### T08A · CLOSED · Heartbeat и владение попыткой
 
 [GitHub #37](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/37). Добавить независимый heartbeat, attempt identity/fencing и crash recovery. Два PostgreSQL worker должны доказать, что живая задача не перехватывается, умершая восстанавливается, а старый worker не меняет статус, доменный результат или дочерние jobs новой попытки. STOP и read-before-retry для неизвестной внешней записи сохраняются.
 
-### T08B · BLOCKED BY T08A · Транзакционная граница/outbox
+### T08B · ACTIVE · Транзакционная граница/outbox
 
-[GitHub #38](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/38). Атомарность доменного изменения и enqueue, rollback/crash fault injection. Не начинать до интеграции T08A.
+[GitHub #38](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/38). Атомарность доменного изменения и enqueue, rollback/crash fault injection. T08A принят на `63c11d1460131514b2d94c3598e9c626727ae5d2`, интегрирован PR #41 (`7f43ce131f879c353842890524b9c030374e4010`); [push CI success](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/actions/runs/34700508949). T08B выполнять отдельным PR, оставить на приёмку владельцу.
 
 ### T08C · BLOCKED BY T08B · Advisory locks и Redis limiter
 

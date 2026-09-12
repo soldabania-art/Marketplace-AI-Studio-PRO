@@ -60,6 +60,8 @@ Start <=100 clients with one API service and one worker service. Scale worker re
 
 Deployment order:
 
-`backup/check -> alembic upgrade head -> deploy API -> verify /ready -> deploy worker -> verify queue/FBO logs -> frontend`
+`backup/check -> stop old job claims and schedulers -> drain/stop old handlers -> alembic upgrade head -> deploy API -> verify /ready -> deploy worker -> verify heartbeat/recovery and queue/FBO logs -> frontend`
+
+For the attempt-ownership migration, confirm every old worker has exited before enabling new consumers. Do not mix workers without fencing with the new version. Disable automatic restarts of the old revision during rollout. If a handler cannot drain, stop it and preserve its durable state for recovery; stopping the process does not establish whether a provider accepted an in-flight HTTP write. Reconcile uncertain writes read-only before any retry. A backward-compatible schema alone does not make rollback to unfenced workers safe. This is a deployment requirement, not a claim that production rollout has been verified.
 
 Rollback application images only when the database migration is backward compatible. Destructive migrations require an explicit expand/migrate/contract rollout and a backup/restore plan.

@@ -121,15 +121,22 @@ def parse_advertising_stats_page(payload) -> MarketplacePageResult:
             if not isinstance(campaign,dict): raise ValueError('campaign must be an object')
             if _int(campaign.get('advertId'))<=0: raise ValueError('missing advertId')
             if not isinstance(campaign.get('days'),list): raise ValueError('days must be an array')
-            for day in campaign['days']:
+            for day_index,day in enumerate(campaign['days']):
                 if not isinstance(day,dict): raise ValueError('day must be an object')
                 event_date=str(day.get('date') or '')
                 if len(event_date)<10: raise ValueError('missing day date')
                 if not isinstance(day.get('apps'),list): raise ValueError('apps must be an array')
-                for app in day['apps']:
+                for app_index,app in enumerate(day['apps']):
                     if not isinstance(app,dict): raise ValueError('app must be an object')
-                    rows=app.get('nm') if app.get('nm') is not None else app.get('nms',[])
+                    field='nm' if 'nm' in app else 'nms'
+                    rows=app.get(field,[])
                     if not isinstance(rows,(list,dict)): raise ValueError('nm must be an array or object')
+                    nested_rows=[rows] if isinstance(rows,dict) else rows
+                    for row_index,source in enumerate(nested_rows):
+                        path=f'days[{day_index}].apps[{app_index}].{field}[{row_index}]'
+                        if not isinstance(source,dict): raise ValueError(f'{path} must be an object')
+                        if _int(source.get('nmId') or source.get('nm_id'))<=0:
+                            raise ValueError(f'{path}.nmId is required')
             normalized=_normalize_advertising_stats([campaign])
             items.extend(normalized); accepted_campaigns+=1
         except (ValueError,InvalidOperation) as exc:

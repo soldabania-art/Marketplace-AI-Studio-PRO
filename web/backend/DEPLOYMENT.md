@@ -54,6 +54,8 @@ Frontend must set `MARKETPLACE_API_URL` to the externally reachable API base URL
 
 Start <=100 clients with one API service and one worker service. Scale worker replicas first when queue latency rises. API and worker replicas must remain stateless apart from PostgreSQL/external coordination. The implemented Redis limiter must be configured for all API and worker processes that share provider quotas. Memory limiting is process-local and is not sufficient across API/worker boundaries. Verify queue heartbeat/fencing and scheduler locking under T08 before horizontal worker scaling.
 
+`MARKETPLACE_JOB_HEARTBEAT_SECONDS` must remain materially lower than `MARKETPLACE_JOB_LEASE_SECONDS` (defaults: 30 and 300 seconds). Heartbeat runs outside the handler event loop. Every claim receives a new attempt ID; only that attempt may commit handler state, enqueue child jobs, finish or enter retry. This fencing prevents stale database results, but it does not promise exactly-once external HTTP. A timed-out marketplace write remains subject to the existing STOP gate and read-before-retry reconciliation.
+
 ## Deploy safety
 
 Deployment order:

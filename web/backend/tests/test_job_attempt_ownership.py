@@ -22,10 +22,6 @@ from app.models import BackgroundJob, JobStatus, MarketplaceSnapshot, Store, Wor
 
 
 Base.metadata.create_all(bind=engine)
-pytestmark = pytest.mark.skipif(
-    engine.dialect.name != "postgresql",
-    reason="T08A ownership and heartbeat require real PostgreSQL workers",
-)
 
 
 def _empty_jobs() -> None:
@@ -64,7 +60,7 @@ def _job(job_type: str, *, workspace_id: str | None = None, store_id: str | None
 def test_controlled_heartbeat_prevents_300_second_reclaim_then_crash_recovers():
     _empty_jobs()
     job_id = _job("test.t08a.controlled")
-    started = datetime(2026, 9, 12, 10, 0, tzinfo=timezone.utc)
+    started = datetime.now(timezone.utc)
 
     with SessionLocal() as first_db:
         first = _claim_one(first_db, "worker-a", 300, now=started)
@@ -123,20 +119,24 @@ def test_heartbeat_runs_when_handler_blocks_its_event_loop():
     assert not worker.is_alive()
 
 
+@pytest.mark.skipif(
+    engine.dialect.name != "postgresql",
+    reason="stale attempt domain fencing requires two real PostgreSQL workers",
+)
 def test_two_workers_fence_stale_status_domain_write_and_child_enqueue():
     _empty_jobs()
     workspace_id, store_id = _store()
     job_type = f"test.t08a.fencing.{uuid.uuid4().hex[:10]}"
     job_id = _job(job_type, workspace_id=workspace_id, store_id=store_id)
-    first_entered = asyncio.Event()
-    release_first = asyncio.Event()
+    first_entered = threading.Event()
+    release_first = threading.Event()
     stale_errors: list[type[Exception]] = []
 
     async def handler(_payload):
         attempt = current_job_attempt()
         if attempt.attempt_number == 1:
             first_entered.set()
-            await release_first.wait()
+            await asyncio.to_thread(release_first.wait, 5)
             try:
                 with SessionLocal() as db:
                     db.add(MarketplaceSnapshot(
@@ -176,27 +176,31 @@ def test_two_workers_fence_stale_status_domain_write_and_child_enqueue():
     previous = HANDLERS.get(job_type)
     HANDLERS[job_type] = handler
 
-    async def scenario():
-        stale_worker = asyncio.create_task(
-            run_one("worker-a", lease_seconds=1, heartbeat_seconds=60)
-        )
-        await asyncio.wait_for(first_entered.wait(), timeout=3)
+    stale_worker = threading.Thread(
+        target=lambda: asyncio.run(run_one("worker-a", lease_seconds=1, heartbeat_seconds=60)),
+        name="t08a-worker-a",
+        daemon=True,
+    )
+    try:
+        stale_worker.start()
+        assert first_entered.wait(timeout=3)
         with SessionLocal() as db:
             row = db.query(BackgroundJob).filter(BackgroundJob.id == job_id).with_for_update().one()
             row.heartbeat_at = datetime.now(timezone.utc) - timedelta(seconds=5)
             row.locked_at = row.heartbeat_at
             db.commit()
-        assert await run_one("worker-b", lease_seconds=1, heartbeat_seconds=0.1) is True
+        assert asyncio.run(run_one("worker-b", lease_seconds=1, heartbeat_seconds=0.1)) is True
         release_first.set()
-        assert await asyncio.wait_for(stale_worker, timeout=5) is True
-
-    try:
-        asyncio.run(scenario())
+        stale_worker.join(timeout=5)
     finally:
+        release_first.set()
+        stale_worker.join(timeout=5)
         if previous is None:
             HANDLERS.pop(job_type, None)
         else:
             HANDLERS[job_type] = previous
+
+    assert not stale_worker.is_alive()
 
     with SessionLocal() as db:
         parent = db.get(BackgroundJob, job_id)

@@ -115,7 +115,9 @@ def _job_public(row: BackgroundJob) -> dict:
         'max_attempts': row.max_attempts,
         'available_at': row.available_at,
         'locked_at': row.locked_at,
+        'heartbeat_at': getattr(row, 'heartbeat_at', None),
         'locked_by': row.locked_by or None,
+        'attempt_id': getattr(row, 'attempt_id', '') or None,
         'last_error': (row.last_error or '')[:1000],
         'created_at': row.created_at,
         'updated_at': row.updated_at,
@@ -133,7 +135,10 @@ def background_jobs(job_status: JobStatus | None = Query(default=None, alias='st
     counts = {value.value: (db.scalar(select(func.count()).select_from(BackgroundJob).where(BackgroundJob.status == value)) or 0) for value in JobStatus}
     lease_seconds = max(30, get_settings().job_lease_seconds)
     stale_before = datetime.now(timezone.utc) - timedelta(seconds=lease_seconds)
-    stale_running = db.scalar(select(func.count()).select_from(BackgroundJob).where(BackgroundJob.status == JobStatus.running, BackgroundJob.locked_at < stale_before)) or 0
+    stale_running = db.scalar(select(func.count()).select_from(BackgroundJob).where(
+        BackgroundJob.status == JobStatus.running,
+        func.coalesce(BackgroundJob.heartbeat_at, BackgroundJob.locked_at) < stale_before,
+    )) or 0
     oldest_ready = db.scalar(select(func.min(BackgroundJob.created_at)).where(BackgroundJob.status.in_([JobStatus.queued, JobStatus.retry])))
     return {'items': [_job_public(row) for row in rows], 'counts': counts, 'stale_running': stale_running, 'oldest_ready_at': oldest_ready, 'limit': 200}
 
@@ -150,7 +155,9 @@ def requeue_background_job(job_id: str, admin: User = Depends(require_platform_a
     row.attempts = 0
     row.available_at = datetime.now(timezone.utc)
     row.locked_at = None
+    row.heartbeat_at = None
     row.locked_by = ''
+    row.attempt_id = ''
     row.finished_at = None
     row.last_error = ''
     db.add(SecurityEvent(user_id=admin.id,event_type='admin_job_requeued',success=True,subject_hash=hashlib.sha256(row.id.encode()).hexdigest(),user_agent='admin-api'))

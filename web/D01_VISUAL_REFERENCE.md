@@ -23,6 +23,8 @@ Preview: `/design-reference`.
 4. `AI Director` показывает проблему, доказательства, решение владельца, STOP, исполнителя и измерение результата.
 5. Переключатель состояний Director воспроизводит `complete`, `partial`, `loading`, `error` и `unknown` («не подтверждено»). Экран подключения отдельно показывает управляемую загрузку.
 
+Воспроизводимые browser-артефакты лежат в `docs/design/d01`: desktop-снимки обоих направлений, prototype home, laptop-подключение, laptop error Director, mobile partial Director и короткая запись маршрута. Снимки получены из реально собранного Next.js route, а не нарисованы отдельно.
+
 ## Минимальная дизайн-система
 
 ### Tokens
@@ -61,3 +63,11 @@ Gold не используется: Premium в этом прототипе от�
 - `prefers-reduced-motion` выключает анимации; интерактивные элементы имеют `focus-visible`; controls имеют подписи и semantic roles.
 - Растровые материалы и чужие логотипы не используются. SVG-композиции созданы в коде для D01.
 - Кнопки согласования демонстрационные и не выполняют операции. До принятия D01 дизайн не переносится на остальные экраны.
+
+## Проверка эталона
+
+- Next.js production build — success.
+- Frontend contract tests — 7 passed.
+- Browser flow `направление → главная → подключение → partial Director → не подтверждено` — passed, console/page errors: 0.
+- Viewports: 1440×1050, 1280×900 и 390×844. Длинное имя товара остаётся читаемым; data table сохраняет доступ к столбцам через горизонтальный viewport на mobile.
+- Preview Vercel создаётся из PR. Если deployment protection требует вход, это ограничение доступа к preview, а не часть D01 runtime.

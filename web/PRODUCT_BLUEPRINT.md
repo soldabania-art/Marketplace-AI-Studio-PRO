@@ -14,6 +14,8 @@
 
 > The public bundle choice is routing intent, not authorization. Paid rights are derived only from a verified billing event; marketplace credentials require MFA/step-up. Community access is available only to authenticated workspaces with an active paid entitlement.
 
+> Architecture review 2026-09-12: concept approved, production release not approved. See [review](ARCHITECTURE_REVIEW_2026-09-12.md), [tree](PRODUCT_TREE.md) and [task queue](DEVELOPER_BACKLOG.md). Earlier “foundation” descriptions are code status, not runtime certification.
+
 ## Product direction
 TROVENDI is a web-first AI operating system for marketplace sellers, starting with Wildberries and Ozon and designed for later expansion to Yandex Market, Megamarket, AliExpress and other verified integrations.
 
@@ -53,25 +55,18 @@ Beginner language must avoid marketplace jargon or explain it at the point of us
 9. Self-service and scale layer — business profiles, activation, bounded AI capabilities, durable jobs and privacy-safe network insights.
 
 ## Primary navigation
-1. AI Director
-2. Dashboard
-3. Profit Center
-4. Products
-5. AI Card Factory
-6. Advertising
-7. Reviews
-8. Inventory / Smart Supply
-9. SEO & Search
-10. Market Intelligence
-11. Claims & Disputes
-12. Growth Lab
-13. Automations
-14. Reports
-15. Integrations
-16. Settings
-17. Agency — visible for agency workspaces
 
-AI Support is available contextually from every module rather than occupying a primary operating-navigation slot. High-risk incident intake and emergency controls remain visually distinct from ordinary help chat.
+The authenticated home is AI Director: one evidence-backed next action in Guided mode and an inspectable queue in Expert mode. Secondary navigation groups the same operating modules rather than giving every planned feature an equal primary slot.
+
+1. Today / AI Director: real actions, approvals and outcomes.
+2. Commerce: products, Card Factory/SEO, advertising, reviews, profit and reports.
+3. Operations: inventory, supply/FBO, fulfillment partners and documents.
+4. Connections and account: stores/workspaces, Integration Hub, plan, security and preferences.
+5. Agency portfolio appears only to authorized agency users; growth/market intelligence/claims appear according to actual capability readiness.
+
+The active workspace/store, Emergency STOP, provider/budget status and contextual support remain available throughout the workspace. Planned modules display their availability before the user clicks. Public bundle selection and purchased rights are shown explicitly; a selected marketing option never grants a server capability.
+
+AI Support is contextual. Incident handling remains distinct from ordinary product help. The professional community is a separate paid-user destination and is not launched until moderation and access enforcement exist.
 
 ## Global Store Context
 All seller-facing modules operate against an explicit selected Store. A Store belongs to a Workspace/Organization and can have multiple marketplace connections.
@@ -84,23 +79,12 @@ The global store selector is foundational. Dashboard, Products, Card Factory, SE
 Every persisted business record, cache, job and external action must be scoped by workspace and store ID. Agency portfolio views are the explicit exception: they aggregate authorized stores and preserve drill-down provenance.
 
 ## Home dashboard
-The first screen answers three questions:
-1. How much did I earn?
-2. What is going wrong?
-3. What should I do next?
 
-Top KPIs:
-- revenue;
-- net profit;
-- orders;
-- ad spend;
-- DRR/ACoS;
-- returns;
-- stock risk;
-- penalties/deductions;
-- reconciliation variance.
+The authenticated first screen answers: what needs a decision now, why, and what happens after approval? It renders the actual AI Director queue, current data completeness and the affected store. The guided user sees one next step.
 
-Below the KPIs is the AI Director queue. Each item has severity, affected workspace/store/marketplace/SKU, financial impact, evidence, confidence/provenance and a safe action.
+Revenue/profit/orders/ad spend/returns/stock risk and reconciliation metrics are secondary evidence when the corresponding sources are complete. Missing or stale data stays explicit. A catalogue of links, invented numbers or an echoed question is not an AI response.
+
+An expert overview remains available for comparison and diagnosis. Every action has severity, store/marketplace/SKU, observed or explicitly estimated effect, evidence, confidence, required permission and an actual supported next step.
 
 ## AI Director
 AI is not allowed to invent business facts. Deterministic engines calculate metrics, constraints and flags first; AI explains, summarizes, connects signals and helps choose an action.
@@ -284,8 +268,8 @@ Each capability is feature-gated per marketplace. Never simulate API support tha
 Frontend: Next.js + React/TypeScript target.
 Backend: FastAPI/Python.
 Database: PostgreSQL target.
-Queue/workers: Redis-backed background jobs target.
-Storage: S3-compatible object storage for generated assets.
+Queue/workers: PostgreSQL-backed durable jobs already exist; add heartbeat/fencing and transactional outbox. Redis rate limiting is implemented and must coordinate API and workers. Queue technology changes require measured evidence.
+Storage: immutable marketplace assets and a separate private document evidence store. The current frontend uses Vercel Blob; large binary transport must respect hosting request/response limits.
 Authentication: server-side accounts/sessions with organization/workspace/store isolation.
 Secrets: encrypted server-side marketplace credentials; never expose marketplace tokens to the browser after connection.
 Observability: structured logs, audit events, job status and diagnostics.

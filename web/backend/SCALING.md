@@ -25,9 +25,13 @@ SQLite is development-only for distributed scheduling. Its lock fallback is proc
 
 Production target is PostgreSQL with connection pooling and Alembic migrations. API and workers use independent processes and can be scaled horizontally. Pool sizing must be configured together with process/replica counts so the aggregate connection count remains below the database service limit.
 
-## Next scaling step
+## Implemented queue and next scaling gate
 
-For heavier background workloads (catalog sync, ads, reviews, finance, Market Intelligence and AI jobs), introduce a durable queue with explicit job idempotency, retry/backoff, visibility/lease timeout and dead-letter handling. FBO account polling can continue to use database-coordinated leases until workload/latency data justifies moving scheduling to the queue.
+The PostgreSQL BackgroundJob queue and separate worker are already implemented. Redis-backed marketplace rate limiting also exists in app/rate_limit.py. Their presence is not evidence that production uses the right settings.
+
+Before scaling, close T08 in ../DEVELOPER_BACKLOG.md: renewable job leases, attempt fencing, transactionally coupled state/events/jobs, safe advisory-lock connection ownership, bounded retries and replay. A running job is currently reclaimable after the configured lease without heartbeat; multi-worker safety is not certified by SQLite tests.
+
+Configure the shared limiter for API and worker processes, even when there is only one worker replica. Validate behavior on Redis failure and provider 429 without silently falling back to independent memory buckets. Measure queue age and source freshness before adding replicas.
 
 ## Capacity testing before commercial launch
 

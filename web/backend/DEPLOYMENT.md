@@ -50,7 +50,7 @@ Frontend must set `MARKETPLACE_API_URL` to the externally reachable API base URL
 
 ## Scaling policy
 
-Start <=100 clients with one API service and one worker service. Scale worker replicas first when queue latency rises. API and worker replicas must remain stateless apart from PostgreSQL/external coordination. The current local marketplace limiter is not safe for multi-replica rate-limit coordination; distributed Redis/Upstash limiter is a launch gate before horizontally scaling marketplace workers.
+Start <=100 clients with one API service and one worker service. Scale worker replicas first when queue latency rises. API and worker replicas must remain stateless apart from PostgreSQL/external coordination. The implemented Redis limiter must be configured for all API and worker processes that share provider quotas. Memory limiting is process-local and is not sufficient across API/worker boundaries. Verify queue heartbeat/fencing and scheduler locking under T08 before horizontal worker scaling.
 
 ## Deploy safety
 

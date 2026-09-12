@@ -4,6 +4,26 @@ Status: source of truth for product scope, priorities and delivery gates. Update
 
 Hierarchy view: [`PRODUCT_TREE.md`](./PRODUCT_TREE.md).
 
+## 0. Architecture decision — 2026-09-12
+
+**Concept approved for continued development; broad commercial release is not approved.** The baseline reviewed is `f090a4b3006ff72351d7c37696ae3d7c228e7805`. [Review and evidence](ARCHITECTURE_REVIEW_2026-09-12.md), [current hierarchy](PRODUCT_TREE.md), [developer tasks](DEVELOPER_BACKLOG.md), [handoff](DEVELOPER_HANDOFF.md).
+
+This dated decision takes precedence over earlier descriptions of implementation readiness below; the accepted expansion scope is retained. “Implemented foundation” means code exists, not that the production flow is certified.
+
+- First delivery order: T01 CI/PR/PostgreSQL gates, then T02 shared STOP, T03 AI entitlements and T04 strict financial ingestion. Follow explicit dependencies for subsequent work.
+- AI Director is the primary authenticated workspace. KPIs are secondary evidence; a static marketing card or local text echo is not a real AI recommendation.
+- Shared Workspace/Store/Connection and canonical Product/Variant/Listing identity precedes multi-marketplace expansion. WB `nm_id` is external identity, not the universal product key.
+- Fulfillment is a first-class operating domain: partner identity/facilities, seller agreement and permissions, read-only adapters, custody/inventory/reservations, inbound/outbound/returns, versioned tariffs, settlement and evidence. Catalogue limits of 500/5000 do not certify capacity. Start with one read-only partner pilot, then verified operations.
+- Document Vault is the shared private evidence domain for sellers, partners, orders and legitimately obtained buyer receipts. It requires working large-file transport, scanner jobs/recovery, role/relationship authorization, immutable versions and approved retention/hold rules. Its code already exists in baseline 0027, but these delivery gates remain open.
+- Free/Rules mode never silently invokes paid AI. Paid calls require entitlements, atomic budgets, provider provenance, schema/claim validation and cost status. Unknown price is not zero.
+- All marketplace write entry points, including manually approved Card Factory writes, must honor the shared STOP and execution policy. No runtime autonomy is approved by a registry declaration alone.
+- Configuration of modules before login remains routing intent until server capabilities are granted. Community stays included in every active paid plan; the forum itself remains planned.
+- Current web brand is graphite/emerald, with gold reserved for Premium. Preserve deployment identifiers and cookies during the staged architecture work.
+- Source CI actually reports 149 backend tests and a successful frontend build. PostgreSQL migrations, concurrency, browser e2e, hosted worker, backup restore, email, billing and scanner are not certified by that result.
+- Controlled read-only testing may continue. Every commercially enabled module must pass its own release gates; unavailable functions remain visibly unavailable.
+
+The next developer must work through the linked backlog in bounded PRs, retaining evidence and blocked dependencies. No wholesale rewrite or new collection of decorative module shells is approved.
+
 ## 1. Product mission
 
 Build an AI operating system for marketplace commerce in Russia and the CIS. It must work for three audiences without splitting into unrelated products:
@@ -264,7 +284,7 @@ A feature is done only when all applicable gates pass:
 - Risky writes have preview, confirmation, audit and recovery behavior.
 - Database migration works from the previous production schema.
 - Production build and automated tests pass.
-- Vercel deployment status is checked after every fifth GitHub upload as one controlled batch, then changed routes are opened and failures are corrected before that batch is reported complete. Local tests and a production build remain mandatory before every upload.
+- Functional changes require appropriate tests and build before delivery, and CI results are checked for the exact head SHA. Check Vercel separately when deployed, then verify changed routes. Deep product reviews may be batched, but changed security/write paths cannot accumulate unverified releases. Markdown-only changes require link/consistency checks and no runtime diff; report any triggered CI accurately.
 - CI uses current Node.js 24-compatible official GitHub Actions. The active delivery target is the TROVENDI web/backend product; Windows installer builds are disabled.
 
 ## 12. Product decision log
@@ -304,5 +324,5 @@ A feature is done only when all applicable gates pass:
 - TROVENDI uses bounded AI capabilities behind typed domain services. Finance AI has no arbitrary production SQL, vector retrieval is not financial memory, and Guided mode never weakens approval or money-safety rules.
 - The near-term scale path is a modular application, PostgreSQL, transactional outbox, durable idempotent jobs, workload-specific workers and rate-limit backpressure. Kafka, ClickHouse or service extraction require measured workload evidence.
 - Security is a launch gate, not a marketing label. Current application controls do not make a stolen logical database dump harmless; private networking, minimal database roles, independent encrypted backups, monitored key access, PostgreSQL RLS and selective per-tenant envelope encryption follow `DATABASE_SECURITY_RUNBOOK.md` and must be verified before broad onboarding.
-- To conserve Vercel build quota, deployments are verified in batches after every five GitHub uploads. A failed fifth-build gate blocks the next batch until corrected; security-critical emergency fixes may be verified immediately.
+- The older five-upload deployment-verification rule is superseded by the 2026-09-12 delivery gate above. Avoid unnecessary builds, but never report unobserved CI or deployment as successful.
 - Cross-customer benchmarks and logistics radar require separate consent, contractual data-use rights, comparable cohorts, minimum cohort protection, uncertainty disclosure and access audit. Raw tenant data is never shared across retrieval contexts.

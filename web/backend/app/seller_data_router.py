@@ -24,6 +24,7 @@ def _connection(db:Session,store_id:str):
 
 def _refresh(db:Session,store):
     job,_=enqueue_sync_job(db,store=store,group='analytics',payload={'store_id':store.id,'origin':'seller_data'},priority=55)
+    db.commit()
     return job
 
 
@@ -79,3 +80,4 @@ def overview(store_id:str|None=None,user:User=Depends(get_current_user),db:Sessi
     total_stock=sum(max(0,int(r.get('stock') or 0)) for r in facts); orders_7d=sum(max(0,int(r.get('orders_period') or 0)) for r in facts); active=sum(1 for r in facts if r.get('avg_daily_sales',0)>0); low_stock=sum(1 for r in facts if r.get('avg_daily_sales',0)>0 and r.get('stock',0)<r.get('avg_daily_sales',0)*7)
     snapshots=[x for x in (stocks,sales,catalog) if x]; created=min(x.created_at for x in snapshots); age=max(item['age_seconds'] or 0 for item in health.values())
     return {'store_id':store.id,'store_name':store.name,'marketplace':'wildberries','sync_required':bool(refresh),'refresh_job_id':refresh.id if refresh else None,'freshness':{'created_at':created,'age_seconds':age},'source_health':health,'kpis':{'catalog_products':int((catalog.payload or {}).get('count',0)) if catalog else None,'products_with_history':len(facts),'active_products':active,'stock_units':total_stock,'orders_7d':orders_7d,'avg_orders_per_day':round(orders_7d/7,1),'low_stock_products':low_stock}}
+

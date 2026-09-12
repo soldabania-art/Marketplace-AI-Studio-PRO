@@ -14,9 +14,17 @@ from .wb_feedbacks import fetch_wb_feedbacks
 from .wb_promotion import date_chunks, fetch_advertising_stats, fetch_campaign_ids
 
 
-def save_snapshot(db: Session, *, store_id: str, marketplace: str, snapshot_type: str, payload: dict) -> MarketplaceSnapshot:
+def stage_snapshot(db: Session, *, store_id: str, marketplace: str, snapshot_type: str, payload: dict) -> MarketplaceSnapshot:
     row = MarketplaceSnapshot(store_id=store_id, marketplace=marketplace, snapshot_type=snapshot_type, payload=payload, source_updated_at=datetime.now(timezone.utc))
-    db.add(row); db.commit(); db.refresh(row); return row
+    db.add(row)
+    return row
+
+
+def save_snapshot(db: Session, **kwargs) -> MarketplaceSnapshot:
+    """Persist an independent snapshot (including rejected-page diagnostics)."""
+    row = stage_snapshot(db, **kwargs)
+    db.commit()
+    return row
 
 
 def latest_snapshot(db: Session, *, store_id: str, marketplace: str, snapshot_type: str) -> MarketplaceSnapshot | None:
@@ -118,8 +126,7 @@ async def sync_wb_finance(payload: dict) -> None:
                 for key, value in item.items():
                     setattr(row, key, value)
                 updated += 1
-        db.commit()
-        save_snapshot(
+        stage_snapshot(
             db,
             store_id=store_id,
             marketplace='wildberries',
@@ -153,6 +160,7 @@ async def sync_wb_finance(payload: dict) -> None:
                 max_attempts=5,
                 available_at=datetime.now(timezone.utc) + timedelta(seconds=61),
             )
+        db.commit()
     finally:
         db.close()
 
@@ -228,13 +236,12 @@ async def sync_wb_advertising(payload: dict) -> None:
         deleted=0
         for stale in existing_rows:
             if stale.source_line_id not in seen: db.delete(stale); deleted+=1
-        db.commit()
         next_date_index=date_index
         next_batch_index=batch_index+1
         if next_batch_index>=len(batches): next_date_index+=1; next_batch_index=0
         complete=next_date_index>=len(intervals)
         page_number=date_index*len(batches)+batch_index+1
-        save_snapshot(db,store_id=store_id,marketplace='wildberries',snapshot_type='advertising_sync',payload={
+        stage_snapshot(db,store_id=store_id,marketplace='wildberries',snapshot_type='advertising_sync',payload={
             'date_from':date_from,'date_to':date_to,'run_id':run_id,'complete':complete,
             'campaign_count':len(campaign_ids),'date_chunks':len(intervals),'campaign_batches':len(batches),
             'page_number':page_number,'page_rows':len(rows),'inserted_rows':inserted,'updated_rows':updated,'deleted_rows':deleted,
@@ -247,5 +254,7 @@ async def sync_wb_advertising(payload: dict) -> None:
                 'store_id':store_id,'date_from':date_from,'date_to':date_to,'run_id':run_id,
                 'campaign_ids':campaign_ids,'date_index':next_date_index,'batch_index':next_batch_index,
             },workspace_id=store.workspace_id,store_id=store_id,priority=46,max_attempts=5,available_at=datetime.now(timezone.utc)+timedelta(seconds=21))
+        db.commit()
     finally:
         db.close()
+

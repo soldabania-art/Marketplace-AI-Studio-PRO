@@ -138,6 +138,7 @@ def schedule_due_syncs_once(now: datetime | None = None) -> dict[str, int]:
                     _, is_new = enqueue_sync_job(db, store=store, group='feedbacks', now=now,
                         payload={'store_id': store.id, 'origin': 'scheduler'}, priority=64)
                     totals['feedbacks'] += int(is_new)
+            db.commit()
         return totals
     finally:
         db.close()
@@ -153,3 +154,4 @@ async def sync_scheduler_forever(stop_event: asyncio.Event) -> None:
             await asyncio.wait_for(stop_event.wait(), timeout=max(30, get_settings().sync_scheduler_seconds))
         except asyncio.TimeoutError:
             pass
+

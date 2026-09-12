@@ -170,6 +170,7 @@ async def process_enabled_watches_once() -> dict[str, int]:
             )
             if before is None:
                 enqueued += 1
+        db.commit()
         totals = {'discovered_accounts': len(groups), 'enqueued_jobs': enqueued}
         logger.info('FBO scheduler cycle stats=%s', totals)
         return totals
@@ -191,3 +192,4 @@ async def monitor_forever(stop_event: asyncio.Event) -> None:
             await asyncio.wait_for(stop_event.wait(), timeout=timeout)
         except asyncio.TimeoutError:
             pass
+

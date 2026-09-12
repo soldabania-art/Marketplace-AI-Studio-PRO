@@ -214,6 +214,7 @@ def test_concurrent_root_sync_admission_reuses_one_active_job_postgresql():
                 payload={'store_id': store.id, 'origin': origin},
                 priority=55,
             )
+            db.commit()
             return job.id, created
 
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -228,3 +229,4 @@ def test_concurrent_root_sync_admission_reuses_one_active_job_postgresql():
             BackgroundJob.status.in_([JobStatus.queued, JobStatus.running, JobStatus.retry]),
         ).all()
         assert len(active) == 1
+

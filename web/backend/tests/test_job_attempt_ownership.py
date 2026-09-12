@@ -54,6 +54,7 @@ def _job(job_type: str, *, workspace_id: str | None = None, store_id: str | None
             priority=0,
             max_attempts=5,
         )
+        db.commit()
         return row.id
 
 
@@ -153,6 +154,7 @@ def test_two_workers_fence_stale_status_domain_write_and_child_enqueue():
                         workspace_id=workspace_id,
                         store_id=store_id,
                     )
+                    db.commit()
             except JobOwnershipLost as exc:
                 stale_errors.append(type(exc))
                 raise
@@ -172,6 +174,7 @@ def test_two_workers_fence_stale_status_domain_write_and_child_enqueue():
                     workspace_id=workspace_id,
                     store_id=store_id,
                 )
+                db.commit()
 
     previous = HANDLERS.get(job_type)
     HANDLERS[job_type] = handler
@@ -275,3 +278,4 @@ def test_ownership_is_held_until_domain_transaction_ends(commit_result):
             MarketplaceSnapshot.snapshot_type == "t08a-commit-race",
         ).count()
         assert count == int(commit_result)
+

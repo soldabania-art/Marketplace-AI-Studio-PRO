@@ -51,7 +51,14 @@ def document_checksum(*, title: str, body: str, source_url: str, version: int) -
     return hashlib.sha256(json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 def _terms(value: str) -> set[str]:
-    return set(re.findall(r"[\wа-яё]{3,}", (value or '').lower()))
+    terms=set()
+    for token in re.findall(r"[\wа-яё]{3,}", (value or '').lower()):
+        terms.add(token)
+        # Conservative Russian noun normalization for exact deterministic
+        # retrieval: прибыль/прибыли share "прибыл" without a fuzzy model.
+        if len(token)>=6 and re.fullmatch(r"[а-яё]+",token) and token[-1] in {'и','ь'}:
+            terms.add(token[:-1])
+    return terms
 
 def grounded_product_help(db, question: str) -> dict:
     from .models import KnowledgeDocument

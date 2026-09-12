@@ -34,6 +34,9 @@ TROVENDI uses one container image with separate process roles.
 - `MARKETPLACE_MARKETPLACE_TOKEN_KEY` — temporary Fernet provider key until managed SecretProvider/KMS rollout
 - `MARKETPLACE_MFA_ENCRYPTION_KEY` — a separate Fernet key for TOTP secrets; never reuse the marketplace-token key
 - `MARKETPLACE_FRONTEND_URL`
+- `MARKETPLACE_MARKETPLACE_LIMITER_BACKEND=redis` — обязателен в production; memory разрешён только для локальной разработки
+- `MARKETPLACE_REDIS_URL` — единый Redis для API и workers, использующих один provider account
+- `MARKETPLACE_MARKETPLACE_LIMITER_MAX_WAIT_SECONDS` — максимальное ожидание общей квоты до контролируемого 429/retry (по умолчанию 65 секунд)
 - `MARKETPLACE_BILLING_PROVIDER` — remains `not_configured` until a contracted RF/CIS provider adapter verifies checkout and webhook events server-side
 - `MARKETPLACE_OPENAI_API_KEY` — server-only key for AI Card Factory; never expose it to the frontend
 - `MARKETPLACE_OPENAI_MODEL` — optional model override (defaults to `gpt-5.6-terra`)

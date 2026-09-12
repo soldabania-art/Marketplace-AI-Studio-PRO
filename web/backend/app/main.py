@@ -25,6 +25,7 @@ from .marketplace_connections import router as marketplace_router
 from .onboarding_router import router as onboarding_router
 from .push_router import router as push_router
 from .profit_center_router import router as profit_center_router
+from .rate_limit import MarketplaceLimiterUnavailable, MarketplaceQuotaExceeded
 from .reviews_router import router as reviews_router
 from .router import api_router
 from .seller_data_router import router as seller_data_router
@@ -56,6 +57,23 @@ app=FastAPI(
 )
 allowed_origins={'http://localhost:3000','https://trovendi.ru','https://www.trovendi.ru','https://marketplace-ai-studio-pro.vercel.app',settings.frontend_url.rstrip('/')}
 app.add_middleware(CORSMiddleware,allow_origins=sorted(x for x in allowed_origins if x),allow_credentials=True,allow_methods=['GET','POST','PATCH','DELETE'],allow_headers=['Authorization','Content-Type'])
+
+
+@app.exception_handler(MarketplaceQuotaExceeded)
+async def marketplace_quota_error(_request: Request, exc: MarketplaceQuotaExceeded):
+    return JSONResponse(
+        {'detail': 'Маркетплейс временно ограничил частоту запросов. Повторите позже.'},
+        status_code=429,
+        headers={'Retry-After': str(exc.retry_after_seconds)},
+    )
+
+
+@app.exception_handler(MarketplaceLimiterUnavailable)
+async def marketplace_limiter_error(_request: Request, _exc: MarketplaceLimiterUnavailable):
+    return JSONResponse(
+        {'detail': 'Защитный лимитер маркетплейса временно недоступен.'},
+        status_code=503,
+    )
 
 
 @app.middleware('http')

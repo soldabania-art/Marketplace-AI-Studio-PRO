@@ -24,6 +24,8 @@ def test_production_requires_explicit_strong_jwt_secret():
         marketplace_token_key=Fernet.generate_key().decode(),
         mfa_encryption_key=Fernet.generate_key().decode(),
         frontend_url="https://trovendi.ru",
+        marketplace_limiter_backend="redis",
+        redis_url="rediss://redis.internal:6379/0",
         _env_file=None,
     )
     assert settings.jwt_secret == "x" * 48
@@ -50,6 +52,8 @@ def test_production_rejects_insecure_runtime_configuration(override, message):
         "marketplace_token_key": Fernet.generate_key().decode(),
         "mfa_encryption_key": Fernet.generate_key().decode(),
         "frontend_url": "https://trovendi.ru",
+        "marketplace_limiter_backend": "redis",
+        "redis_url": "rediss://redis.internal:6379/0",
         "_env_file": None,
     }
     values.update(override)

@@ -1,14 +1,13 @@
 import asyncio
-import hashlib
 import logging
 import random
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 import httpx
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from .advisory_lock import AdvisoryLease, advisory_key, advisory_session_lease
 from .config import get_settings
 from .db import SessionLocal
 from .fbo_service import fetch_wb_slots
@@ -30,8 +29,7 @@ def _lock_name(group: tuple[str, str]) -> str:
 
 
 def _advisory_key(name: str) -> int:
-    value = int.from_bytes(hashlib.blake2b(name.encode(), digest_size=8).digest(), 'big', signed=False)
-    return value if value < 2**63 else value - 2**64
+    return advisory_key(name)
 
 
 def _load_group_watches(db: Session, group: tuple[str, str]) -> list[FboWatch]:
@@ -76,26 +74,27 @@ def _recently_checked(watches: list[FboWatch], minimum_interval: int) -> bool:
 
 
 @asynccontextmanager
-async def _account_lease(db: Session, group: tuple[str, str]):
+async def _account_lease(group: tuple[str, str]):
     name = _lock_name(group)
-    dialect = db.get_bind().dialect.name
+    probe = SessionLocal()
+    dialect = probe.get_bind().dialect.name
+    probe.close()
     if dialect == 'postgresql':
-        key = _advisory_key(name)
-        acquired = bool(db.execute(text('SELECT pg_try_advisory_lock(:key)'), {'key': key}).scalar())
-        try:
-            yield acquired
-        finally:
-            if acquired:
-                db.execute(text('SELECT pg_advisory_unlock(:key)'), {'key': key})
+        with advisory_session_lease(SessionLocal, name) as lease:
+            yield lease
         return
 
     lock = _LOCAL_LOCKS.setdefault(name, asyncio.Lock())
     if lock.locked():
-        yield False
+        yield None
         return
     await lock.acquire()
     try:
-        yield True
+        db = SessionLocal()
+        try:
+            yield AdvisoryLease(True, db, None)
+        finally:
+            db.close()
     finally:
         lock.release()
 
@@ -103,13 +102,13 @@ async def _account_lease(db: Session, group: tuple[str, str]):
 async def process_group_job(group: tuple[str, str]) -> dict[str, int]:
     """Execute one durable FBO poll job for a store/account."""
     settings = get_settings()
-    db = SessionLocal()
     stats = {'checked_accounts': 0, 'checked_watches': 0, 'pushes_sent': 0, 'skipped_locked': 0, 'skipped_recent': 0, 'missing_connection': 0, 'failures': 0}
-    try:
-        async with _account_lease(db, group) as acquired:
-            if not acquired:
-                stats['skipped_locked'] = 1
-                return stats
+    async with _account_lease(group) as lease:
+        if lease is None or not lease.acquired:
+            stats['skipped_locked'] = 1
+            return stats
+        db = lease.session
+        try:
             watches = _load_group_watches(db, group)
             if not watches:
                 return stats
@@ -132,8 +131,9 @@ async def process_group_job(group: tuple[str, str]) -> dict[str, int]:
             for watch in watches:
                 stats['checked_watches'] += 1
                 stats['pushes_sent'] += process_watch(db, watch, slots)
-    finally:
-        db.close()
+        except BaseException:
+            db.rollback()
+            raise
     return stats
 
 
@@ -192,4 +192,3 @@ async def monitor_forever(stop_event: asyncio.Event) -> None:
             await asyncio.wait_for(stop_event.wait(), timeout=timeout)
         except asyncio.TimeoutError:
             pass
-

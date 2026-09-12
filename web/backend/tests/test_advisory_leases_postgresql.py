@@ -30,7 +30,7 @@ def test_session_advisory_lease_keeps_physical_connection_across_transaction_end
         getattr(lease.session, transaction_end)()
 
         with engine.connect() as contender:
-            contender_pid = contender.execute(text("SELECT pg_backend_pid()")) .scalar_one()
+            contender_pid = contender.execute(text("SELECT pg_backend_pid()")).scalar_one()
             assert contender_pid != owner_pid, "the leased connection was returned to the pool"
             assert _try_lock(contender, key) is False
 
@@ -54,4 +54,3 @@ def test_session_advisory_lease_releases_after_exception_without_pool_leak():
     with engine.connect() as reused:
         assert _try_lock(reused, key) is True
         _unlock(reused, key)
-

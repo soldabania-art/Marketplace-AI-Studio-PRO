@@ -9,7 +9,7 @@ from datetime import date, timedelta
 
 import httpx
 
-from .rate_limit import wait_marketplace_slot
+from .rate_limit import raise_for_marketplace_status, wait_marketplace_slot
 
 WB_ANALYTICS_BASE = 'https://seller-analytics-api.wildberries.ru'
 WB_STOCKS_URL = f'{WB_ANALYTICS_BASE}/api/analytics/v1/stocks-report/wb-warehouses'
@@ -81,7 +81,7 @@ async def fetch_wb_current_stocks(token: str, nm_ids: list[int] | None = None) -
         body = {'nmIds': list(nm_ids or []), 'chrtIds': [], 'limit': limit, 'offset': offset}
         async with httpx.AsyncClient(timeout=45.0) as client:
             response = await client.post(WB_STOCKS_URL, json=body, headers={'Authorization': token})
-        response.raise_for_status()
+        await raise_for_marketplace_status(response, 'wildberries', token, 'analytics-stocks')
         page = normalize_stock_rows(response.json())
         result.extend(page)
         if len(page) < limit:
@@ -103,7 +103,7 @@ async def fetch_wb_sales_velocity(token: str, period_days: int = 7, nm_ids: list
     }
     async with httpx.AsyncClient(timeout=45.0) as client:
         response = await client.post(WB_FUNNEL_HISTORY_URL, json=body, headers={'Authorization': token})
-    response.raise_for_status()
+    await raise_for_marketplace_status(response, 'wildberries', token, 'analytics-sales-funnel-history')
     return normalize_sales_history(response.json(), days)
 
 

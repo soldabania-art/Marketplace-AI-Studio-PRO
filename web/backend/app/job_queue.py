@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from .config import get_settings
 from .db import SessionLocal
 from .models import BackgroundJob, JobStatus
+from .rate_limit import MarketplaceQuotaExceeded
 
 logger = logging.getLogger(__name__)
 JobHandler = Callable[[dict], Awaitable[None]]
@@ -256,6 +257,11 @@ def _fail(
         base = max(1, settings.job_retry_base_seconds)
         cap = max(base, settings.job_retry_max_seconds)
         delay = min(cap, base * (2 ** max(0, job.attempts - 1))) + random.uniform(0, min(base, 10))
+        if isinstance(error, MarketplaceQuotaExceeded):
+            # A definite provider 429 is safe to retry, but never before the
+            # shared Redis cooldown. This avoids burning attempts in a loop
+            # that cannot reach the provider.
+            delay = max(delay, error.retry_after_seconds + 1)
         job.status = JobStatus.retry
         job.available_at = utcnow() + timedelta(seconds=delay)
     db.commit()
@@ -361,4 +367,3 @@ async def job_worker_forever(stop_event: asyncio.Event) -> None:
                 await asyncio.wait_for(stop_event.wait(), timeout=max(0.2, settings.job_idle_poll_seconds))
             except asyncio.TimeoutError:
                 pass
-

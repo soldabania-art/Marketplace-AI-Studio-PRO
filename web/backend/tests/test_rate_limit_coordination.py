@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -9,6 +10,11 @@ from cryptography.fernet import Fernet
 
 from app import rate_limit
 from app.config import Settings
+from app.db import Base, SessionLocal, engine
+from app.job_queue import _fail
+from app.models import BackgroundJob, JobStatus
+
+Base.metadata.create_all(bind=engine)
 
 
 class BusyRedis:
@@ -62,6 +68,24 @@ def test_redis_failure_is_normalized_and_never_falls_back_to_memory(monkeypatch)
     assert memory_called is False
 
 
+def test_redis_failure_prevents_provider_call(monkeypatch):
+    from app import wb_content
+
+    monkeypatch.setattr(rate_limit, "get_settings", limiter_settings)
+    monkeypatch.setattr(rate_limit, "_REDIS", FailedRedis())
+    provider_called = False
+
+    class ForbiddenClient:
+        def __init__(self, *args, **kwargs):
+            nonlocal provider_called
+            provider_called = True
+
+    monkeypatch.setattr(wb_content.httpx, "AsyncClient", ForbiddenClient)
+    with pytest.raises(rate_limit.MarketplaceLimiterUnavailable):
+        asyncio.run(wb_content.fetch_wb_card("same-account", nm_id=1, vendor_code="sku"))
+    assert provider_called is False
+
+
 def test_provider_retry_after_blocks_replay_in_shared_namespace(monkeypatch):
     monkeypatch.setattr(rate_limit, "get_settings", limiter_settings)
     monkeypatch.setattr(rate_limit, "_REDIS", BusyRedis())
@@ -70,6 +94,43 @@ def test_provider_retry_after_blocks_replay_in_shared_namespace(monkeypatch):
         asyncio.run(rate_limit.record_marketplace_backoff(
             "wildberries", "same-account", "cards", retry_after_seconds=3,
         ))
+
+
+def test_retry_after_supports_seconds_and_http_date():
+    seconds = SimpleNamespace(headers={"Retry-After": "12"})
+    future = datetime.now(timezone.utc) + timedelta(seconds=30)
+    http_date = SimpleNamespace(headers={"Retry-After": future.strftime("%a, %d %b %Y %H:%M:%S GMT")})
+    assert rate_limit.retry_after_seconds(seconds) == 12
+    assert 20 <= rate_limit.retry_after_seconds(http_date) <= 30
+
+
+def test_worker_retry_is_scheduled_after_shared_cooldown():
+    key = f"t08c-cooldown-{__import__('uuid').uuid4().hex}"
+    with SessionLocal() as db:
+        job = BackgroundJob(
+            job_type="test.t08c",
+            idempotency_key=key,
+            status=JobStatus.running,
+            attempts=1,
+            max_attempts=5,
+            locked_by="worker",
+            attempt_id="attempt",
+        )
+        db.add(job)
+        db.commit()
+        job_id = job.id
+    before = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        assert _fail(
+            db, job_id, "worker", "attempt", rate_limit.MarketplaceQuotaExceeded(120)
+        ) is True
+    with SessionLocal() as db:
+        stored = db.get(BackgroundJob, job_id)
+        available = stored.available_at
+        if available.tzinfo is None:
+            available = available.replace(tzinfo=timezone.utc)
+        assert stored.status == JobStatus.retry
+        assert available >= before + timedelta(seconds=120)
 
 
 def test_production_requires_shared_redis_limiter():

@@ -14,7 +14,6 @@ depends_on=None
 job_status=sa.Enum('queued','running','succeeded','retry','dead','canceled',name='jobstatus')
 
 def upgrade():
-    job_status.create(op.get_bind(),checkfirst=True)
     op.create_table('background_jobs',
         sa.Column('id',sa.String(36),primary_key=True),
         sa.Column('workspace_id',sa.String(36),sa.ForeignKey('workspaces.id',ondelete='CASCADE'),nullable=True),

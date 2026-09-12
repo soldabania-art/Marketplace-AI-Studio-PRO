@@ -6,10 +6,22 @@ on:
     paths:
       - 'web/**'
       - '.github/workflows/web-cloud.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - '.github/workflows/web-cloud.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: web-cloud-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
   frontend:
@@ -19,8 +31,13 @@ jobs:
       run:
         working-directory: web
     steps:
-      - name: Checkout
+      - name: Checkout exact head
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.EXPECTED_HEAD_SHA }}
+      - name: Verify exact head
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+        working-directory: .
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
@@ -29,6 +46,8 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - name: Run CSV contract tests
+        run: node --test tests/*.test.mjs
       - name: Build Next.js app
         run: npm run build
 
@@ -43,8 +62,13 @@ jobs:
       MARKETPLACE_JWT_SECRET: ci-only-secret-not-for-production
       PYTHONPATH: .
     steps:
-      - name: Checkout
+      - name: Checkout exact head
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.EXPECTED_HEAD_SHA }}
+      - name: Verify exact head
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+        working-directory: .
       - name: Setup Python
         uses: actions/setup-python@v7
         with:
@@ -52,4 +76,59 @@ jobs:
       - name: Install backend dependencies
         run: pip install -r requirements.txt
       - name: Run backend contract tests
+        run: python -m pytest -q
+
+  postgresql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: trovendi_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d trovendi_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    defaults:
+      run:
+        working-directory: web/backend
+    env:
+      MARKETPLACE_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/trovendi_ci
+      MARKETPLACE_JWT_SECRET: ci-only-secret-not-for-production
+      PYTHONPATH: .
+      PGPASSWORD: postgres
+    steps:
+      - name: Checkout exact head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.EXPECTED_HEAD_SHA }}
+      - name: Verify exact head
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+        working-directory: .
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt
+      - name: Migrate empty PostgreSQL database to head
+        run: |
+          alembic upgrade head
+          alembic current
+      - name: Reset ephemeral migration schema
+        run: |
+          psql -h localhost -U postgres -d trovendi_ci -v ON_ERROR_STOP=1 -c 'DROP SCHEMA public CASCADE'
+          psql -h localhost -U postgres -d trovendi_ci -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA public'
+      - name: Upgrade PostgreSQL from previous revision to head
+        run: |
+          alembic upgrade head-1
+          alembic upgrade head
+          alembic current
+      - name: Run integration tests on PostgreSQL
         run: python -m pytest -q

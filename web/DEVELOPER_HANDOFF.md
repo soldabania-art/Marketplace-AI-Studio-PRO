@@ -1,6 +1,6 @@
 # Передача TROVENDI следующему разработчику
 
-Дата: 12.09.2026. Проверенный `main`: `ac0bd409f39168376b162bba5e8ff16052a1dca3`.
+Дата: 12.09.2026. Проверенный `main`: `13ac300248ce11927545abd896273ce006d97ed6`.
 
 ## Решение и клиентский фокус
 
@@ -14,10 +14,12 @@
 
 - PR #28/T02 слит в `main`: merge SHA `0652d810b5a1f6b521e27c04826c8a2cd035849f`; issue #2 закрыт с доказательствами.
 - PR #29/T04 слит следом: merge SHA `0e4e6ea40aa201e4ad1beda75710a2b0d3566ead`; issue #4 закрыт с доказательствами.
-- PR #30 со стратегией слит: итоговый `main` `ac0bd409f39168376b162bba5e8ff16052a1dca3`.
-- Совместный exact-head [Web Cloud #319](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/actions/runs/34692105098): frontend, backend и PostgreSQL success. SQLite: 189 passed, 7 skipped; PostgreSQL: 196 passed.
-- Exact-head [Vercel deployment](https://vercel.com/soldabania-5646/marketplace-ai-studio-pro/FErLnV3jymmPUxzyjhrbS8QPkSua): success.
-- #1–#4 закрыты; #5–#22 открыты. Следующая и единственная активная функциональная задача — **T05**, отдельным PR. T06 и остальные задачи одновременно не начинать.
+- PR #30 со стратегией слит: промежуточный `main` `ac0bd409f39168376b162bba5e8ff16052a1dca3`.
+- PR #31 обновил handoff/backlog после интеграции T02/T04: merge SHA `3b0b450adb38e9e518b0d10de83ce249fa19d8fe`.
+- PR #32/T05 принят на head `336506a95ffd4d2ec307f8a68a16dfc16296f631` и слит: merge SHA `13ac300248ce11927545abd896273ce006d97ed6`; issue #5 закрыт с доказательствами.
+- Итоговый exact-head [Web Cloud #327](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/actions/runs/34694438071): frontend success; SQLite 205 passed, 7 skipped; PostgreSQL fresh/previous migrations и integration 212 passed.
+- Exact-head [Vercel deployment](https://vercel.com/soldabania-5646/marketplace-ai-studio-pro/FQZhNYFtMad8UoaUf8Et24KbaKNF): success.
+- #1–#5 закрыты; #6–#22 открыты. Следующая и единственная активная функциональная задача — **T06**, отдельным PR. T07 и остальные задачи одновременно не начинать.
 
 Зелёные CI и deployment подтверждают только заявленные проверки конкретного SHA. Они не доказывают production readiness, работоспособность реального WB-сценария или готовность платного запуска.
 
@@ -68,8 +70,8 @@ PostgreSQL migrations проверять на отдельной тестово�
 
 ## Итог интеграции и следующий gate
 
-T02 и T04 приняты и интегрированы последовательно; их защита подтверждена совместным CI на итоговом `main`. Реальный WB, рекламный бюджет и платный AI в проверках не использовались.
+T02, T04 и T05 приняты и интегрированы последовательно; их совместная работа подтверждена CI итогового `main`. Реальный WB, рекламный бюджет и платный AI в проверках не использовались.
 
-Следующая работа — T05: проверка содержательных AI-утверждений по конкретным подтверждённым атрибутам. Она выполняется отдельным regression-first PR и остаётся на независимую приёмку. T06 не начинать.
+Следующая работа — T06: неизменяемая привязка AI-актива и честная read-only проверка результата медиа-публикации. Она выполняется отдельным regression-first PR и остаётся на независимую приёмку. T07 не начинать.
 
 GitHub Ruleset с обязательными merge checks остаётся **BLOCKED_EXTERNAL** до подтверждённого включения в настройках репозитория. Закрытый T01 подтверждает конфигурацию workflow, но не доказывает активную защиту branch ruleset.

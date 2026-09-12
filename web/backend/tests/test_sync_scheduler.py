@@ -100,3 +100,88 @@ def test_scheduler_queues_due_read_only_syncs_once_per_window_and_resolves_incid
     assert recovered['incidents_resolved'] >= 5
     with SessionLocal() as db:
         assert db.query(DataHealthIncident).filter(DataHealthIncident.store_id == store_id, DataHealthIncident.status == 'open').count() == 0
+
+
+def test_scheduler_refreshes_feedbacks_without_browser_and_does_not_duplicate_active_sync():
+    workspace_id, store_id = _connected_store()
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    old = now - timedelta(days=3)
+    with SessionLocal() as db:
+        for snapshot_type, payload in (
+            ('catalog', {'count': 1}), ('stocks', {'count': 1}), ('sales_velocity_7d', {'count': 1}),
+            ('finance_realization_sync', {'complete': True}), ('advertising_sync', {'complete': True}),
+            ('feedbacks', {'count': 1, 'items': []}),
+        ):
+            db.add(MarketplaceSnapshot(store_id=store_id, marketplace='wildberries', snapshot_type=snapshot_type,
+                payload=payload, created_at=old, source_updated_at=old))
+        active = BackgroundJob(
+            workspace_id=workspace_id,
+            store_id=store_id,
+            job_type='marketplace.wb.analytics.sync',
+            idempotency_key=f'manual-wb-analytics:{store_id}',
+            payload={'store_id': store_id, 'origin': 'manual'},
+            status=JobStatus.running,
+        )
+        db.add(active)
+        db.commit()
+
+    result = schedule_due_syncs_once(now)
+
+    assert result['analytics'] == 0
+    assert result['feedbacks'] == 1
+    with SessionLocal() as db:
+        analytics = db.query(BackgroundJob).filter(
+            BackgroundJob.store_id == store_id,
+            BackgroundJob.job_type == 'marketplace.wb.analytics.sync',
+            BackgroundJob.status.in_([JobStatus.queued, JobStatus.running, JobStatus.retry]),
+        ).all()
+        feedbacks = db.query(BackgroundJob).filter(
+            BackgroundJob.store_id == store_id,
+            BackgroundJob.job_type == 'marketplace.wb.feedbacks.sync',
+        ).all()
+        assert len(analytics) == 1
+        assert len(feedbacks) == 1
+        assert feedbacks[0].payload['origin'] == 'scheduler'
+
+
+def test_finance_recovery_runs_receive_distinct_page_namespaces():
+    workspace_id, store_id = _connected_store()
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    old = now - timedelta(days=3)
+    with SessionLocal() as db:
+        for snapshot_type, payload in (
+            ('catalog', {'count': 1}), ('stocks', {'count': 1}), ('sales_velocity_7d', {'count': 1}),
+            ('finance_realization_sync', {'complete': True}), ('advertising_sync', {'complete': True}),
+            ('feedbacks', {'count': 1, 'items': []}),
+        ):
+            db.add(MarketplaceSnapshot(store_id=store_id, marketplace='wildberries', snapshot_type=snapshot_type,
+                payload=payload, created_at=old, source_updated_at=old))
+        db.add(BackgroundJob(
+            workspace_id=workspace_id, store_id=store_id, job_type='marketplace.wb.finance.sync',
+            idempotency_key=f'failed-finance:{store_id}', payload={'store_id': store_id},
+            status=JobStatus.dead, created_at=old, finished_at=old,
+        ))
+        db.commit()
+
+    schedule_due_syncs_once(now)
+    with SessionLocal() as db:
+        first = db.query(BackgroundJob).filter(
+            BackgroundJob.store_id == store_id,
+            BackgroundJob.job_type == 'marketplace.wb.finance.sync',
+            BackgroundJob.status == JobStatus.queued,
+        ).order_by(BackgroundJob.created_at.desc()).first()
+        first_run_id = first.payload['run_id']
+        first.status = JobStatus.dead
+        first.finished_at = now
+        db.commit()
+
+    schedule_due_syncs_once(now + timedelta(hours=1))
+    with SessionLocal() as db:
+        second = db.query(BackgroundJob).filter(
+            BackgroundJob.store_id == store_id,
+            BackgroundJob.job_type == 'marketplace.wb.finance.sync',
+            BackgroundJob.status == JobStatus.queued,
+        ).order_by(BackgroundJob.created_at.desc()).first()
+        assert second.payload['run_id'] != first_run_id
+        assert first_run_id in first.idempotency_key
+        assert second.payload['run_id'] in second.idempotency_key

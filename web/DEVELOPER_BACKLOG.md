@@ -1,16 +1,16 @@
 # TROVENDI — очередь разработки после аудита
 
-Дата: 12.09.2026. Проверенный `main`: `a64818aa7da948a5d3a0ad546310935d413b52a6`. [Решение и доказательства](ARCHITECTURE_REVIEW_2026-09-12.md).
+Дата: 12.09.2026. Проверенный `main`: `700436f7161972ea1b2dcf9ff83fbdeb975ae822`. [Решение и доказательства](ARCHITECTURE_REVIEW_2026-09-12.md).
 
 Концепция одобрена; коммерческий запуск не одобрен. Первичный клиент — действующий продавец Wildberries. Ближайший процесс: подключение → полнота данных → детерминированная экономика → подтверждённые проблемы → задачи с доказательствами → разрешённое действие → статус и результат.
 
-Фактическое состояние issues на момент обновления: #1–#6 закрыты; #7–#22 открыты. T02/T04/T05/T06 последовательно интегрированы и проверены на общем `main`. Текущий кодовый приоритет — только T07. Внешний блокер не разрешает обходить security gate.
+Фактическое состояние issues на момент обновления: #1–#7 закрыты; #8–#22 и дочерние #37–#39 открыты. T02–T07 последовательно интегрированы и проверены на общем `main`. Текущий кодовый приоритет — только T08A/#37. Внешний блокер не разрешает обходить security gate.
 
 | Состояние | Задачи |
 | --- | --- |
-| Закрыто и интегрировано | [T01 / #1](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/1) — [T06 / #6](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/6) |
-| Текущая задача | [T07 / #7](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/7) |
-| Открыто, выполнять по зависимостям | T08–T22 |
+| Закрыто и интегрировано | [T01 / #1](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/1) — [T07 / #7](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/7) |
+| Текущая задача | [T08A / #37](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/37) |
+| Открыто, выполнять по зависимостям | [T08B/#38](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/38), [T08C/#39](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/39), T09–T22 |
 
 
 | ID | Приоритет | Задача | Зависимости | GitHub |
@@ -130,7 +130,7 @@
 
 ## T07 · P0 · Объединить свежесть, покрытие периода и планирование обновлений
 
-**Статус:** OPEN · [GitHub #7](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/7). **Зависимости:** T04.
+**Статус:** CLOSED · принят head `e19cf107f902fde2a88aff54c335c63b5deebad8` · интегрировано merge SHA `700436f7161972ea1b2dcf9ff83fbdeb975ae822` · [PR #36](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/36) · [GitHub #7](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/7). **Зависимости:** T04.
 
 **Файлы:** web/backend/app/data_health.py; director_router.py; sync_scheduler.py; seller_data_router.py; smart_fbo_router.py; reviews_router.py.
 
@@ -151,6 +151,18 @@
 **Приёмка:** Два PostgreSQL worker не выполняют живую задачу повторно после 300 секунд; crash восстанавливается, stale completion отвергнут. Сбой между записью состояния и заданием не теряет работу. Нет утечки advisory locks в pool. Redis failure блокирует соответствующие provider calls; проверены 429 и replay.
 
 **Граница:** Без Kafka и массового выделения микросервисов; разбить на PR heartbeat, transaction boundary, scheduler locks.
+
+### T08A · ACTIVE · Heartbeat и владение попыткой
+
+[GitHub #37](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/37). Добавить независимый heartbeat, attempt identity/fencing и crash recovery. Два PostgreSQL worker должны доказать, что живая задача не перехватывается, умершая восстанавливается, а старый worker не меняет статус, доменный результат или дочерние jobs новой попытки. STOP и read-before-retry для неизвестной внешней записи сохраняются.
+
+### T08B · BLOCKED BY T08A · Транзакционная граница/outbox
+
+[GitHub #38](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/38). Атомарность доменного изменения и enqueue, rollback/crash fault injection. Не начинать до интеграции T08A.
+
+### T08C · BLOCKED BY T08B · Advisory locks и Redis limiter
+
+[GitHub #39](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/39). Session locks на закреплённом соединении и общий fail-closed Redis limiter с 429/replay. Не начинать до интеграции T08B.
 
 ## T09 · P0 · Реализовать доставку email для подтверждения и восстановления
 

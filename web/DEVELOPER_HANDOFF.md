@@ -1,6 +1,6 @@
 # Передача TROVENDI следующему разработчику
 
-Дата: 12.09.2026. Проверенный `main`: `a64818aa7da948a5d3a0ad546310935d413b52a6`.
+Дата: 12.09.2026. Проверенный `main`: `700436f7161972ea1b2dcf9ff83fbdeb975ae822`.
 
 ## Решение и клиентский фокус
 
@@ -18,9 +18,10 @@
 - PR #31 обновил handoff/backlog после интеграции T02/T04: merge SHA `3b0b450adb38e9e518b0d10de83ce249fa19d8fe`.
 - PR #32/T05 принят на head `336506a95ffd4d2ec307f8a68a16dfc16296f631` и слит: merge SHA `13ac300248ce11927545abd896273ce006d97ed6`; issue #5 закрыт с доказательствами.
 - PR #34/T06 принят на head `6773a3916cc5589c38d3b6a7cc11fd60ad6f3db0` и слит: merge SHA `a64818aa7da948a5d3a0ad546310935d413b52a6`; issue #6 закрыт с доказательствами.
-- Итоговый push [Web Cloud #336](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/actions/runs/34696214612): event=push, exact head `a64818aa7da948a5d3a0ad546310935d413b52a6`; frontend, backend и PostgreSQL fresh/previous migrations + integration success.
-- Итоговый [Vercel deployment](https://vercel.com/soldabania-5646/marketplace-ai-studio-pro/3yDvxvSqsuKx8AfwsgopAhAW5tR6): success.
-- #1–#6 закрыты; #7–#22 открыты. Следующая и единственная активная функциональная задача — **T07**, отдельным regression-first PR. T08 и остальные задачи одновременно не начинать.
+- PR #36/T07 принят после дополнительной проверки полноты на head `e19cf107f902fde2a88aff54c335c63b5deebad8` и слит: merge SHA `700436f7161972ea1b2dcf9ff83fbdeb975ae822`; issue #7 закрыт.
+- Итоговый push [Web Cloud #348](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/actions/runs/34698406407): event=push, exact head `700436f7161972ea1b2dcf9ff83fbdeb975ae822`; frontend, backend и PostgreSQL success.
+- Итоговый [Vercel deployment](https://vercel.com/soldabania-5646/marketplace-ai-studio-pro/4UcSbvMnmAwQzBPZ5LcNCkLbriBG): success.
+- #1–#7 закрыты; #8–#22 открыты. Эпик T08 разделён на [T08A/#37](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/37), [T08B/#38](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/38) и [T08C/#39](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/39). Единственная активная функциональная задача — **T08A**; T08B/T08C не начинать до её приёмки и интеграции.
 
 Зелёные CI и deployment подтверждают только заявленные проверки конкретного SHA. Они не доказывают production readiness, работоспособность реального WB-сценария или готовность платного запуска.
 
@@ -71,9 +72,9 @@ PostgreSQL migrations проверять на отдельной тестово�
 
 ## Итог интеграции и следующий gate
 
-T02, T04, T05 и T06 приняты и интегрированы последовательно; их совместная работа подтверждена CI итогового `main`. Реальный WB, рекламный бюджет и платный AI в проверках не использовались.
+T02, T04, T05, T06 и T07 приняты и интегрированы последовательно; их совместная работа подтверждена CI итогового `main`. Реальный WB, рекламный бюджет и платный AI в проверках не использовались.
 
-Следующая работа — T07: единые правила свежести и полноты, корректное покрытие финансового периода/часового пояса, автоматическое планирование отзывов и дедупликация синхронизаций. Она выполняется отдельным regression-first PR и остаётся на независимую приёмку. T08 не начинать.
+Следующая работа — только T08A: heartbeat, attempt identity/fencing и восстановление фоновых задач после прекращения heartbeat. Она выполняется отдельным regression-first PR и остаётся на независимую приёмку. T08B/T08C не начинать.
 
 `MARKETPLACE_ASSET_BLOB_HOSTS` остаётся **BLOCKED_EXTERNAL**: нужен точный hostname выделенного public Blob store. Hostname не угадывать; отсутствие настройки должно оставаться fail-closed.
 

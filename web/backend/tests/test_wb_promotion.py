@@ -1,14 +1,19 @@
 import asyncio
+import hashlib
 import json
+import uuid
 from pathlib import Path
 
 import pytest
 
 from app.marketplace_page import MarketplacePageResult
 from app.marketplace_sync import sync_wb_advertising
+from app.db import Base, SessionLocal, engine
+from app.models import MarketplaceAdvertisingLine, MarketplaceConnection, MarketplaceSnapshot, Membership, MembershipRole, Store, User, Workspace
 from app.wb_promotion import campaign_ids, date_chunks, fetch_advertising_stats, normalize_advertising_stats, parse_advertising_stats_page
 
 FIXTURES=Path(__file__).with_name('fixtures')
+Base.metadata.create_all(bind=engine)
 
 
 def test_date_chunks_cover_ninety_days_without_overlap():
@@ -70,6 +75,73 @@ def test_advertising_unknown_schema_and_non_finite_money_are_rejected():
     assert page.safe_to_apply is False
 
 
+@pytest.mark.parametrize('nested_rows',[None,[None],[{'nmId':123,'sum':'10.00'},None]])
+def test_advertising_rejects_every_malformed_nested_nm_row(nested_rows):
+    payload=[{'advertId':77,'name':'Поиск','days':[{'date':'2026-09-08','apps':[{'nm':nested_rows}]}]}]
+    page=parse_advertising_stats_page(payload)
+    assert page.schema_state=='partial'
+    assert page.rejected_count==1
+    assert page.safe_to_apply is False
+    assert page.evidence
+    assert 'nm' in page.evidence[0]['reason']
+
+
+def test_documented_empty_advertising_page_is_safe_and_distinct_from_corruption():
+    page=parse_advertising_stats_page([])
+    assert page.schema_state=='documented_empty'
+    assert page.safe_to_apply is True
+    assert page.items==[]
+
+
+@pytest.mark.parametrize('app_payload', [
+    {'nm':[{'nmId':123,'sum':'10.00'},None]},
+    {'nm':[], 'nms':[None]},
+    {'nm':[], 'nms':[{'nmId':123,'sum':'10.00'},None]},
+])
+def test_corrupt_nested_advertising_page_preserves_saved_rows_and_checksum(monkeypatch, app_payload):
+    suffix=uuid.uuid4().hex
+    with SessionLocal() as db:
+        user=User(email=f'ads-{suffix}@example.com',password_hash='test')
+        workspace=Workspace(name=f'Advertising {suffix}')
+        db.add_all([user,workspace]);db.flush()
+        db.add(Membership(user_id=user.id,workspace_id=workspace.id,role=MembershipRole.owner))
+        store=Store(workspace_id=workspace.id,name=f'Store {suffix}')
+        db.add(store);db.flush()
+        db.add(MarketplaceConnection(user_id=user.id,store_id=store.id,marketplace='wildberries',encrypted_token='encrypted-test',enabled=True))
+        original_payload={'campaign_id':77,'event_date':'2026-09-08','nm_id':123,'rows':[{'nmId':123,'sum':'15.00'}]}
+        original_checksum=hashlib.sha256(json.dumps(original_payload,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+        db.add(MarketplaceAdvertisingLine(
+            store_id=store.id,marketplace='wildberries',source_line_id='77:2026-09-08:123',campaign_id=77,
+            campaign_name='Existing',nm_id=123,event_date='2026-09-08',spend_kopecks=1500,
+            attributed_revenue_kopecks=5000,views=20,clicks=4,orders=2,units=2,
+            source_sha256=original_checksum,source_payload=original_payload,
+        ))
+        db.commit();store_id=store.id
+
+    corrupt=[{'advertId':77,'name':'Поиск','days':[{'date':'2026-09-08','apps':[app_payload]}]}]
+    async def corrupt_page(*args,**kwargs): return parse_advertising_stats_page(corrupt)
+    monkeypatch.setattr('app.marketplace_sync.decrypt_connection',lambda value:'token')
+    monkeypatch.setattr('app.marketplace_sync.fetch_advertising_stats',corrupt_page)
+
+    with pytest.raises(RuntimeError,match='advertising page rejected'):
+        asyncio.run(sync_wb_advertising({'store_id':store_id,'date_from':'2026-09-08','date_to':'2026-09-08','campaign_ids':[77]}))
+
+    with SessionLocal() as db:
+        saved=db.query(MarketplaceAdvertisingLine).filter(MarketplaceAdvertisingLine.store_id==store_id).one()
+        assert saved.source_sha256==original_checksum
+        assert saved.spend_kopecks==1500
+        assert saved.source_payload==original_payload
+        snapshot=db.query(MarketplaceSnapshot).filter(
+            MarketplaceSnapshot.store_id==store_id,
+            MarketplaceSnapshot.snapshot_type=='advertising_sync',
+        ).order_by(MarketplaceSnapshot.created_at.desc()).first()
+        assert snapshot.payload['complete'] is False
+        assert snapshot.payload['schema_state']=='partial'
+        assert snapshot.payload['rejected_count']==1
+        assert snapshot.payload['evidence']
+        assert 'nm' in snapshot.payload['evidence'][0]['reason']
+
+
 def test_invalid_advertising_page_never_deletes_previous_rows(monkeypatch):
     deleted=[]; snapshots=[]
     connection=object(); store=type('Store',(),{'id':'s1','workspace_id':'w1'})()
@@ -92,3 +164,16 @@ def test_invalid_advertising_page_never_deletes_previous_rows(monkeypatch):
     assert deleted==[]
     assert snapshots[0]['payload']['complete'] is False
     assert snapshots[0]['payload']['schema_state']=='unknown'
+
+
+@pytest.mark.parametrize('first', [[], None, 0, {}, [{'nmId':123,'sum':'1'}]])
+@pytest.mark.parametrize('alias', ['nm', 'nms'])
+def test_competing_product_aliases_are_never_applied(first, alias):
+    other = 'nms' if alias == 'nm' else 'nm'
+    page = parse_advertising_stats_page([{'advertId':77,'days':[
+        {'date':'2026-09-08','apps':[{alias:first, other:[None]}]}
+    ]}])
+    assert page.schema_state == 'partial'
+    assert not page.safe_to_apply
+    assert page.items == []
+    assert 'ambiguous' in page.evidence[0]['reason']

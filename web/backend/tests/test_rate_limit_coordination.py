@@ -148,3 +148,31 @@ def test_production_requires_shared_redis_limiter():
         Settings(**common, marketplace_limiter_backend="memory")
     with pytest.raises(ValueError, match="REDIS_URL"):
         Settings(**common, marketplace_limiter_backend="redis", redis_url="")
+
+
+def test_provider_cooldown_is_not_shortened_to_local_wait_cap(monkeypatch):
+    class RecordingRedis:
+        async def eval(self, script, number, key, milliseconds):
+            self.milliseconds = milliseconds
+            return milliseconds
+    redis = RecordingRedis()
+    monkeypatch.setattr(rate_limit, "get_settings",
+                        lambda: limiter_settings(marketplace_retry_after_max_seconds=900))
+    monkeypatch.setattr(rate_limit, "_REDIS", redis)
+    with pytest.raises(rate_limit.MarketplaceQuotaExceeded) as raised:
+        asyncio.run(rate_limit.record_marketplace_backoff(
+            "wildberries", "account", "cards", retry_after_seconds=3600))
+    assert redis.milliseconds >= 3_600_000
+    assert raised.value.retry_after_seconds >= 3600
+
+
+def test_worker_backoff_preserves_longer_existing_shared_cooldown(monkeypatch):
+    class LongerRedis:
+        async def eval(self, *args):
+            return 120_000
+    monkeypatch.setattr(rate_limit, "get_settings", limiter_settings)
+    monkeypatch.setattr(rate_limit, "_REDIS", LongerRedis())
+    with pytest.raises(rate_limit.MarketplaceQuotaExceeded) as raised:
+        asyncio.run(rate_limit.record_marketplace_backoff(
+            "wildberries", "account", "cards", retry_after_seconds=3))
+    assert raised.value.retry_after_seconds >= 120

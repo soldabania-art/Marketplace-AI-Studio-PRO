@@ -57,6 +57,7 @@ def test_stop_saved_during_rate_wait_prevents_new_http_request(
         setup.add(Workspace(id=workspace_id, name=f"STOP {suffix}"))
         setup.flush()
         setup.add(Store(id=store_id, workspace_id=workspace_id, name=f"Store {suffix}"))
+        setup.flush()
         if control_exists:
             setup.add(AutomationControl(
                 workspace_id=workspace_id,

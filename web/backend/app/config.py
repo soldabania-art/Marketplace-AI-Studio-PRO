@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     marketplace_secret_provider: str = "fernet"
     marketplace_default_min_interval_seconds: float = 2.0
     marketplace_limiter_backend: str = "memory"
+    marketplace_limiter_max_wait_seconds: float = 65.0
+    marketplace_redis_timeout_seconds: float = 1.0
+    marketplace_retry_after_max_seconds: int = 900
     redis_url: str = ""
     redis_key_prefix: str = "mai"
     fbo_poll_seconds: int = 60
@@ -97,6 +100,10 @@ class Settings(BaseSettings):
                 raise ValueError("MARKETPLACE_MFA_ENCRYPTION_KEY is required in production")
             if self.marketplace_secret_provider.strip().lower() != "fernet":
                 raise ValueError("Unsupported marketplace secret provider")
+            if self.marketplace_limiter_backend.strip().lower() != "redis":
+                raise ValueError("Redis limiter is required in production")
+            if not self.redis_url.strip():
+                raise ValueError("MARKETPLACE_REDIS_URL is required in production")
             try:
                 Fernet(self.marketplace_token_key.encode())
             except Exception as exc:

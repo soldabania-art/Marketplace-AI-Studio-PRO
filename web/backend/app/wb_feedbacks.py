@@ -2,7 +2,7 @@
 
 import httpx
 
-from .rate_limit import wait_marketplace_slot
+from .rate_limit import raise_for_marketplace_status, wait_marketplace_slot
 
 WB_FEEDBACKS_URL = "https://feedbacks-api.wildberries.ru/api/v1/feedbacks"
 
@@ -62,7 +62,7 @@ async def fetch_wb_feedbacks(token: str, *, max_items: int = 5000) -> tuple[list
                     params={"isAnswered": str(answered).lower(), "take": take, "skip": skip},
                     headers={"Authorization": token},
                 )
-                response.raise_for_status()
+                await raise_for_marketplace_status(response, 'wildberries', token, 'feedbacks-read')
                 body = response.json()
                 raw_data = body.get("data") if isinstance(body, dict) else None
                 raw_count = len(raw_data.get("feedbacks") or []) if isinstance(raw_data, dict) else 0

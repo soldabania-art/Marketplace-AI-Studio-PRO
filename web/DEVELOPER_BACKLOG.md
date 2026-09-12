@@ -1,16 +1,16 @@
 # TROVENDI — очередь разработки после аудита
 
-Дата: 12.09.2026. Проверенный `main`: `7f43ce131f879c353842890524b9c030374e4010`. [Решение и доказательства](ARCHITECTURE_REVIEW_2026-09-12.md).
+Дата: 12.09.2026. Проверенный `main`: `1c880be00b6bc8117767c3ee4564f986086c3767`. [Решение и доказательства](ARCHITECTURE_REVIEW_2026-09-12.md).
 
 Концепция одобрена; коммерческий запуск не одобрен. Первичный клиент — действующий продавец Wildberries. Ближайший процесс: подключение → полнота данных → детерминированная экономика → подтверждённые проблемы → задачи с доказательствами → разрешённое действие → статус и результат.
 
-Фактическое состояние issues на момент обновления: #1–#7 закрыты; #37 закрыта; #8–#22 и дочерние #38–#39 открыты. T02–T07 последовательно интегрированы и проверены на общем `main`. Текущий кодовый приоритет — только T08B/#38. Внешний блокер не разрешает обходить security gate.
+Фактическое состояние issues на момент обновления: #1–#7 и #37–#38 закрыты; #8–#22 и #39 открыты. T02–T08B последовательно интегрированы и проверены на общем `main`. Текущий кодовый приоритет — только T08C/#39. Внешний блокер не разрешает обходить security gate.
 
 | Состояние | Задачи |
 | --- | --- |
 | Закрыто и интегрировано | [T01 / #1](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/1) — [T07 / #7](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/7) |
-| Текущая задача | [T08B / #38](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/38) |
-| Открыто, выполнять по зависимостям | [T08B/#38](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/38), [T08C/#39](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/39), T09–T22 |
+| Текущая задача | [T08C / #39](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/39) · [PR #45](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/45) ожидает приёмки |
+| Открыто, выполнять по зависимостям | [T08C/#39](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/39), T09–T22; notification follow-up #44 только после отдельного решения |
 
 
 | ID | Приоритет | Задача | Зависимости | GitHub |
@@ -156,13 +156,13 @@
 
 [GitHub #37](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/37). Добавить независимый heartbeat, attempt identity/fencing и crash recovery. Два PostgreSQL worker должны доказать, что живая задача не перехватывается, умершая восстанавливается, а старый worker не меняет статус, доменный результат или дочерние jobs новой попытки. STOP и read-before-retry для неизвестной внешней записи сохраняются.
 
-### T08B · ACTIVE · Транзакционная граница/outbox
+### T08B · CLOSED · Транзакционная граница/outbox
 
-[GitHub #38](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/38). Атомарность доменного изменения и enqueue, rollback/crash fault injection. T08A принят на `63c11d1460131514b2d94c3598e9c626727ae5d2`, интегрирован PR #41 (`7f43ce131f879c353842890524b9c030374e4010`); [push CI success](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/actions/runs/34700508949). T08B выполнять отдельным PR, оставить на приёмку владельцу.
+[GitHub #38](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/38). Принят head `b179d4f1fafc32fda14be2aa81e39b60cbe63c1e`, интегрирован [PR #43](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/43), merge `1c880be00b6bc8117767c3ee4564f986086c3767`; [push CI success](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/actions/runs/34702338087). Enqueue и доменные изменения используют caller-owned atomic transaction.
 
-### T08C · BLOCKED BY T08B · Advisory locks и Redis limiter
+### T08C · ACTIVE · Advisory locks и Redis limiter
 
-[GitHub #39](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/39). Session locks на закреплённом соединении и общий fail-closed Redis limiter с 429/replay. Не начинать до интеграции T08B.
+[GitHub #39](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/39). T08B интегрирован. Regression `a5df2be7f3b42509c71123487b5f608a9a8c87e5`, исправление `80ca828f98d8c431ba14554ebfca946ae7ca8a35`; [PR #45](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/45) ожидает независимой приёмки. Проверяются разные `pg_backend_pid`, commit/rollback/exception, отсутствие lock в pool, два Redis-клиента, отказ Redis без provider call, общий 429/Retry-After и отложенный worker retry. #8 остаётся открытым до приёмки T08C.
 
 ## T09 · P0 · Реализовать доставку email для подтверждения и восстановления
 
@@ -365,6 +365,6 @@
 
 ## Последняя интеграция
 
-PR #28/T02 и PR #29/T04 последовательно слиты, затем слит PR #30. Итоговый `main`: `ac0bd409f39168376b162bba5e8ff16052a1dca3`. Совместный [Web Cloud #319](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/actions/runs/34692105098) завершён успешно: SQLite 189 passed/7 skipped, PostgreSQL 196 passed, frontend/build success; [Vercel](https://vercel.com/soldabania-5646/marketplace-ai-studio-pro/FErLnV3jymmPUxzyjhrbS8QPkSua) success.
+T08B принят и интегрирован последним: [PR #43](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/43), итоговый `main` `1c880be00b6bc8117767c3ee4564f986086c3767`, [push CI](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/actions/runs/34702338087) и Vercel success.
 
-T07 теперь активна. T08 и остальные функциональные задачи не начинать до отдельного решения. `MARKETPLACE_ASSET_BLOB_HOSTS` остаётся BLOCKED_EXTERNAL до получения точного hostname выделенного public Blob store; значение не угадывать. GitHub Ruleset также остаётся BLOCKED_EXTERNAL до подтверждённого включения; CLOSED T01 не заменяет эту инфраструктурную проверку.
+Только T08C активна в PR #45. T15, #44, дизайн и остальные функциональные задачи не начинать до отдельного решения. `MARKETPLACE_ASSET_BLOB_HOSTS` остаётся BLOCKED_EXTERNAL до получения точного hostname выделенного public Blob store; значение не угадывать. GitHub Ruleset также остаётся BLOCKED_EXTERNAL до подтверждённого включения; CLOSED T01 не заменяет эту инфраструктурную проверку.

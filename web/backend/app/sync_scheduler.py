@@ -1,9 +1,9 @@
 import asyncio
 import hashlib
 import logging
-from contextlib import contextmanager
 from datetime import datetime, timezone
 
+from .advisory_lock import advisory_session_lease
 from .config import get_settings
 from .data_health import expected_coverage, refresh_due, store_data_health
 from .data_health_incidents import reconcile_health_incidents
@@ -15,19 +15,8 @@ from sqlalchemy import text
 logger = logging.getLogger(__name__)
 
 
-@contextmanager
-def _store_lease(db, store_id: str):
-    if db.get_bind().dialect.name != 'postgresql':
-        yield True
-        return
-    raw = int.from_bytes(hashlib.blake2b(f'sync:wildberries:{store_id}'.encode(), digest_size=8).digest(), 'big')
-    key = raw if raw < 2**63 else raw - 2**64
-    acquired = bool(db.execute(text('SELECT pg_try_advisory_lock(:key)'), {'key': key}).scalar())
-    try:
-        yield acquired
-    finally:
-        if acquired:
-            db.execute(text('SELECT pg_advisory_unlock(:key)'), {'key': key})
+def _store_lease_name(store_id: str) -> str:
+    return f'sync:wildberries:{store_id}'
 
 
 def _bucket(now: datetime, seconds: int) -> int:
@@ -94,17 +83,30 @@ def schedule_due_syncs_once(now: datetime | None = None) -> dict[str, int]:
     """Schedule read-only marketplace jobs; unique keys make concurrent workers safe."""
     settings = get_settings(); now = now or datetime.now(timezone.utc)
     totals = {'stores': 0, 'analytics': 0, 'finance': 0, 'advertising': 0, 'feedbacks': 0, 'incidents_opened': 0, 'incidents_resolved': 0}
-    db = SessionLocal()
-    try:
-        rows = db.query(MarketplaceConnection, Store).join(Store, Store.id == MarketplaceConnection.store_id).filter(
+    with SessionLocal() as discovery:
+        store_ids = [row[0] for row in discovery.query(Store.id).join(
+            MarketplaceConnection, MarketplaceConnection.store_id == Store.id
+        ).filter(
             MarketplaceConnection.marketplace == 'wildberries',
             MarketplaceConnection.enabled.is_(True),
             Store.is_active.is_(True),
-        ).all()
-        for _, store in rows:
-            with _store_lease(db, store.id) as acquired:
-                if not acquired:
-                    continue
+        ).all()]
+    for store_id in store_ids:
+        with advisory_session_lease(SessionLocal, _store_lease_name(store_id)) as lease:
+            if not lease.acquired:
+                continue
+            db = lease.session
+            store = db.get(Store, store_id)
+            if store is None:
+                continue
+            connection = db.query(MarketplaceConnection.id).filter(
+                MarketplaceConnection.store_id == store.id,
+                MarketplaceConnection.marketplace == 'wildberries',
+                MarketplaceConnection.enabled.is_(True),
+            ).first()
+            if connection is None:
+                continue
+            try:
                 totals['stores'] += 1
                 health = store_data_health(db, store.id, now=now)
                 incident_stats = reconcile_health_incidents(db, workspace_id=store.workspace_id, store_id=store.id, sources=health['sources'], now=now)
@@ -138,10 +140,11 @@ def schedule_due_syncs_once(now: datetime | None = None) -> dict[str, int]:
                     _, is_new = enqueue_sync_job(db, store=store, group='feedbacks', now=now,
                         payload={'store_id': store.id, 'origin': 'scheduler'}, priority=64)
                     totals['feedbacks'] += int(is_new)
-            db.commit()
-        return totals
-    finally:
-        db.close()
+                db.commit()
+            except BaseException:
+                db.rollback()
+                raise
+    return totals
 
 
 async def sync_scheduler_forever(stop_event: asyncio.Event) -> None:
@@ -154,4 +157,3 @@ async def sync_scheduler_forever(stop_event: asyncio.Event) -> None:
             await asyncio.wait_for(stop_event.wait(), timeout=max(30, get_settings().sync_scheduler_seconds))
         except asyncio.TimeoutError:
             pass
-

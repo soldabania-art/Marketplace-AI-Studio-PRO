@@ -9,7 +9,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 import httpx
 
-from .rate_limit import wait_marketplace_slot
+from .rate_limit import raise_for_marketplace_status, wait_marketplace_slot
 from .marketplace_page import MarketplacePageResult
 
 WB_SALES_REPORT_URL = 'https://finance-api.wildberries.ru/api/finance/v1/sales-reports/detailed'
@@ -130,6 +130,6 @@ async def fetch_financial_report_page(token: str, *, date_from: str, date_to: st
         response = await client.post(WB_SALES_REPORT_URL, json=body, headers={'Authorization': token})
     if response.status_code == 204:
         return parse_financial_report_page(None, status_code=204)
-    response.raise_for_status()
+    await raise_for_marketplace_status(response, 'wildberries', token, 'finance-sales-report')
     payload = response.json() if response.content else None
     return parse_financial_report_page(payload, status_code=response.status_code)

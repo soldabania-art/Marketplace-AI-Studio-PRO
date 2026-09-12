@@ -6,7 +6,7 @@ Only normalized seller-card facts are returned; marketplace tokens are never log
 import httpx
 from collections.abc import Callable
 
-from .rate_limit import wait_marketplace_slot
+from .rate_limit import raise_for_marketplace_status, wait_marketplace_slot
 
 WB_CARDS_LIST_URL='https://content-api.wildberries.ru/content/v2/get/cards/list'
 WB_CARDS_UPDATE_URL='https://content-api.wildberries.ru/content/v2/cards/update'
@@ -75,7 +75,7 @@ async def update_wb_card(token:str,payload:dict,*,before_send:Callable[[],None]|
         before_send()
     async with httpx.AsyncClient(timeout=30.0) as client:
         response=await client.post(WB_CARDS_UPDATE_URL,json=[payload],headers={'Authorization':token})
-    response.raise_for_status()
+    await raise_for_marketplace_status(response, 'wildberries', token, 'content-cards-update')
     if not response.content:
         return {'accepted':True,'status_code':response.status_code}
     try:
@@ -94,7 +94,7 @@ async def upload_wb_media_file(token:str,*,nm_id:int,photo_number:int,raw:bytes,
     files={'uploadfile':(f'trovendi-{nm_id}-{photo_number}.webp',raw,content_type)}
     async with httpx.AsyncClient(timeout=60.0) as client:
         response=await client.post(WB_MEDIA_FILE_URL,headers=headers,files=files)
-    response.raise_for_status()
+    await raise_for_marketplace_status(response, 'wildberries', token, 'content-media-file')
     try:
         body=response.json() if response.content else {}
     except ValueError:
@@ -110,7 +110,7 @@ async def fetch_wb_card(token:str,*,nm_id:int,vendor_code:str)->dict|None:
     body={'settings':{'filter':{'withPhoto':-1,'textSearch':str(vendor_code)},'cursor':{'limit':100}}}
     async with httpx.AsyncClient(timeout=30.0) as client:
         response=await client.post(WB_CARDS_LIST_URL,json=body,headers={'Authorization':token})
-    response.raise_for_status()
+    await raise_for_marketplace_status(response, 'wildberries', token, 'content-card-read-before-write')
     payload=response.json() if response.content else {}
     cards=[normalize_card(card) for card in (payload.get('cards') or []) if card.get('nmID')]
     return next((card for card in cards if card['nm_id']==int(nm_id)),None)
@@ -124,7 +124,7 @@ async def fetch_wb_cards(token:str,max_pages:int=200)->list[dict]:
         body={'settings':{'sort':{'ascending':True},'filter':{'withPhoto':-1},'cursor':cursor}}
         async with httpx.AsyncClient(timeout=30.0) as client:
             response=await client.post(WB_CARDS_LIST_URL,json=body,headers={'Authorization':token})
-        response.raise_for_status()
+        await raise_for_marketplace_status(response, 'wildberries', token, 'content-cards-list')
         payload=response.json() if response.content else {}
         cards=payload.get('cards') or []
         result.extend(normalize_card(card) for card in cards if card.get('nmID'))

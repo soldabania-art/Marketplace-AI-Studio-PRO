@@ -7,7 +7,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 import httpx
 
-from .rate_limit import wait_marketplace_slot
+from .rate_limit import raise_for_marketplace_status, wait_marketplace_slot
 from .marketplace_page import MarketplacePageResult
 
 WB_CAMPAIGN_COUNT_URL='https://advert-api.wildberries.ru/adv/v1/promotion/count'
@@ -163,7 +163,7 @@ async def fetch_campaign_ids(token: str) -> MarketplacePageResult:
     await wait_marketplace_slot('wildberries',token,'promotion-read',min_interval_seconds=20.0)
     async with httpx.AsyncClient(timeout=60.0) as client:
         response=await client.get(WB_CAMPAIGN_COUNT_URL,headers={'Authorization':token})
-    response.raise_for_status()
+    await raise_for_marketplace_status(response, 'wildberries', token, 'promotion-read')
     payload=response.json() if response.content else None
     try:
         ids=campaign_ids(payload)
@@ -180,5 +180,5 @@ async def fetch_advertising_stats(token: str,*,ids:list[int],date_from:str,date_
     params={'ids':','.join(str(value) for value in ids),'beginDate':date_from,'endDate':date_to}
     async with httpx.AsyncClient(timeout=90.0) as client:
         response=await client.get(WB_FULL_STATS_URL,params=params,headers={'Authorization':token})
-    response.raise_for_status()
+    await raise_for_marketplace_status(response, 'wildberries', token, 'promotion-read')
     return parse_advertising_stats_page(response.json() if response.content else None)

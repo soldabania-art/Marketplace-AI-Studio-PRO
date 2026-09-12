@@ -1,6 +1,6 @@
 # Передача TROVENDI следующему разработчику
 
-Дата: 12.09.2026. Проверенный `main`: `7f43ce131f879c353842890524b9c030374e4010`.
+Дата: 12.09.2026. Проверенный `main`: `1c880be00b6bc8117767c3ee4564f986086c3767`.
 
 ## Решение и клиентский фокус
 
@@ -20,8 +20,9 @@
 - PR #34/T06 принят на head `6773a3916cc5589c38d3b6a7cc11fd60ad6f3db0` и слит: merge SHA `a64818aa7da948a5d3a0ad546310935d413b52a6`; issue #6 закрыт с доказательствами.
 - PR #36/T07 принят после дополнительной проверки полноты на head `e19cf107f902fde2a88aff54c335c63b5deebad8` и слит: merge SHA `700436f7161972ea1b2dcf9ff83fbdeb975ae822`; issue #7 закрыт.
 - T08A/#37 принят на `63c11d1460131514b2d94c3598e9c626727ae5d2` и интегрирован PR #41: `7f43ce131f879c353842890524b9c030374e4010`. PR #40 с документацией также слит.
-- Итоговый [push CI](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/actions/runs/34700508949): exact head `7f43ce131f879c353842890524b9c030374e4010`, frontend/backend/PostgreSQL success; Vercel commit status success. PR CI: SQLite 224 passed / 11 skipped; PostgreSQL migrations + 235 passed.
-- #1–#7 закрыты; #8–#22 открыты. Эпик T08 разделён на [T08A/#37](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/37), [T08B/#38](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/38) и [T08C/#39](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/39). T08A/#37 закрыта. Единственная активная функциональная задача — **T08B/#38**; T08C не начинать.
+- T08B/#38 принят на `b179d4f1fafc32fda14be2aa81e39b60cbe63c1e` и интегрирован PR #43: merge `1c880be00b6bc8117767c3ee4564f986086c3767`. PR #42 с handoff/backlog также слит; issue #38 закрыта.
+- Итоговый [push CI](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/actions/runs/34702338087): exact head `1c880be00b6bc8117767c3ee4564f986086c3767`, frontend/backend/PostgreSQL success; Vercel commit status success.
+- #1–#7 и дочерние #37–#38 закрыты; #8–#22 и #39 открыты. Единственная активная функциональная задача — **T08C/#39**. Regression `a5df2be7f3b42509c71123487b5f608a9a8c87e5`, исправление `80ca828f98d8c431ba14554ebfca946ae7ca8a35`, [PR #45](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/45) оставлен для независимой приёмки.
 
 Зелёные CI и deployment подтверждают только заявленные проверки конкретного SHA. Они не доказывают production readiness, работоспособность реального WB-сценария или готовность платного запуска.
 
@@ -72,9 +73,9 @@ PostgreSQL migrations проверять на отдельной тестово�
 
 ## Итог интеграции и следующий gate
 
-T02, T04, T05, T06 и T07 приняты и интегрированы последовательно; их совместная работа подтверждена CI итогового `main`. Реальный WB, рекламный бюджет и платный AI в проверках не использовались.
+T02, T04, T05, T06, T07, T08A и T08B приняты и интегрированы последовательно; их совместная работа подтверждена CI итогового `main`. Реальный WB, рекламный бюджет и платный AI в проверках не использовались.
 
-Следующая работа — только T08B: атомарное сохранение доменного изменения и durable job в PostgreSQL, без скрытого commit в enqueue. Отдельный regression-first PR оставить на приёмку владельцу. T08C и T15 не начинать.
+Текущая работа — только T08C: закреплённые PostgreSQL-соединения для session advisory locks и общий fail-closed Redis limiter. PR #45 не сливать до независимой приёмки владельца; T15, notification follow-up [#44](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/44) и дизайн не начинать.
 
 При обновлении workers сначала прекратить захват старой версией и завершить либо остановить старые обработчики; смешивание workers без fencing с новой версией недопустимо. Затем выполнить миграцию, развернуть API/workers и проверить heartbeat/recovery. Неизвестный результат уже отправленного HTTP требует сверки. Подробности — [deployment](backend/DEPLOYMENT.md). Runtime rollout не подтверждён.
 

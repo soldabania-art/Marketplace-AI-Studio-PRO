@@ -65,6 +65,18 @@ def _campaigns(payload) -> list[dict]:
     return []
 
 
+
+def _advertising_product_rows(app: dict):
+    # Reject competing aliases, including empty/null values: never validate one
+    # branch and subsequently normalize another.
+    if 'nm' in app and 'nms' in app:
+        raise ValueError('ambiguous nm/nms fields')
+    field = 'nm' if 'nm' in app else 'nms'
+    rows = app.get(field, [])
+    if not isinstance(rows, (list, dict)):
+        raise ValueError('nm must be an array or object')
+    return field, [rows] if isinstance(rows, dict) else rows
+
 def _normalize_advertising_stats(payload) -> list[dict]:
     grouped=defaultdict(lambda:{'spend_kopecks':0,'attributed_revenue_kopecks':0,'views':0,'clicks':0,'orders':0,'units':0,'source_rows':[],'campaign_name':''})
     for campaign in _campaigns(payload):
@@ -78,8 +90,7 @@ def _normalize_advertising_stats(payload) -> list[dict]:
             found_nm=False
             for app in day.get('apps') or []:
                 if not isinstance(app,dict): continue
-                rows=app.get('nm') or app.get('nms') or []
-                if isinstance(rows,dict): rows=[rows]
+                _,rows=_advertising_product_rows(app)
                 for source in rows:
                     if not isinstance(source,dict): continue
                     nm_id=_int(source.get('nmId') or source.get('nm_id')) or None
@@ -128,10 +139,7 @@ def parse_advertising_stats_page(payload) -> MarketplacePageResult:
                 if not isinstance(day.get('apps'),list): raise ValueError('apps must be an array')
                 for app_index,app in enumerate(day['apps']):
                     if not isinstance(app,dict): raise ValueError('app must be an object')
-                    field='nm' if 'nm' in app else 'nms'
-                    rows=app.get(field,[])
-                    if not isinstance(rows,(list,dict)): raise ValueError('nm must be an array or object')
-                    nested_rows=[rows] if isinstance(rows,dict) else rows
+                    field,nested_rows=_advertising_product_rows(app)
                     for row_index,source in enumerate(nested_rows):
                         path=f'days[{day_index}].apps[{app_index}].{field}[{row_index}]'
                         if not isinstance(source,dict): raise ValueError(f'{path} must be an object')

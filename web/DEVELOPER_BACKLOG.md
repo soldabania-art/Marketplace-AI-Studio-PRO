@@ -1,16 +1,16 @@
 # TROVENDI — очередь разработки после аудита
 
-Дата: 12.09.2026. Проверенный `main`: `ac0bd409f39168376b162bba5e8ff16052a1dca3`. [Решение и доказательства](ARCHITECTURE_REVIEW_2026-09-12.md).
+Дата: 12.09.2026. Проверенный `main`: `a64818aa7da948a5d3a0ad546310935d413b52a6`. [Решение и доказательства](ARCHITECTURE_REVIEW_2026-09-12.md).
 
 Концепция одобрена; коммерческий запуск не одобрен. Первичный клиент — действующий продавец Wildberries. Ближайший процесс: подключение → полнота данных → детерминированная экономика → подтверждённые проблемы → задачи с доказательствами → разрешённое действие → статус и результат.
 
-Фактическое состояние issues на момент обновления: #1–#4 закрыты; #5–#22 открыты. T02/T04 последовательно интегрированы и проверены на общем `main`. Текущий кодовый приоритет — только T05. Внешний блокер не разрешает обходить security gate.
+Фактическое состояние issues на момент обновления: #1–#6 закрыты; #7–#22 открыты. T02/T04/T05/T06 последовательно интегрированы и проверены на общем `main`. Текущий кодовый приоритет — только T07. Внешний блокер не разрешает обходить security gate.
 
 | Состояние | Задачи |
 | --- | --- |
-| Закрыто и интегрировано | [T01 / #1](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/1), [T02 / #2](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/2), [T03 / #3](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/3), [T04 / #4](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/4) |
-| Текущая задача | [T05 / #5](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/5) |
-| Открыто, выполнять по зависимостям | T06–T22 |
+| Закрыто и интегрировано | [T01 / #1](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/1) — [T06 / #6](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/6) |
+| Текущая задача | [T07 / #7](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/7) |
+| Открыто, выполнять по зависимостям | T08–T22 |
 
 
 | ID | Приоритет | Задача | Зависимости | GitHub |
@@ -106,7 +106,7 @@
 
 ## T05 · P0 · Проверять утверждения AI по фактам, а не только ID и числам
 
-**Статус:** IN PROGRESS · отдельный regression-first PR · [GitHub #5](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/5). **Зависимости:** T03.
+**Статус:** CLOSED · интегрировано merge SHA `13ac300248ce11927545abd896273ce006d97ed6` · [PR #32](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/32) · [GitHub #5](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/5). **Зависимости:** T03.
 
 **Файлы:** web/backend/app/ai_card_factory.py; beginner_router.py; review_ai.py; web/backend/tests/test_ai_card_factory.py.
 
@@ -118,7 +118,7 @@
 
 ## T06 · P0 · Зафиксировать неизменяемые AI-активы и честную проверку медиа
 
-**Статус:** OPEN · [GitHub #6](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/6). **Зависимости:** T02, T05.
+**Статус:** CLOSED · интегрировано merge SHA `a64818aa7da948a5d3a0ad546310935d413b52a6` · [PR #34](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/34) · [GitHub #6](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/6). **Зависимости:** T02, T05.
 
 **Файлы:** web/backend/app/card_factory_router.py; ai_generation_service.py; web/app/api/card-factory/generate-visual/route.js.
 
@@ -355,4 +355,4 @@
 
 PR #28/T02 и PR #29/T04 последовательно слиты, затем слит PR #30. Итоговый `main`: `ac0bd409f39168376b162bba5e8ff16052a1dca3`. Совместный [Web Cloud #319](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/actions/runs/34692105098) завершён успешно: SQLite 189 passed/7 skipped, PostgreSQL 196 passed, frontend/build success; [Vercel](https://vercel.com/soldabania-5646/marketplace-ai-studio-pro/FErLnV3jymmPUxzyjhrbS8QPkSua) success.
 
-T05 теперь активна. T06 и остальные функциональные задачи не начинать до отдельного решения. GitHub Ruleset остаётся BLOCKED_EXTERNAL до подтверждённого включения; CLOSED T01 не заменяет эту инфраструктурную проверку.
+T07 теперь активна. T08 и остальные функциональные задачи не начинать до отдельного решения. `MARKETPLACE_ASSET_BLOB_HOSTS` остаётся BLOCKED_EXTERNAL до получения точного hostname выделенного public Blob store; значение не угадывать. GitHub Ruleset также остаётся BLOCKED_EXTERNAL до подтверждённого включения; CLOSED T01 не заменяет эту инфраструктурную проверку.

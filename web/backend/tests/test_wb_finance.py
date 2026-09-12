@@ -57,7 +57,7 @@ def test_finance_reader_posts_cursor_and_handles_current_response(monkeypatch):
         status_code=200
         content=b'{}'
         def raise_for_status(self): return None
-        def json(self): return {'data':[{'rrdId':77,'nmId':5,'forPay':'10.50','reportDate':'2026-09-09'}]}
+        def json(self): return [{'rrdId':77,'nmId':5,'forPay':'10.50','reportDate':'2026-09-09'}]
 
     class Client:
         async def __aenter__(self): return self

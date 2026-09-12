@@ -80,14 +80,18 @@ def _fence_handler_commit(db: Session) -> None:
         return
     if attempt.ownership_lost.is_set():
         raise JobOwnershipLost(f"Job attempt {attempt.attempt_id} lost ownership")
-    owned = db.execute(
-        select(BackgroundJob.id).where(
-            BackgroundJob.id == attempt.job_id,
-            BackgroundJob.status == JobStatus.running,
-            BackgroundJob.locked_by == attempt.worker_id,
-            BackgroundJob.attempt_id == attempt.attempt_id,
-        )
-    ).scalar_one_or_none()
+    # Keep ownership stable through the actual COMMIT/ROLLBACK. A plain SELECT
+    # permits another worker to replace the attempt after this check.
+    # Acquire the fence before pending ORM writes can autoflush.
+    with db.no_autoflush:
+        owned = db.execute(
+            select(BackgroundJob.id).where(
+                BackgroundJob.id == attempt.job_id,
+                BackgroundJob.status == JobStatus.running,
+                BackgroundJob.locked_by == attempt.worker_id,
+                BackgroundJob.attempt_id == attempt.attempt_id,
+            ).with_for_update()
+        ).scalar_one_or_none()
     if owned is None:
         attempt.ownership_lost.set()
         raise JobOwnershipLost(f"Job attempt {attempt.attempt_id} is stale")

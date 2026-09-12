@@ -363,7 +363,7 @@ def test_prepare_publication_revalidates_saved_generation_before_creating_diff(m
     fact_set = build_fact_set(source)
     invented = "Сумка из натуральной кожи"
     generation = SimpleNamespace(
-        id="g1", fact_set_sha256=fact_set["sha256"],
+        id="11111111-1111-1111-1111-111111111111", fact_set_sha256=fact_set["sha256"],
         result_payload={
             "wb_title": invented, "ozon_title": invented, "description": invented,
             "seo_phrases": [], "visual_plan": ["Preview"], "used_fact_ids": ["card.title"],
@@ -378,7 +378,7 @@ def test_prepare_publication_revalidates_saved_generation_before_creating_diff(m
 
     with pytest.raises(HTTPException) as error:
         prepare_publication(
-            PreparePublicationRequest(store_id="s1", nm_id=42, generation_id="g1"),
+            PreparePublicationRequest(store_id="s1", nm_id=42, generation_id="11111111-1111-1111-1111-111111111111"),
             user=SimpleNamespace(id="u1"),
             db=PublicationDb(generation),
         )

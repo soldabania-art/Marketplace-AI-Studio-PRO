@@ -4,39 +4,22 @@ Status: source of truth for product scope, priorities and delivery gates. Update
 
 Hierarchy view: [`PRODUCT_TREE.md`](./PRODUCT_TREE.md).
 
-## 0. Architecture decision — 2026-09-12
+## 0. Strategy decision — 2026-09-12
 
-**Concept approved for continued development; broad commercial release is not approved.** The baseline reviewed is `f090a4b3006ff72351d7c37696ae3d7c228e7805`. [Review and evidence](ARCHITECTURE_REVIEW_2026-09-12.md), [current hierarchy](PRODUCT_TREE.md), [developer tasks](DEVELOPER_BACKLOG.md), [handoff](DEVELOPER_HANDOFF.md).
+**Concept approved for continued development; broad commercial release is not approved.** Current verified `main` baseline: `00ad0318abe7cebe353015afdb7f68847054f960`. T02 is under independent review in [PR #28](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/28); T04 is under independent review in [PR #29](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/29). Neither is treated as accepted or merged here.
 
-This dated decision takes precedence over earlier descriptions of implementation readiness below; the accepted expansion scope is retained. “Implemented foundation” means code exists, not that the production flow is certified.
+The first paying ICP is an operating Wildberries seller with recurring sales, a team and material operating costs. TROVENDI's first promise is to find profit leakage, support a decision, and control execution across the store, team and fulfillment partner. Existing functionality for other audiences remains recoverable; it does not set the current delivery priority.
 
-- First delivery order: T01 CI/PR/PostgreSQL gates, then T02 shared STOP, T03 AI entitlements and T04 strict financial ingestion. Follow explicit dependencies for subsequent work.
-- AI Director is the primary authenticated workspace. KPIs are secondary evidence; a static marketing card or local text echo is not a real AI recommendation.
-- Shared Workspace/Store/Connection and canonical Product/Variant/Listing identity precedes multi-marketplace expansion. WB `nm_id` is external identity, not the universal product key.
-- Fulfillment is a first-class operating domain: partner identity/facilities, seller agreement and permissions, read-only adapters, custody/inventory/reservations, inbound/outbound/returns, versioned tariffs, settlement and evidence. Catalogue limits of 500/5000 do not certify capacity. Start with one read-only partner pilot, then verified operations.
-- Document Vault is the shared private evidence domain for sellers, partners, orders and legitimately obtained buyer receipts. It requires working large-file transport, scanner jobs/recovery, role/relationship authorization, immutable versions and approved retention/hold rules. Its code already exists in baseline 0027, but these delivery gates remain open.
-- Free/Rules mode never silently invokes paid AI. Paid calls require entitlements, atomic budgets, provider provenance, schema/claim validation and cost status. Unknown price is not zero.
-- All marketplace write entry points, including manually approved Card Factory writes, must honor the shared STOP and execution policy. No runtime autonomy is approved by a registry declaration alone.
-- Configuration of modules before login remains routing intent until server capabilities are granted. Community stays included in every active paid plan; the forum itself remains planned.
-- Current web brand is graphite/emerald, with gold reserved for Premium. Preserve deployment identifiers and cookies during the staged architecture work.
-- Source CI actually reports 149 backend tests and a successful frontend build. PostgreSQL migrations, concurrency, browser e2e, hosted worker, backup restore, email, billing and scanner are not certified by that result.
-- Controlled read-only testing may continue. Every commercially enabled module must pass its own release gates; unavailable functions remain visibly unavailable.
-
-The next developer must work through the linked backlog in bounded PRs, retaining evidence and blocked dependencies. No wholesale rewrite or new collection of decorative module shells is approved.
 
 ## 1. Product mission
 
-Build an AI operating system for marketplace commerce in Russia and the CIS. It must work for three audiences without splitting into unrelated products:
+Build an evidence-backed operating loop for the first paying ICP:
 
-1. **Beginner:** starts with one product photo and receives a safe, guided path from verified facts to publication and ongoing store management.
-2. **Seller:** connects existing stores and receives profit visibility, operational alerts and measurable AI-assisted actions.
-3. **Agency or team:** manages many stores with roles, approvals, client reporting and an audit trail.
+`connect store -> prove data completeness -> calculate money -> confirm problems -> rank evidenced tasks -> approve allowed action -> track execution -> measure outcome`
 
-The operating loop is:
+AI interprets and recommends only from verified inputs. Deterministic services remain authoritative for money, stock, permissions, STOP and spend limits. Every material value is labelled as a confirmed fact, assumption or unknown. An observed result records limitations and is not attributed to AI without sufficient evidence.
 
-`connect -> collect facts -> calculate -> recommend -> preview -> approve -> execute -> measure -> rollback if worse`
-
-AI coordinates the work, but deterministic services remain authoritative for money, stock, limits, permissions and compliance rules.
+Beginner, agency and partner experiences remain in the product architecture. They are not expanded ahead of the reliable Wildberries seller loop.
 
 ## 2. Non-negotiable product rules
 
@@ -218,6 +201,25 @@ The web product and future Android app use the same versioned API, permissions a
 
 ## 10. Delivery order
 
+### Current commercial delivery sequence — authoritative
+
+1. Reliable Wildberries ingestion and reproducible economics.
+2. Daily seller tasks with evidence and measured usefulness.
+3. Safe execution with explicit approval, permissions, STOP and spend limits.
+4. Subscription limits, AI cost accounting and a paid pilot.
+5. Document lifecycle and a bounded fulfillment-partner pilot.
+6. Ozon after the Wildberries loop is accepted.
+7. One foreign market only after separate demand, legal, data-access and reconciliation validation.
+
+**Nearest release:** accept T02 and T04 independently, then start T05 only. Continue the remaining security, data-health, Director and Profit Center dependencies in bounded tasks.
+
+**Next stage:** paid-pilot instrumentation, AI unit economics, subscription/usage limits, document gates and a read-only fulfillment pilot. Prices in prior analysis are hypotheses, not approved tariff claims.
+
+**Deferred, without deleting working code:** a no-sales beginner-first product, an owned storefront builder, mass country rollout, owned warehouses, lending or settlement rails, unlimited autonomous advertising and an owned foundation model. Do not create placeholder screens for these directions.
+
+The detailed capability notes below are retained as architecture evidence. They do not override this sequence.
+
+
 **Public entry experience:** `/` is session-aware. Anonymous visitors and the initial server render see a crawlable TROVENDI product surface with outcomes, marketplace/scenario choice, trial boundaries, pricing, security controls and clear register/login actions; authenticated users switch to the evidence-backed operating dashboard only after successful session verification. The internal dashboard is never the anonymous fallback. Conversion measurement and verified customer proof remain launch gates.
 
 **Start-page channel control:** the channel selector is a permanent product branch, not a temporary landing-page decoration. Guests can inspect the sequenced roadmap for Wildberries, Ozon, Yandex Market, Kaspi.kz and Uzum Market. Authenticated users receive store-scoped connection flags from `/stores`; the response exposes only marketplace code and enabled state, never credentials or token hints. A channel is labelled `connected` only when a real connection record exists and is enabled. Integration Hub will extend this catalog without redesigning the start page.
@@ -288,6 +290,10 @@ A feature is done only when all applicable gates pass:
 - CI uses current Node.js 24-compatible official GitHub Actions. The active delivery target is the TROVENDI web/backend product; Windows installer builds are disabled.
 
 ## 12. Product decision log
+
+- **2026-09-12 · Seller-first commercial sequence:** operating Wildberries seller is the first ICP; the evidence-backed six-step client loop is the release spine. Commercial prices remain hypotheses. Fulfillment scales only after a bounded pilot, Ozon follows the WB loop, and foreign expansion requires separate demand validation.
+- **2026-09-12 · Outcome attribution:** future outcome records must preserve the problem and inputs, recommended action, approval and executor, execution status, cost, measurement method, observed result and inference limitations. Correlation is not represented as AI-caused profit.
+
 
 - The public product name is **TROVENDI**, the primary domain is **trovendi.ru**, and the descriptor is **AI Commerce OS**.
 - The TROVENDI mark combines the letter T with an upward arrow: product launch, controlled growth and one direction of management.

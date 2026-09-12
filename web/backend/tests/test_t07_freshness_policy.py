@@ -33,7 +33,7 @@ def snapshot(created_at, payload, snapshot_id="snapshot-1"):
 def test_finance_twenty_minutes_old_is_healthy_under_daily_policy():
     now = datetime(2026, 9, 12, 10, 0, tzinfo=timezone.utc)
     coverage = expected_coverage("finance", now=now, period_days=30)
-    row = snapshot(now - timedelta(minutes=20), {**coverage, "complete": True})
+    row = snapshot(now - timedelta(minutes=20), {**coverage, "complete": True, "schema_state": "valid", "rejected_count": 0})
 
     result = evaluate_source_snapshot(row, "finance", now=now, period_days=30)
 
@@ -81,7 +81,7 @@ def test_midnight_period_rollover_and_partial_import_are_never_complete():
     yesterday = (datetime.fromisoformat(expected["date_to"]) - timedelta(days=1)).date().isoformat()
     old_period = snapshot(
         now - timedelta(minutes=10),
-        {"date_from": "2026-08-12", "date_to": yesterday, "complete": True},
+        {"date_from": "2026-08-12", "date_to": yesterday, "complete": True, "schema_state": "valid", "rejected_count": 0},
     )
     partial_current = snapshot(now - timedelta(minutes=1), {**expected, "complete": False})
 
@@ -93,3 +93,21 @@ def test_midnight_period_rollover_and_partial_import_are_never_complete():
     assert rollover["coverage_matches"] is False
     assert partial["status"] == "incomplete"
     assert partial["complete"] is False
+
+
+def test_financial_completeness_requires_explicit_valid_import_evidence():
+    now = datetime(2026, 9, 12, 10, tzinfo=timezone.utc)
+    for source in ("finance", "advertising"):
+        coverage = expected_coverage(source, now=now)
+        for evidence in (
+            {},
+            {"complete": None},
+            {"complete": "true"},
+            {"complete": True},
+            {"complete": True, "schema_state": "unknown", "rejected_count": 0},
+            {"complete": True, "schema_state": "partial", "rejected_count": 1},
+            {"complete": True, "schema_state": "valid", "rejected_count": False},
+        ):
+            row = snapshot(now, {**coverage, **evidence})
+            assert evaluate_source_snapshot(row, source, now=now)["status"] == "incomplete"
+            assert _source(row, source, now=now)["state"] == "incomplete"

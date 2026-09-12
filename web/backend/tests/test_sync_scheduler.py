@@ -75,7 +75,7 @@ def test_scheduler_queues_due_read_only_syncs_once_per_window_and_resolves_incid
     with SessionLocal() as db:
         for snapshot_type, payload in (
             ('catalog', {'count': 1}), ('stocks', {'count': 1}), ('sales_velocity_7d', {'count': 1}),
-            ('finance_realization_sync', {'complete': True}), ('advertising_sync', {'complete': True}),
+            ('finance_realization_sync', {'complete': True, 'schema_state': 'valid', 'rejected_count': 0}), ('advertising_sync', {'complete': True, 'schema_state': 'valid', 'rejected_count': 0}),
         ):
             db.add(MarketplaceSnapshot(store_id=store_id, marketplace='wildberries', snapshot_type=snapshot_type,
                 payload=payload, created_at=old, source_updated_at=old))
@@ -97,8 +97,8 @@ def test_scheduler_queues_due_read_only_syncs_once_per_window_and_resolves_incid
         coverage = expected_coverage('finance', now=now + timedelta(minutes=1), period_days=30)
         for snapshot_type, payload in (
             ('catalog', {'count': 1}), ('stocks', {'count': 1}), ('sales_velocity_7d', {'count': 1}),
-            ('finance_realization_sync', {**coverage, 'complete': True}),
-            ('advertising_sync', {**coverage, 'complete': True}),
+            ('finance_realization_sync', {**coverage, 'complete': True, 'schema_state': 'valid', 'rejected_count': 0}),
+            ('advertising_sync', {**coverage, 'complete': True, 'schema_state': 'valid', 'rejected_count': 0}),
             ('feedbacks', {'count': 1, 'items': []}),
         ):
             db.add(MarketplaceSnapshot(store_id=store_id, marketplace='wildberries', snapshot_type=snapshot_type,
@@ -118,7 +118,7 @@ def test_scheduler_refreshes_feedbacks_without_browser_and_does_not_duplicate_ac
     with SessionLocal() as db:
         for snapshot_type, payload in (
             ('catalog', {'count': 1}), ('stocks', {'count': 1}), ('sales_velocity_7d', {'count': 1}),
-            ('finance_realization_sync', {'complete': True}), ('advertising_sync', {'complete': True}),
+            ('finance_realization_sync', {'complete': True, 'schema_state': 'valid', 'rejected_count': 0}), ('advertising_sync', {'complete': True, 'schema_state': 'valid', 'rejected_count': 0}),
             ('feedbacks', {'count': 1, 'items': []}),
         ):
             db.add(MarketplaceSnapshot(store_id=store_id, marketplace='wildberries', snapshot_type=snapshot_type,
@@ -160,7 +160,7 @@ def test_finance_recovery_runs_receive_distinct_page_namespaces():
     with SessionLocal() as db:
         for snapshot_type, payload in (
             ('catalog', {'count': 1}), ('stocks', {'count': 1}), ('sales_velocity_7d', {'count': 1}),
-            ('finance_realization_sync', {'complete': True}), ('advertising_sync', {'complete': True}),
+            ('finance_realization_sync', {'complete': True, 'schema_state': 'valid', 'rejected_count': 0}), ('advertising_sync', {'complete': True, 'schema_state': 'valid', 'rejected_count': 0}),
             ('feedbacks', {'count': 1, 'items': []}),
         ):
             db.add(MarketplaceSnapshot(store_id=store_id, marketplace='wildberries', snapshot_type=snapshot_type,

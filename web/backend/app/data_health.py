@@ -69,7 +69,15 @@ def evaluate_source_snapshot(
     payload = dict(snapshot.payload or {})
     actual = ({"date_from": payload.get("date_from"), "date_to": payload.get("date_to")} if expected else None)
     coverage_matches = actual == expected if expected else None
-    declared_complete = payload.get("complete") is not False
+    if expected:
+        declared_complete = (
+            payload.get("complete") is True
+            and payload.get("schema_state") in {"valid", "documented_empty"}
+            and type(payload.get("rejected_count")) is int
+            and payload["rejected_count"] == 0
+        )
+    else:
+        declared_complete = payload.get("complete") is not False
     complete = declared_complete and coverage_matches is not False
     if not complete:
         status = "incomplete"

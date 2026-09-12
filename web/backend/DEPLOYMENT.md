@@ -48,7 +48,7 @@ TROVENDI uses one container image with separate process roles.
 
 The API intentionally refuses production startup when PostgreSQL, TLS, HTTPS, the JWT secret, the marketplace credential-encryption key or the separate MFA-encryption key is missing. Do not weaken these checks to make a deployment pass.
 
-Frontend must set `MARKETPLACE_API_URL` to the externally reachable API base URL. Connect a public Vercel Blob store to the frontend project; Vercel supplies `BLOB_STORE_ID` + rotating `VERCEL_OIDC_TOKEN`, or `BLOB_READ_WRITE_TOKEN` only for a non-OIDC/manual setup. Generated marketplace visuals use exact immutable paths `ai-assets/{store}/{nm_id}/{generation_id}.webp` and are never written when Blob credentials are absent. Configure the resulting exact Blob hostname in `MARKETPLACE_ASSET_BLOB_HOSTS` on the backend before enabling finalize; an unset allowlist fails closed.
+Frontend must set `MARKETPLACE_API_URL` to the externally reachable API base URL. Connect a public Vercel Blob store to the frontend project; Vercel supplies `BLOB_STORE_ID` + rotating `VERCEL_OIDC_TOKEN`, or `BLOB_READ_WRITE_TOKEN` only for a non-OIDC/manual setup. Generated marketplace visuals use exact immutable paths `ai-assets/{store}/{nm_id}/{generation_id}.webp` and are never written when Blob credentials are absent. The backend downloads the object, computes its digest and accepts it only when its exact hostname is listed in `MARKETPLACE_ASSET_BLOB_HOSTS`.
 
 ## Scaling policy
 

@@ -1,8 +1,10 @@
+import base64
+import binascii
 import hashlib
 import json
 from io import BytesIO
 from datetime import datetime, timezone
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -41,9 +43,10 @@ class FinalizeVisualRequest(BaseModel):
     generation_id: str = Field(min_length=36, max_length=36)
     url: str = Field(min_length=20, max_length=2048)
     pathname: str = Field(min_length=10, max_length=1024)
-    content_type: str = Field(pattern=r"^image/webp$")
-    bytes: int = Field(gt=0, le=15_000_000)
-    sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    # Legacy client hints are accepted for compatibility but never trusted.
+    content_type: str | None = Field(default=None, pattern=r"^image/webp$")
+    bytes: int | None = Field(default=None, gt=0, le=15_000_000)
+    sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
 
 
 class PreparePublicationRequest(GenerateCardRequest):
@@ -178,47 +181,141 @@ def _media_verification_result(publication: MediaPublication, live: dict) -> tup
     live_urls = _photo_urls(live)
     target_position = int((publication.diff_payload or {}).get("target_position") or (len(source_urls) + 1))
     prefix_matches = live_urls[:len(source_urls)] == source_urls
-    if prefix_matches and len(live_urls) >= target_position:
-        status = "applied"
-    elif live_urls == source_urls:
-        status = "pending"
-    else:
-        status = "mismatch"
-    return status, {
+    result = {
         "source_photo_count": len(source_urls),
         "live_photo_count": len(live_urls),
         "target_position": target_position,
         "existing_photos_unchanged": prefix_matches,
+        "identity_confirmed": False,
         "live_card_updated_at": live.get("updated_at"),
+    }
+    if live_urls == source_urls:
+        return "pending", {**result, "outcome": "not_visible"}
+    if prefix_matches and len(live_urls) > len(source_urls):
+        candidate = live_urls[target_position - 1] if len(live_urls) >= target_position else ""
+        return "unverified", {
+            **result,
+            "outcome": "not_confirmed",
+            "candidate_url": candidate,
+            "message": (
+                "WB показывает структурное изменение, но API не предоставляет digest или иной "
+                "надёжный идентификатор загруженного TROVENDI-актива."
+            ),
+        }
+    return "mismatch", {
+        **result,
+        "outcome": "source_changed",
+        "message": "Набор или порядок ранее существовавших фотографий изменился.",
     }
 
 
-async def _download_and_validate_asset(asset: dict) -> tuple[bytes, str, dict]:
-    parsed = urlparse(str(asset.get("url") or ""))
-    if parsed.scheme != "https" or not (parsed.hostname or "").endswith(".blob.vercel-storage.com"):
-        raise HTTPException(409, "Сохранённый визуал находится вне защищённого хранилища TROVENDI.")
+def _expected_asset_path(store_id: str, subject_id: str, generation_id: str) -> str:
+    return f"ai-assets/{store_id}/{subject_id}/{generation_id}.webp"
+
+
+def _validate_asset_locator(*, url: str, pathname: str, expected_pathname: str) -> tuple[str, str]:
+    settings = get_settings()
+    allowed_hosts = getattr(settings, "asset_blob_host_set", set())
+    if not allowed_hosts:
+        raise HTTPException(503, "Доверенное Blob-хранилище TROVENDI не настроено.")
+    parsed = urlparse(str(url or ""))
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise HTTPException(400, "Адрес Blob-объекта некорректен.") from exc
+    host = (parsed.hostname or "").lower().rstrip(".")
+    if (
+        parsed.scheme != "https"
+        or parsed.username
+        or parsed.password
+        or port not in (None, 443)
+        or parsed.query
+        or parsed.fragment
+        or host not in allowed_hosts
+    ):
+        raise HTTPException(400, "Объект находится вне настроенного Blob-хранилища TROVENDI.")
+    url_pathname = unquote(parsed.path).lstrip("/")
+    if pathname != expected_pathname or url_pathname != expected_pathname:
+        raise HTTPException(400, "URL и путь не соответствуют объекту конкретной AI-генерации.")
+    return host, f"{host}/{expected_pathname}"
+
+
+async def _download_blob_bytes(url: str) -> bytes:
     async with httpx.AsyncClient(timeout=45.0, follow_redirects=False) as client:
-        response = await client.get(str(asset["url"]))
+        response = await client.get(url)
     response.raise_for_status()
     raw = response.content
-    if not raw or len(raw) > 32_000_000:
-        raise HTTPException(422, "Изображение должно быть меньше 32 МБ.")
-    expected_sha256 = str(asset.get("sha256") or "")
-    if not expected_sha256 or hashlib.sha256(raw).hexdigest() != expected_sha256:
-        raise HTTPException(409, "Сохранённый визуал изменился после подготовки публикации.")
+    if not raw or len(raw) > 15_000_000:
+        raise HTTPException(422, "AI-изображение должно быть непустым и меньше 15 МБ.")
+    return raw
+
+
+def _inspect_webp(raw: bytes) -> tuple[str, dict]:
     try:
         with Image.open(BytesIO(raw)) as image:
             image_format = str(image.format or "").upper()
             width, height = image.size
             image.verify()
     except (UnidentifiedImageError, OSError) as exc:
-        raise HTTPException(422, "Файл не является корректным изображением.") from exc
-    if image_format not in {"WEBP", "JPEG", "PNG", "BMP", "GIF"}:
-        raise HTTPException(422, "Формат изображения не поддерживается Wildberries.")
+        raise HTTPException(422, "Blob-объект не является корректным изображением.") from exc
+    if image_format != "WEBP":
+        raise HTTPException(422, "AI-актив TROVENDI должен быть неизменяемым WebP.")
     if width < 700 or height < 900:
         raise HTTPException(422, "Wildberries требует изображение не меньше 700×900 пикселей.")
-    content_type = {"WEBP": "image/webp", "JPEG": "image/jpeg", "PNG": "image/png", "BMP": "image/bmp", "GIF": "image/gif"}[image_format]
-    return raw, content_type, {"width": width, "height": height, "format": image_format}
+    return "image/webp", {"width": width, "height": height, "format": image_format}
+
+
+def _asset_binding(generation: AIGeneration, store_id: str) -> tuple[str, str, int]:
+    result = generation.result_payload or {}
+    generated_sha256 = str(result.get("generated_sha256") or "")
+    generated_bytes = int(result.get("generated_bytes") or 0)
+    if len(generated_sha256) != 64 or generated_bytes <= 0:
+        raise HTTPException(
+            409,
+            "У этой версии нет серверного digest исходного AI-изображения. Создайте новую генерацию.",
+        )
+    expected_pathname = _expected_asset_path(store_id, str(generation.subject_id), generation.id)
+    return expected_pathname, generated_sha256, generated_bytes
+
+
+def _validate_stored_asset_binding(asset: dict, generation: AIGeneration, store_id: str) -> None:
+    expected_pathname, generated_sha256, generated_bytes = _asset_binding(generation, store_id)
+    host, object_id = _validate_asset_locator(
+        url=str(asset.get("url") or ""),
+        pathname=str(asset.get("pathname") or ""),
+        expected_pathname=expected_pathname,
+    )
+    expected = {
+        "trusted_host": host,
+        "object_id": object_id,
+        "store_id": store_id,
+        "generation_id": generation.id,
+        "subject_id": str(generation.subject_id),
+        "sha256": generated_sha256,
+        "bytes": generated_bytes,
+        "content_type": "image/webp",
+    }
+    if any(asset.get(key) != value for key, value in expected.items()):
+        raise HTTPException(409, "Сохранённый AI-актив не соответствует магазину, генерации или digest.")
+
+
+async def _download_and_validate_asset(asset: dict) -> tuple[bytes, str, dict]:
+    expected_pathname = _expected_asset_path(
+        str(asset.get("store_id") or ""),
+        str(asset.get("subject_id") or ""),
+        str(asset.get("generation_id") or ""),
+    )
+    _validate_asset_locator(
+        url=str(asset.get("url") or ""),
+        pathname=str(asset.get("pathname") or ""),
+        expected_pathname=expected_pathname,
+    )
+    raw = await _download_blob_bytes(str(asset["url"]))
+    digest = hashlib.sha256(raw).hexdigest()
+    if digest != str(asset.get("sha256") or "") or len(raw) != int(asset.get("bytes") or 0):
+        raise HTTPException(409, "Blob-объект изменился после серверной фиксации контрольной суммы.")
+    content_type, dimensions = _inspect_webp(raw)
+    return raw, content_type, dimensions
 
 
 @router.get("/cards/{nm_id}")
@@ -299,31 +396,71 @@ def generate_visual(payload: GenerateVisualRequest, user: User = Depends(get_cur
     generation = begin_generation(db, store=store, user=user, feature="card_factory_visual", subject_id=str(payload.nm_id), input_payload={"fact_set_sha256": fact_set["sha256"], "visual_direction": direction, "visual_index": payload.visual_index}, fact_set_sha256=fact_set["sha256"], model=get_settings().openai_image_model)
     try:
         image_base64, metadata, result = generate_product_visual(fact_set, direction)
+        generated_bytes = base64.b64decode(image_base64, validate=True)
+        if not generated_bytes or len(generated_bytes) > 15_000_000:
+            raise ValueError("AI вернул изображение недопустимого размера")
+        result.update({
+            "generated_sha256": hashlib.sha256(generated_bytes).hexdigest(),
+            "generated_bytes": len(generated_bytes),
+        })
         complete_generation(db, generation, result, metadata)
     except RuntimeError as exc:
         fail_generation(db, generation, exc)
         raise HTTPException(503, str(exc)) from exc
-    except (ValueError, httpx.HTTPError) as exc:
+    except (ValueError, binascii.Error, httpx.HTTPError) as exc:
         fail_generation(db, generation, exc)
         raise HTTPException(502, f"Не удалось безопасно создать изображение: {exc}") from exc
     return {"generation_id": generation.id, "image_base64": image_base64, "content_type": "image/webp", "catalog_snapshot_created_at": snapshot.created_at}
 
 
 @router.post("/finalize-visual")
-def finalize_visual(payload: FinalizeVisualRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def finalize_visual(payload: FinalizeVisualRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     store = resolve_store(db, user, payload.store_id)
-    generation = db.query(AIGeneration).filter(AIGeneration.id == payload.generation_id, AIGeneration.store_id == store.id, AIGeneration.feature == "card_factory_visual", AIGeneration.status == GenerationStatus.completed).first()
+    generation = db.query(AIGeneration).filter(
+        AIGeneration.id == payload.generation_id,
+        AIGeneration.store_id == store.id,
+        AIGeneration.feature == "card_factory_visual",
+        AIGeneration.status == GenerationStatus.completed,
+    ).first()
     if not generation:
         raise HTTPException(404, "Версия изображения не найдена в выбранном магазине.")
-    parsed = urlparse(payload.url)
-    if parsed.scheme != "https" or not (parsed.hostname or "").endswith(".blob.vercel-storage.com"):
-        raise HTTPException(400, "Разрешено только настроенное Vercel Blob хранилище.")
-    expected_prefix = f"ai-assets/{store.id}/{generation.subject_id}/"
-    if not payload.pathname.startswith(expected_prefix):
-        raise HTTPException(400, "Путь изображения не принадлежит выбранному товару.")
-    result = dict(generation.result_payload or {})
-    result.update({"storage_status": "stored", "url": payload.url, "pathname": payload.pathname, "content_type": payload.content_type, "bytes": payload.bytes, "sha256": payload.sha256})
-    generation.result_payload = result
+
+    expected_pathname, generated_sha256, generated_bytes = _asset_binding(generation, store.id)
+    current = dict(generation.result_payload or {})
+    if current.get("storage_status") == "stored":
+        _validate_stored_asset_binding(current, generation, store.id)
+        if current.get("url") != payload.url or current.get("pathname") != payload.pathname:
+            raise HTTPException(409, "Finalize уже зафиксировал другой неизменяемый Blob-объект.")
+        return {"generation": public_generation(generation), "publish_requires_confirmation": True}
+
+    host, object_id = _validate_asset_locator(
+        url=payload.url,
+        pathname=payload.pathname,
+        expected_pathname=expected_pathname,
+    )
+    try:
+        raw = await _download_blob_bytes(payload.url)
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, "Не удалось прочитать Blob-объект для серверной проверки.") from exc
+    digest = hashlib.sha256(raw).hexdigest()
+    if digest != generated_sha256 or len(raw) != generated_bytes:
+        raise HTTPException(409, "Blob-объект не совпадает с исходным AI-изображением по контрольной сумме.")
+    content_type, dimensions = _inspect_webp(raw)
+    current.update({
+        "storage_status": "stored",
+        "url": payload.url,
+        "pathname": payload.pathname,
+        "trusted_host": host,
+        "object_id": object_id,
+        "store_id": store.id,
+        "generation_id": generation.id,
+        "subject_id": str(generation.subject_id),
+        "content_type": content_type,
+        "bytes": len(raw),
+        "sha256": digest,
+        "dimensions": dimensions,
+    })
+    generation.result_payload = current
     db.commit()
     return {"generation": public_generation(generation), "publish_requires_confirmation": True}
 
@@ -640,13 +777,19 @@ def prepare_media_publication(payload: PrepareMediaPublicationRequest, user: Use
     asset = generation.result_payload or {}
     if asset.get("storage_status") != "stored" or not asset.get("url") or not asset.get("sha256"):
         raise HTTPException(409, "Сначала сохраните AI-визуал в постоянном хранилище.")
+    _validate_stored_asset_binding(asset, generation, store.id)
     if generation.fact_set_sha256 != fact_set["sha256"]:
         raise HTTPException(409, "Карточка изменилась после генерации визуала. Создайте новую версию.")
     source_urls = _photo_urls(source)
     if len(source_urls) >= 30:
         raise HTTPException(409, "В карточке уже 30 изображений — это предел Wildberries.")
     source_payload = {"nm_id": payload.nm_id, "vendor_code": source.get("vendor_code") or "", "photo_urls": source_urls}
-    proposed = {"generation_id": generation.id, "asset_sha256": asset["sha256"], "target_position": len(source_urls) + 1}
+    proposed = {
+        "generation_id": generation.id,
+        "asset_sha256": asset["sha256"],
+        "object_id": asset["object_id"],
+        "target_position": len(source_urls) + 1,
+    }
     payload_sha256 = stable_hash(proposed)
     existing = db.query(MediaPublication).filter(
         MediaPublication.store_id == store.id,
@@ -666,7 +809,10 @@ def prepare_media_publication(payload: PrepareMediaPublicationRequest, user: Use
         source_card_sha256=stable_hash(source_payload),
         payload_sha256=payload_sha256,
         source_payload=source_payload,
-        asset_payload={key: asset.get(key) for key in ("url", "pathname", "sha256", "content_type", "bytes")},
+        asset_payload={key: asset.get(key) for key in (
+            "url", "pathname", "trusted_host", "object_id", "store_id", "generation_id",
+            "subject_id", "sha256", "content_type", "bytes", "dimensions",
+        )},
         diff_payload={
             "before_photo_count": len(source_urls),
             "after_photo_count": len(source_urls) + 1,
@@ -677,6 +823,74 @@ def prepare_media_publication(payload: PrepareMediaPublicationRequest, user: Use
         status=PublicationStatus.prepared,
     )
     db.add(publication)
+    db.commit()
+    db.refresh(publication)
+    return _media_publication_payload(publication)
+
+
+async def _reconcile_media_state(db: Session, publication: MediaPublication, token: str) -> dict:
+    """Resolve an uncertain media write by reading WB; never dispatch a write."""
+    now = datetime.now(timezone.utc)
+    publication.verification_attempt_count += 1
+    publication.last_verified_at = now
+    source = publication.source_payload or {}
+    live = await fetch_wb_card(
+        token,
+        nm_id=int(publication.subject_id),
+        vendor_code=source.get("vendor_code") or "",
+    )
+    if not live:
+        observed_status, evidence = "mismatch", {
+            "outcome": "card_missing",
+            "identity_confirmed": False,
+            "message": "Карточка отсутствует в свежем ответе WB.",
+        }
+    else:
+        observed_status, evidence = _media_verification_result(publication, live)
+
+    if publication.status == PublicationStatus.submitting:
+        if observed_status == "unverified":
+            publication.status = PublicationStatus.submitted
+            publication.submitted_at = publication.submitted_at or now
+            publication.verification_status = "unverified"
+            publication.error = (
+                "Запрос мог быть принят WB, но идентичность изображения не подтверждена API."
+            )
+        elif observed_status == "pending":
+            approved_at = publication.approved_at
+            if approved_at and approved_at.tzinfo is None:
+                approved_at = approved_at.replace(tzinfo=timezone.utc)
+            age_seconds = (now - approved_at).total_seconds() if approved_at else 0
+            recovery_seconds = max(
+                0,
+                int(getattr(get_settings(), "media_submitting_recovery_seconds", 120)),
+            )
+            if approved_at and age_seconds >= recovery_seconds:
+                publication.status = PublicationStatus.failed
+                publication.verification_status = "not_confirmed"
+                evidence = {
+                    **evidence,
+                    "outcome": "not_confirmed",
+                    "safe_retry_requires_new_confirmation": True,
+                    "message": (
+                        "После контрольного чтения изображение не обнаружено; зависшая отправка "
+                        "восстановлена без автоматического повтора."
+                    ),
+                }
+                publication.error = evidence["message"]
+            else:
+                publication.verification_status = "pending"
+                publication.error = (
+                    "Результат отправки пока неизвестен. Повторная загрузка заблокирована до сверки."
+                )
+        else:
+            publication.status = PublicationStatus.stale
+            publication.verification_status = observed_status
+            publication.error = evidence.get("message") or "Медиа карточки изменились."
+    else:
+        publication.verification_status = observed_status
+
+    publication.verification_payload = evidence
     db.commit()
     db.refresh(publication)
     return _media_publication_payload(publication)
@@ -695,14 +909,28 @@ async def publish_media(publication_id: str, payload: ConfirmPublicationRequest,
         raise HTTPException(404, "Подготовленная публикация изображения не найдена.")
     if publication.status == PublicationStatus.submitted:
         return _media_publication_payload(publication)
-    if publication.status == PublicationStatus.submitting:
-        raise HTTPException(409, "Это изображение уже отправляется в Wildberries.")
     if publication.status == PublicationStatus.stale:
         raise HTTPException(409, "Набор изображений WB изменился. Подготовьте проверку заново.")
     if payload.payload_sha256 != publication.payload_sha256:
         raise HTTPException(409, "Подтверждение относится к другой версии изображения.")
     if payload.confirmation.strip().upper() != "ОПУБЛИКОВАТЬ ФОТО":
         raise HTTPException(422, "Для публикации введите ОПУБЛИКОВАТЬ ФОТО.")
+
+    connection = _connection(db, store.id)
+    token = decrypt_connection(connection)
+    if publication.status == PublicationStatus.submitting:
+        try:
+            return await _reconcile_media_state(db, publication, token)
+        except (httpx.HTTPError, ValueError) as exc:
+            publication.verification_status = "error"
+            publication.verification_payload = {
+                "outcome": "read_failed",
+                "identity_confirmed": False,
+                "message": "WB недоступен для безопасного восстановления; повторная загрузка заблокирована.",
+            }
+            publication.error = publication.verification_payload["message"]
+            db.commit()
+            raise HTTPException(502, publication.error) from exc
 
     guard = {
         "workspace_id": store.workspace_id,
@@ -715,11 +943,13 @@ async def publish_media(publication_id: str, payload: ConfirmPublicationRequest,
     }
     require_external_write_allowed(db, **guard)
 
-    connection = _connection(db, store.id)
-    token = decrypt_connection(connection)
     source = publication.source_payload or {}
     try:
-        live = await fetch_wb_card(token, nm_id=int(publication.subject_id), vendor_code=source.get("vendor_code") or "")
+        live = await fetch_wb_card(
+            token,
+            nm_id=int(publication.subject_id),
+            vendor_code=source.get("vendor_code") or "",
+        )
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code if exc.response is not None else 502
         if status in {401, 403}:
@@ -739,13 +969,16 @@ async def publish_media(publication_id: str, payload: ConfirmPublicationRequest,
         raw, content_type, dimensions = await _download_and_validate_asset(publication.asset_payload or {})
     except httpx.HTTPError as exc:
         raise HTTPException(502, "Не удалось получить сохранённый визуал TROVENDI.") from exc
+
     def admit_dispatch() -> None:
-        # The final STOP admission happens after the WB limiter wait and before HTTP.
+        # Final STOP admission remains after the limiter wait and immediately before HTTP.
         require_external_write_allowed(db, **guard, lock=True)
         publication.status = PublicationStatus.submitting
         publication.attempt_count += 1
         publication.approved_at = datetime.now(timezone.utc)
+        publication.error = ""
         db.flush()
+
     try:
         response = await upload_wb_media_file(
             token,
@@ -766,20 +999,39 @@ async def publish_media(publication_id: str, payload: ConfirmPublicationRequest,
             raise HTTPException(429, "WB ограничил частоту загрузок. Повторите позже.") from exc
         raise HTTPException(502, publication.error) from exc
     except httpx.RequestError as exc:
-        publication.status = PublicationStatus.failed
-        publication.error = "Ответ WB не получен. Автоматическая повторная загрузка отключена."
+        publication.status = PublicationStatus.submitting
+        publication.provider_response = {"accepted": "unknown", "reason": "request_timeout"}
+        publication.verification_status = "pending"
+        publication.error = "Ответ WB не получен; перед любым повтором выполняется контрольное чтение."
         db.commit()
-        raise HTTPException(502, publication.error) from exc
+        try:
+            recovered = await _reconcile_media_state(db, publication, token)
+        except (httpx.HTTPError, ValueError) as read_exc:
+            raise HTTPException(
+                502,
+                "Результат отправки неизвестен, контрольное чтение не удалось. Повтор заблокирован.",
+            ) from read_exc
+        if publication.status == PublicationStatus.submitted:
+            return recovered
+        raise HTTPException(
+            502,
+            "Результат отправки не подтверждён. Повтор заблокирован до безопасного восстановления.",
+        ) from exc
     except ValueError as exc:
         publication.status = PublicationStatus.failed
         publication.error = f"WB отклонил изображение: {str(exc)[:500]}"
         db.commit()
         raise HTTPException(502, publication.error) from exc
+
     publication.status = PublicationStatus.submitted
     publication.provider_response = {**response, "validated_image": dimensions}
     publication.submitted_at = datetime.now(timezone.utc)
     publication.verification_status = "pending"
-    publication.verification_payload = {}
+    publication.verification_payload = {
+        "outcome": "accepted_unverified",
+        "identity_confirmed": False,
+        "message": "WB принял запрос; идентичность изображения требует контрольного чтения.",
+    }
     publication.error = ""
     db.commit()
     return _media_publication_payload(publication)
@@ -794,37 +1046,30 @@ async def verify_media_publication(publication_id: str, payload: VerifyPublicati
     ).with_for_update().first()
     if not publication:
         raise HTTPException(404, "Публикация изображения не найдена.")
-    if publication.status != PublicationStatus.submitted:
-        raise HTTPException(409, "Сначала отправьте подтверждённое изображение в Wildberries.")
+    if publication.status not in {PublicationStatus.submitted, PublicationStatus.submitting}:
+        raise HTTPException(409, "Нет отправленной или зависшей медиа-публикации для проверки.")
     token = decrypt_connection(_connection(db, store.id))
-    now = datetime.now(timezone.utc)
-    publication.verification_attempt_count += 1
-    publication.last_verified_at = now
     try:
-        source = publication.source_payload or {}
-        live = await fetch_wb_card(token, nm_id=int(publication.subject_id), vendor_code=source.get("vendor_code") or "")
+        return await _reconcile_media_state(db, publication, token)
     except httpx.HTTPStatusError as exc:
         publication.verification_status = "error"
-        publication.verification_payload = {"message": "WB не разрешил контрольное чтение карточки."}
+        publication.verification_payload = {
+            "outcome": "read_failed",
+            "identity_confirmed": False,
+            "message": "WB не разрешил контрольное чтение карточки.",
+        }
         db.commit()
         status = exc.response.status_code if exc.response is not None else 502
         raise HTTPException(429 if status == 429 else 502, "Не удалось проверить изображение в WB.") from exc
     except httpx.RequestError as exc:
         publication.verification_status = "error"
-        publication.verification_payload = {"message": "WB временно недоступен для контрольного чтения."}
+        publication.verification_payload = {
+            "outcome": "read_failed",
+            "identity_confirmed": False,
+            "message": "WB временно недоступен для контрольного чтения.",
+        }
         db.commit()
         raise HTTPException(502, "Не удалось проверить изображение в WB.") from exc
-    if not live:
-        status, result = "mismatch", {"message": "Карточка отсутствует в свежем ответе WB."}
-    else:
-        status, result = _media_verification_result(publication, live)
-    publication.verification_status = status
-    publication.verification_payload = result
-    if status == "applied":
-        publication.verified_at = now
-    db.commit()
-    db.refresh(publication)
-    return _media_publication_payload(publication)
 
 
 @router.get("/media-publications")

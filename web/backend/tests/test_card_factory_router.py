@@ -76,7 +76,7 @@ def test_photo_urls_use_original_big_images_in_order():
 @pytest.mark.parametrize(
     ("photos", "expected"),
     [
-        ([{"big": "old-1"}, {"big": "old-2"}, {"big": "new-3"}], "applied"),
+        ([{"big": "old-1"}, {"big": "old-2"}, {"big": "new-3"}], "unverified"),
         ([{"big": "old-1"}, {"big": "old-2"}], "pending"),
         ([{"big": "changed"}, {"big": "old-2"}, {"big": "new-3"}], "mismatch"),
     ],

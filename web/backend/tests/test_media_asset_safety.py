@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import hashlib
 import inspect
 from datetime import datetime, timedelta, timezone
@@ -13,9 +14,11 @@ from PIL import Image
 from app.card_factory_router import (
     ConfirmPublicationRequest,
     FinalizeVisualRequest,
+    GenerateVisualRequest,
     VerifyPublicationRequest,
     _media_verification_result,
     finalize_visual,
+    generate_visual,
     publish_media,
     verify_media_publication,
 )
@@ -36,6 +39,9 @@ class Query:
         return self
 
     def with_for_update(self):
+        return self
+
+    def order_by(self, *args):
         return self
 
     def first(self):
@@ -245,6 +251,11 @@ def test_repeated_finalize_cannot_replace_stored_asset(monkeypatch):
         "storage_status": "stored",
         "url": URL,
         "pathname": PATHNAME,
+        "trusted_host": OWN_HOST,
+        "object_id": f"{OWN_HOST}/{PATHNAME}",
+        "store_id": "s1",
+        "generation_id": GENERATION_ID,
+        "subject_id": "42",
         "sha256": digest,
         "bytes": len(raw),
         "content_type": "image/webp",
@@ -349,3 +360,47 @@ def test_stuck_submitting_recovers_by_reading_without_write(monkeypatch):
     assert uploads == []
     assert result["status"] == PublicationStatus.failed.value
     assert result["verification_status"] == "not_confirmed"
+
+
+def test_visual_generation_records_digest_before_blob_finalize(monkeypatch):
+    raw = webp_bytes("green")
+    copy = SimpleNamespace(result_payload={"visual_plan": ["Честный слайд"]})
+    pending = generation(raw)
+    pending.result_payload = {}
+    captured = {}
+    store = SimpleNamespace(id="s1", workspace_id="w1")
+
+    monkeypatch.setattr("app.card_factory_router._resolve_connected_store", lambda *args: store)
+    monkeypatch.setattr("app.card_factory_router.require_entitlement", lambda *args: None)
+    monkeypatch.setattr(
+        "app.card_factory_router._load_card",
+        lambda *args: ({"nm_id": 42}, SimpleNamespace(created_at=None)),
+    )
+    monkeypatch.setattr(
+        "app.card_factory_router.build_fact_set",
+        lambda source: {"sha256": "facts"},
+    )
+    monkeypatch.setattr("app.card_factory_router.begin_generation", lambda *args, **kwargs: pending)
+    monkeypatch.setattr(
+        "app.card_factory_router.generate_product_visual",
+        lambda *args: (
+            base64.b64encode(raw).decode(),
+            {},
+            {"storage_status": "awaiting_blob"},
+        ),
+    )
+
+    def complete(db, row, result, metadata):
+        captured.update(result)
+        row.result_payload = result
+
+    monkeypatch.setattr("app.card_factory_router.complete_generation", complete)
+    result = generate_visual(
+        GenerateVisualRequest(store_id="s1", nm_id=42, visual_index=0),
+        user=SimpleNamespace(id="u1"),
+        db=Db(copy),
+    )
+
+    assert result["generation_id"] == GENERATION_ID
+    assert captured["generated_sha256"] == hashlib.sha256(raw).hexdigest()
+    assert captured["generated_bytes"] == len(raw)

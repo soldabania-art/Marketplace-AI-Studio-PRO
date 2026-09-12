@@ -40,13 +40,15 @@ TROVENDI uses one container image with separate process roles.
 - `MARKETPLACE_OPENAI_IMAGE_MODEL` — image editor (defaults to economical `gpt-image-1-mini`)
 - `MARKETPLACE_OPENAI_IMAGE_QUALITY`, `MARKETPLACE_OPENAI_IMAGE_SIZE` — trial defaults are `low` and `1024x1024`
 - `MARKETPLACE_OPENAI_IMAGE_ESTIMATED_COST_MICROUSD` — current provider estimate used for budgets and audit
+- `MARKETPLACE_ASSET_BLOB_HOSTS` — comma-separated exact hostnames of the dedicated public Vercel Blob store; wildcards and generic `*.blob.vercel-storage.com` trust are forbidden
+- `MARKETPLACE_MEDIA_SUBMITTING_RECOVERY_SECONDS` — minimum age before a read-only check may release an unchanged stuck media submission for a new explicit confirmation (default `120`)
 - `MARKETPLACE_DOCUMENT_SCAN_WEBHOOK_SECRET` — long independent secret used to authenticate malware scan results
 - Frontend: `DOCUMENT_BLOB_READ_WRITE_TOKEN` must belong to a dedicated **private** Blob store used only for document evidence
 - VAPID settings when Web Push is enabled
 
 The API intentionally refuses production startup when PostgreSQL, TLS, HTTPS, the JWT secret, the marketplace credential-encryption key or the separate MFA-encryption key is missing. Do not weaken these checks to make a deployment pass.
 
-Frontend must set `MARKETPLACE_API_URL` to the externally reachable API base URL. Connect a public Vercel Blob store to the frontend project; Vercel supplies `BLOB_STORE_ID` + rotating `VERCEL_OIDC_TOKEN`, or `BLOB_READ_WRITE_TOKEN` only for a non-OIDC/manual setup. Generated marketplace visuals use unique immutable paths and are never written when Blob credentials are absent.
+Frontend must set `MARKETPLACE_API_URL` to the externally reachable API base URL. Connect a public Vercel Blob store to the frontend project; Vercel supplies `BLOB_STORE_ID` + rotating `VERCEL_OIDC_TOKEN`, or `BLOB_READ_WRITE_TOKEN` only for a non-OIDC/manual setup. Generated marketplace visuals use exact immutable paths `ai-assets/{store}/{nm_id}/{generation_id}.webp` and are never written when Blob credentials are absent. Configure the resulting exact Blob hostname in `MARKETPLACE_ASSET_BLOB_HOSTS` on the backend before enabling finalize; an unset allowlist fails closed.
 
 ## Scaling policy
 

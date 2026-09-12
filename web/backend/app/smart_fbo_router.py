@@ -34,6 +34,7 @@ def _connection(db,store_id):
 
 def _queue_refresh(db,store):
     job,_=enqueue_sync_job(db,store=store,group='analytics',payload={'store_id':store.id,'origin':'smart_fbo'},priority=50)
+    db.commit()
     return job
 
 @router.get('/live')
@@ -61,3 +62,4 @@ def snapshot_plan(store_id:str|None=None,lead_time_days:Annotated[int,Query(ge=0
     due=any(refresh_due(item,get_settings().sync_analytics_interval_seconds) for item in source_health.values())
     refresh_job=_queue_refresh(db,store) if due else None
     return {'store_id':store.id,'store_name':store.name,'marketplace':'wildberries','mode':'deterministic_snapshot_v1','live_marketplace_data':True,'sync_required':due,'refresh_job_id':refresh_job.id if refresh_job else None,'snapshot_age_seconds':age,'source_health':source_health,'sources':{'stock_snapshot_id':stocks_snap.id,'sales_snapshot_id':sales_snap.id},'summary':{'products_with_sales_history':len(sales),'stock_rows':len(stocks),'critical':sum(1 for r in recommendations if r['urgency']=='critical'),'recommended_units':sum(r['recommended_qty'] for r in recommendations)},'recommendations':recommendations,'notice':'Расчёт выполнен из сохранённых данных WB. Интерфейс не расходует лимиты WB; устаревшие данные обновляются через очередь.'}
+

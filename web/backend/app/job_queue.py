@@ -11,7 +11,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable
 
 from sqlalchemy import case, event, func, or_, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from .config import get_settings
@@ -109,10 +110,21 @@ def enqueue(
     max_attempts: int = 5,
     available_at: datetime | None = None,
 ) -> BackgroundJob:
-    existing = db.query(BackgroundJob).filter(BackgroundJob.idempotency_key == idempotency_key).first()
-    if existing:
-        return existing
-    job = BackgroundJob(
+    """Stage a durable job in the caller's transaction; never commit or roll back.
+
+    PostgreSQL is the production outbox: domain state and BackgroundJob become
+    visible together at caller COMMIT. A unique-key conflict affects only this
+    INSERT, never the caller's other writes. SQLite supports the same contract
+    for development (its concurrency is not the production guarantee).
+    """
+    dialect = db.get_bind().dialect.name
+    insert = {"postgresql": pg_insert, "sqlite": sqlite_insert}.get(dialect)
+    if insert is None:
+        raise RuntimeError(f"Transactional enqueue is unsupported on {dialect}")
+    _fence_handler_commit(db)
+    # Pending parent/domain objects and this INSERT share the outer transaction.
+    db.flush()
+    db.execute(insert(BackgroundJob).values(
         job_type=job_type,
         idempotency_key=idempotency_key,
         payload=payload or {},
@@ -121,18 +133,10 @@ def enqueue(
         priority=max(0, priority),
         max_attempts=max(1, max_attempts),
         available_at=available_at or utcnow(),
-    )
-    db.add(job)
-    try:
-        db.commit()
-        db.refresh(job)
-        return job
-    except IntegrityError:
-        db.rollback()
-        existing = db.query(BackgroundJob).filter(BackgroundJob.idempotency_key == idempotency_key).first()
-        if existing:
-            return existing
-        raise
+    ).on_conflict_do_nothing(index_elements=["idempotency_key"]))
+    return db.query(BackgroundJob).filter(
+        BackgroundJob.idempotency_key == idempotency_key
+    ).one()
 
 
 def _claim_one(
@@ -357,3 +361,4 @@ async def job_worker_forever(stop_event: asyncio.Event) -> None:
                 await asyncio.wait_for(stop_event.wait(), timeout=max(0.2, settings.job_idle_poll_seconds))
             except asyncio.TimeoutError:
                 pass
+

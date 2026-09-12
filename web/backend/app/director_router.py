@@ -13,7 +13,7 @@ from .external_write_guard import lock_external_write_scope
 from .data_health import evaluate_source_snapshot
 from .marketplace_sync import latest_snapshot
 from .models import AutomationControl, DirectorAction, DirectorRun, OperationalAuditEvent, User
-from .profit_center_router import ProfitSyncRequest, profit_center, start_profit_sync
+from .profit_center_router import enqueue_profit_sync, profit_center
 from .security import get_current_user
 from .seller_data_router import _connection
 from .store_access import require_store_admin, resolve_store
@@ -184,7 +184,7 @@ def execute_action(action_id: str, payload: ActionRequest, user: User = Depends(
                                   payload={'store_id': store.id, 'origin': 'director'}, priority=54)
         jobs = {'feedbacks': job.id}
     else:
-        queued = start_profit_sync(ProfitSyncRequest(store_id=store.id, period_days=30), user=user, db=db)
+        queued = enqueue_profit_sync(db, store, 30)
         jobs = queued['jobs']
     now = datetime.now(timezone.utc)
     row.status = 'executing'
@@ -270,3 +270,4 @@ def set_automation_control(payload: ControlRequest, user: User = Depends(get_cur
         entity_id=row.id, payload={'reason': row.reason, 'stopped': row.stopped}))
     db.commit(); db.refresh(row)
     return _control_payload(row) | {'message': 'Автоматические исполнения остановлены.' if row.stopped else 'Автоматические исполнения разрешены политикой магазина.'}
+

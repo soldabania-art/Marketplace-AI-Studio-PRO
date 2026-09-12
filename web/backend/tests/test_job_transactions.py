@@ -146,3 +146,43 @@ def test_page_and_checkpoint_roll_back_when_child_enqueue_fails(monkeypatch, sou
         assert db.query(model).filter_by(store_id=store_id).count() == 1
         assert db.query(MarketplaceSnapshot).filter_by(store_id=store_id).count() >= 1
         assert db.query(BackgroundJob).filter_by(store_id=store_id).count() == 1
+
+
+@pytest.mark.parametrize('source,job_count', [('stocks', 1), ('feedbacks', 1), ('finance_realization_sync', 2)])
+def test_director_action_audit_and_jobs_share_one_commit(monkeypatch, source, job_count):
+    from app.director_router import ActionRequest, execute_action
+    from app.models import DirectorAction, DirectorRun, Membership, MembershipRole, OperationalAuditEvent
+    store_id, workspace_id = make_store()
+    with SessionLocal() as db:
+        user_id = db.query(MarketplaceConnection).filter_by(store_id=store_id).one().user_id
+        db.add(Membership(user_id=user_id, workspace_id=workspace_id, role=MembershipRole.owner))
+        run = DirectorRun(store_id=store_id, workspace_id=workspace_id, fingerprint=uuid.uuid4().hex)
+        db.add(run); db.flush()
+        action = DirectorAction(run_id=run.id, store_id=store_id, workspace_id=workspace_id,
+            action_key=f'source:{source}', kind='data_health',
+            recommendation_payload={'can_execute': True, 'execution_type': 'read_sync'})
+        db.add(action); db.commit()
+        action_id = action.id
+
+    def fail_final_commit(db):
+        if any(isinstance(row, DirectorAction) and row.status == 'executing'
+               for row in db.identity_map.values()):
+            raise RuntimeError('injected action commit failure')
+
+    with SessionLocal() as db:
+        event.listen(db, 'before_commit', fail_final_commit)
+        with pytest.raises(RuntimeError, match='injected action commit failure'):
+            execute_action(action_id, ActionRequest(store_id=store_id), user=db.get(User, user_id), db=db)
+        db.rollback()
+        event.remove(db, 'before_commit', fail_final_commit)
+    with SessionLocal() as db:
+        assert db.get(DirectorAction, action_id).status == 'proposed'
+        assert db.query(BackgroundJob).filter_by(store_id=store_id).count() == 0
+        assert db.query(OperationalAuditEvent).filter_by(store_id=store_id).count() == 0
+        result = execute_action(action_id, ActionRequest(store_id=store_id), user=db.get(User, user_id), db=db)
+        replay = execute_action(action_id, ActionRequest(store_id=store_id), user=db.get(User, user_id), db=db)
+        assert replay['execution'] == result['execution']
+    with SessionLocal() as db:
+        assert db.get(DirectorAction, action_id).status == 'executing'
+        assert db.query(BackgroundJob).filter_by(store_id=store_id).count() == job_count
+        assert db.query(OperationalAuditEvent).filter_by(store_id=store_id).count() == 1

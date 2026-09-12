@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 
 from .data_health import expected_coverage
 from .db import get_db
-from .job_queue import enqueue
 from .marketplace_sync import latest_snapshot
 from .models import BusinessOperatingProfile, CostImportBatch, CostImportMapping, MarketplaceAdvertisingLine, MarketplaceConnection, MarketplaceFinancialLine, OperationalAuditEvent, ProductCostProfile, StoreTaxProfile, User
 from .security import get_current_user
@@ -316,7 +315,14 @@ def _tax_kopecks(totals: dict, profile: StoreTaxProfile | None) -> int | None:
 def start_profit_sync(payload: ProfitSyncRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     store = resolve_store(db, user, payload.store_id)
     _connection(db, store.id)
-    date_from, date_to = _period(payload.period_days)
+    result = enqueue_profit_sync(db, store, payload.period_days)
+    db.commit()
+    return result
+
+
+def enqueue_profit_sync(db: Session, store, period_days: int) -> dict:
+    """Stage both sources; the calling API or Director commits the unit of work."""
+    date_from, date_to = _period(period_days)
     now = datetime.now(timezone.utc)
     run_id = f'manual:profit:{date_from}:{date_to}:{int(now.timestamp() // 3600)}'
     finance_job, _ = enqueue_sync_job(
@@ -690,3 +696,4 @@ def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get
         'warning': 'Управленческий расчёт по подключённым источникам. Он не заменяет бухгалтерский и налоговый учёт.' if complete else 'Расчёт неполный: отсутствующие источники не заменяются прогнозами AI.',
         'products': products,
     }
+

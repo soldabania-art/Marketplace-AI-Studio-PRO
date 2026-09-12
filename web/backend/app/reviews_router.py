@@ -21,6 +21,7 @@ router = APIRouter(prefix="/reviews", tags=["reviews"])
 
 def _queue(db: Session, store):
     job, _ = enqueue_sync_job(db, store=store, group="feedbacks", payload={"store_id": store.id, "origin": "reviews"}, priority=54)
+    db.commit()
     return job
 
 
@@ -81,3 +82,4 @@ def create_review_analysis(store_id: str, user: User = Depends(get_current_user)
     except httpx.HTTPError as exc:
         fail_generation(db, generation, exc); raise HTTPException(502, "AI-сервис временно не ответил.") from exc
     return {"generation": public_generation(generation), "cached": False, "automatic_reply_enabled": False}
+

@@ -108,19 +108,22 @@ jobs:
               wait_for(f"document.readyState === 'complete' && Boolean(document.querySelector('{ready_selector}'))", url)
               time.sleep(.35)
 
-          def press_enter(selector, text=None):
+          def activate(selector, text=None):
               query = json.dumps(selector)
               wanted = json.dumps(text) if text else 'null'
-              found = evaluate(f"""(() => {{
+              target = evaluate(f"""JSON.stringify((() => {{
                 const nodes=[...document.querySelectorAll({query})];
                 const wanted={wanted};
                 const node=wanted ? nodes.find(el=>el.textContent.trim().includes(wanted)) : nodes[0];
                 if(!node) return false;
-                node.focus(); return document.activeElement===node;
-              }})()""")
-              assert found, f'control not found: {selector} {text}'
-              command('Input.dispatchKeyEvent', {'type': 'keyDown', 'key': 'Enter', 'code': 'Enter', 'windowsVirtualKeyCode': 13})
-              command('Input.dispatchKeyEvent', {'type': 'keyUp', 'key': 'Enter', 'code': 'Enter', 'windowsVirtualKeyCode': 13})
+                const r=node.getBoundingClientRect();
+                return {{x:r.left+r.width/2,y:r.top+r.height/2}};
+              }})())""")
+              assert target and target != 'false', f'control not found: {selector} {text}'
+              point = json.loads(target)
+              command('Input.dispatchMouseEvent', {'type': 'mouseMoved', 'x': point['x'], 'y': point['y']})
+              command('Input.dispatchMouseEvent', {'type': 'mousePressed', 'x': point['x'], 'y': point['y'], 'button': 'left', 'clickCount': 1})
+              command('Input.dispatchMouseEvent', {'type': 'mouseReleased', 'x': point['x'], 'y': point['y'], 'button': 'left', 'clickCount': 1})
               time.sleep(.45)
 
           def capture_full(name):
@@ -160,7 +163,7 @@ jobs:
           capture_viewport('13-b-first-visit-cookie-1440.png')
 
           # Choose essential-only through the actual focusable button and keyboard activation.
-          press_enter('.cookieActions button', 'Только обязательные')
+          activate('.cookieActions button', 'Только обязательные')
           wait_for("!document.querySelector('.cookieBanner')", 'cookie banner did not close')
           consent = json.loads(evaluate("localStorage.getItem('mai_cookie_consent_v1')"))
           assert consent['analytics'] is False and consent['marketing'] is False, consent
@@ -169,16 +172,16 @@ jobs:
           capture_full('14-b-home-full-1440.png')
 
           # Follow the visible route controls after consent.
-          press_enter('a', 'Выбрать возможности')
+          activate('a', 'Выбрать возможности')
           capture_element('15-b-capabilities-1440.png', '#capabilities')
           viewport(1280, 900)
-          press_enter('#capabilities a', 'Подключить Wildberries')
+          activate('#capabilities a', 'Подключить Wildberries')
           wait_for("Boolean(document.querySelector('.platformConnect'))", 'connect route missing')
-          press_enter('.platformConnectPanel button', 'Проверить локально')
+          activate('.platformConnectPanel button', 'Проверить локально')
           wait_for("document.body.innerText.includes('Демо-проверка завершена локально')", 'local connection response missing')
           capture_full('16-b-connect-full-1280.png')
           viewport(1440, 1050)
-          press_enter('.platformCompleteness a', 'Перейти в AI Director')
+          activate('.platformCompleteness a', 'Перейти в AI Director')
           wait_for("Boolean(document.querySelector('.platformDirector'))", 'Director route missing')
           capture_full('17-b-director-full-1440.png')
 
@@ -189,9 +192,9 @@ jobs:
               'unknown': 'Результат действия неизвестен',
           }
           for state, label in expected.items():
-              press_enter('.platformStateSwitcher.desktopStates a', state)
+              activate('.platformStateSwitcher.desktopStates a', state)
               wait_for(f"document.body.innerText.includes({json.dumps(label)})", f'{state} state missing')
-          press_enter('.platformStateSwitcher.desktopStates a', 'partial')
+          activate('.platformStateSwitcher.desktopStates a', 'partial')
           wait_for("document.body.innerText.includes('Полнота импорта — 87%')", 'partial state not restored')
 
           viewport(390, 844)
@@ -208,7 +211,7 @@ jobs:
           assert min(fonts['limitation'], fonts['evidence'], fonts['evidenceTitle'], fonts['action'], fonts['execution']) >= 12, fonts
           overflow = evaluate("Math.max(document.documentElement.scrollWidth,document.body.scrollWidth)-innerWidth")
           assert overflow <= 0, overflow
-          press_enter('.platformStop', 'STOP')
+          activate('.platformStop', 'STOP')
           wait_for("document.body.innerText.includes('Демо-STOP включён локально')", 'STOP local response missing')
           capture_full('18-b-director-mobile-full-390.png')
 

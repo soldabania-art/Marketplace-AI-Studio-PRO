@@ -7,9 +7,22 @@ import { Building2, CreditCard, KeyRound, Laptop, LogOut, MailCheck, Plus, Shiel
 import { getActiveStoreId, setActiveStoreId, STORE_EVENT } from '../../lib/useActiveStore'
 import BrandLogo from '../../components/BrandLogo'
 import styles from './page.module.css'
+import {readWbState,reconcileUnknownWbOutcome} from '../../lib/wbConnectionProxy.mjs'
 
 const eventNames = { login:'Вход', logout:'Выход', registration:'Регистрация', session_created:'Создана сессия', session_revoked:'Сессия завершена', mfa_challenge_created:'Запрошен второй фактор', mfa_login:'Проверка второго фактора', mfa_setup:'Настройка MFA', mfa_confirm:'Подтверждение MFA', mfa_enabled:'MFA включена', mfa_disable:'Отключение MFA', mfa_disabled:'MFA отключена', step_up:'Повторное подтверждение личности' }
 const fmt = (value) => value ? new Date(value).toLocaleString('ru-RU') : '—'
+const capabilityStatus = {available:'Доступен',forbidden:'Нет доступа',transient_error:'Временная ошибка',unchecked:'Не проверен'}
+const capabilitySummary = {complete:'Все источники проверены',partial:'Доступ подтверждён частично',temporary_failure:'Проверка временно не завершена',rejected:'Доступ не подтверждён',unchecked:'Источники ещё не проверены'}
+const endpointNames = {'catalog.cards':'Карточки товаров','analytics.stocks':'Остатки','analytics.sales':'Продажи','finance.report':'Финансовый отчёт','advertising.campaigns':'Список кампаний','advertising.statistics':'Статистика кампаний','feedbacks.list':'Отзывы'}
+
+function CapabilityMatrix({verification,title='Доступ к источникам'}){
+  if(!verification)return null
+  return <div className={styles.capabilityBox}>
+    <div className={styles.capabilityHead}><div><strong>{title}</strong><span>{capabilitySummary[verification.summary]||'Статус проверки неизвестен'}</span></div><small>{verification.checked_at?`Проверено: ${fmt(verification.checked_at)}`:'Проверка ещё не выполнялась'}</small></div>
+    <div className={styles.capabilityGrid}>{(verification.sources||[]).map(source=><article key={source.key} className={styles.capabilitySource}><div><strong>{source.label}</strong><span className={styles[`cap_${source.status}`]}>{capabilityStatus[source.status]||source.status}</span></div><ul>{(source.endpoints||[]).map(endpoint=><li key={endpoint.key}><span>{endpointNames[endpoint.key]||endpoint.key}</span><b className={styles[`cap_${endpoint.status}`]}>{capabilityStatus[endpoint.status]||endpoint.status}{endpoint.authentication_error?' · токен отклонён':''}</b></li>)}</ul></article>)}</div>
+    <small className={styles.help}>Проверка подтверждает доступ к чтению источника, но не означает, что данные уже импортированы.</small>
+  </div>
+}
 
 export default function AccountPage() {
   const router = useRouter()
@@ -19,6 +32,8 @@ export default function AccountPage() {
   const [storesData,setStoresData]=useState({stores:[],workspaces:[]})
   const [selectedStoreId,setSelectedStoreId]=useState('')
   const [wb,setWb]=useState({connected:false})
+  const [candidateVerification,setCandidateVerification]=useState(null)
+  const [wbOutcomeUnknown,setWbOutcomeUnknown]=useState(null)
   const [newStore,setNewStore]=useState({name:'',client_name:''})
   const [wbToken,setWbToken]=useState('')
   const [error, setError] = useState('')
@@ -65,11 +80,12 @@ export default function AccountPage() {
   }
 
   async function loadWb(storeId){
+    setCandidateVerification(null)
+    setWbOutcomeUnknown(null)
     if(!storeId){setWb({connected:false});return}
-    const response=await fetch(`/api/marketplace/wildberries?store_id=${encodeURIComponent(storeId)}`,{cache:'no-store'})
-    const payload=await response.json()
-    if(!response.ok) throw new Error(payload.error||'Не удалось проверить WB')
+    const payload=await readWbState(fetch,storeId)
     setWb(payload)
+    return payload
   }
 
   useEffect(() => {
@@ -114,13 +130,45 @@ export default function AccountPage() {
     }catch(e){setError(e.message)}finally{setBusy('')}
   }
 
-  async function connectWb(e){
-    e.preventDefault(); if(!selectedStoreId)return
-    setError(''); setBusy('wb')
+  async function connectWb(e,acceptPartial=false){
+    e?.preventDefault(); if(!selectedStoreId)return
+    setError(''); setWbOutcomeUnknown(null); setBusy('wb')
     try{
-      const response=await fetch('/api/marketplace/wildberries',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({store_id:selectedStoreId,token:wbToken})})
-      const payload=await response.json(); if(!response.ok) throw new Error(payload.error||'Не удалось подключить WB')
-      setWb(payload); setWbToken('')
+      const response=await fetch('/api/marketplace/wildberries',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({store_id:selectedStoreId,token:wbToken,accept_partial:acceptPartial})})
+      const payload=await response.json()
+      if(!response.ok){
+        if(payload.outcome_unknown){
+          const reconciled=await reconcileUnknownWbOutcome(
+            ()=>readWbState(fetch,selectedStoreId),wbToken,'rotation',
+          )
+          setWb(reconciled.current);setWbToken(reconciled.candidate);setWbOutcomeUnknown(reconciled.unknown)
+          setError('Исход сохранения пока неизвестен. Показано последнее сохранённое состояние; подключение автоматически не повторялось.')
+          return
+        }
+        if(payload.verification)setCandidateVerification(payload.verification)
+        throw new Error(payload.error||'Не удалось подключить WB')
+      }
+      setWb(payload); setCandidateVerification(null); setWbToken('')
+    }catch(e){setError(e.message)}finally{setBusy('')}
+  }
+
+  async function checkWb(){
+    if(!selectedStoreId)return;setError('');setWbOutcomeUnknown(null);setBusy('wb-check')
+    try{
+      const response=await fetch(`/api/marketplace/wildberries/check?store_id=${encodeURIComponent(selectedStoreId)}`,{method:'POST'})
+      const payload=await response.json()
+      if(!response.ok){
+        if(payload.outcome_unknown){
+          const reconciled=await reconcileUnknownWbOutcome(
+            ()=>readWbState(fetch,selectedStoreId),wbToken,'refresh',
+          )
+          setWb(reconciled.current);setWbOutcomeUnknown(reconciled.unknown)
+          setError('Исход проверки пока неизвестен. Показано последнее сохранённое состояние; проверка автоматически не повторялась.')
+          return
+        }
+        throw new Error(payload.error||'Не удалось проверить источники WB')
+      }
+      setWb(payload);setCandidateVerification(null)
     }catch(e){setError(e.message)}finally{setBusy('')}
   }
 
@@ -181,8 +229,10 @@ export default function AccountPage() {
     </section>
 
     <section className={styles.storeSection}><div className={styles.sectionHead}><div><span className="eyebrow">ИНТЕГРАЦИЯ</span><h2>Wildberries</h2></div><KeyRound size={22}/></div>
-      {!selectedStore?<div className={styles.notice}>Сначала выберите или создайте магазин.</div>:wb.connected?<div className={styles.connectionOk}><div><strong>Wildberries подключён</strong><span>Токен хранится на сервере в зашифрованном виде и не возвращается в интерфейс</span></div><button className={styles.danger} onClick={disconnectWb} disabled={busy==='wb'}><Unplug size={15}/> Отключить</button></div>:<form className={styles.inlineForm} onSubmit={connectWb}><input type="password" value={wbToken} onChange={e=>setWbToken(e.target.value)} placeholder="API-токен Wildberries" minLength={20} required autoComplete="off"/><button className={styles.action} disabled={busy==='wb'}>{busy==='wb'?'Проверяем…':'Проверить и подключить WB'}</button></form>}
-      <small className={styles.help}>Токен отправляется только на backend, проверяется запросом к WB и сохраняется зашифрованно. В интерфейсе полный токен больше не показывается.</small>
+      {!selectedStore?<div className={styles.notice}>Сначала выберите или создайте магазин.</div>:wb.connected?<><div className={styles.connectionOk}><div><strong>{wbOutcomeUnknown?'Последнее сохранённое состояние: токен есть':'Токен WB сохранён'}</strong><span>{wb.sources_verified?'Источники проверялись отдельно':'Источники ещё не проверены'}. Токен зашифрован и не возвращается в интерфейс.</span></div><div className={styles.connectionActions}><button className={styles.action} onClick={checkWb} disabled={busy==='wb-check'}>{busy==='wb-check'?'Проверяем…':'Проверить источники'}</button><button className={styles.danger} onClick={disconnectWb} disabled={busy==='wb'}><Unplug size={15}/> Отключить</button></div></div><CapabilityMatrix verification={wb.verification} title={wbOutcomeUnknown?'Последнее сохранённое состояние доступа':'Доступ к источникам'}/></>:<form className={styles.inlineForm} onSubmit={connectWb}><input type="password" value={wbToken} onChange={e=>{setWbToken(e.target.value);setCandidateVerification(null);setWbOutcomeUnknown(null)}} placeholder="API-токен Wildberries" minLength={20} required autoComplete="off"/><button className={styles.action} disabled={busy==='wb'}>{busy==='wb'?'Проверяем источники…':'Проверить и подключить WB'}</button></form>}
+      {wbOutcomeUnknown?.operation==='rotation'&&wbToken&&<div className={styles.notice}><strong>Кандидат сохранён в этой форме</strong><p>Ответ на его сохранение ещё не доказан. Последнее чтение могло вернуть прежний токен; дождитесь определённого результата перед новым сохранением.</p><input type="password" value={wbToken} readOnly aria-label="Кандидат токена с неизвестным исходом"/></div>}
+      {candidateVerification&&<><CapabilityMatrix verification={candidateVerification} title="Результат проверки нового токена"/>{candidateVerification.summary==='partial'&&<div className={styles.partialConfirm}><p>Новый токен даёт доступ не ко всем источникам. Текущий сохранённый токен не заменён.</p><button className={styles.action} onClick={()=>connectWb(null,true)} disabled={busy==='wb'}>Сохранить с частичным доступом</button></div>}</>}
+      <small className={styles.help}>Токен отправляется только на backend. Доступ проверяется ограниченными запросами чтения; POST-запросы в этой проверке данные WB не изменяют.</small>
     </section>
 
     <div className={styles.grid}>

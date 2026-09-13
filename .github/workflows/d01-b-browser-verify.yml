@@ -1,0 +1,100 @@
+name: D01 B browser verification
+
+on:
+  push:
+    branches:
+      - codex/d01-visual-reference
+    paths:
+      - .github/workflows/d01-b-browser-verify.yml
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build and start
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+          HOSTNAME=127.0.0.1 npm run start -- -H 127.0.0.1 -p 3010 > /tmp/d01-next.log 2>&1 &
+          for attempt in $(seq 1 40); do
+            if curl -fsS 'http://127.0.0.1:3010/design-reference?variant=b' >/dev/null; then break; fi
+            sleep 0.25
+          done
+      - name: Verify Chrome runtime
+        run: |
+          python -m pip install websocket-client
+          chrome_bin=$(command -v google-chrome || command -v chromium || command -v chromium-browser)
+          "$chrome_bin" --headless=new --no-sandbox --disable-gpu --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 --remote-allow-origins='*' --user-data-dir=/tmp/d01-verify about:blank >/tmp/d01-chrome.log 2>&1 &
+          python <<'PY'
+          import json, time, urllib.request
+          from websocket import create_connection, WebSocketTimeoutException
+
+          target = None
+          for _ in range(40):
+              try:
+                  target = json.load(urllib.request.urlopen('http://127.0.0.1:9222/json'))[0]
+                  break
+              except Exception:
+                  time.sleep(.25)
+          assert target, 'Chrome DevTools endpoint unavailable'
+          ws = create_connection(target['webSocketDebuggerUrl'], timeout=5, origin='http://127.0.0.1:9222')
+          counter = 0
+          errors = []
+
+          def command(method, params=None):
+              global counter
+              counter += 1
+              current = counter
+              ws.send(json.dumps({'id': current, 'method': method, 'params': params or {}}))
+              while True:
+                  message = json.loads(ws.recv())
+                  if message.get('method') == 'Runtime.exceptionThrown':
+                      errors.append(json.dumps(message.get('params', {})))
+                  if message.get('method') == 'Log.entryAdded' and message.get('params', {}).get('entry', {}).get('level') == 'error':
+                      errors.append(message['params']['entry'].get('text', 'log error'))
+                  if message.get('id') == current:
+                      assert 'error' not in message, message
+                      return message.get('result', {})
+
+          command('Page.enable')
+          command('Runtime.enable')
+          command('Log.enable')
+          command('Emulation.setEmulatedMedia', {'features': [{'name': 'prefers-reduced-motion', 'value': 'reduce'}]})
+          cases = [
+              ('home', 'complete', 1440, 1050),
+              ('connect', 'partial', 1280, 900),
+              ('director', 'partial', 1440, 1050),
+              ('director', 'partial', 390, 844),
+          ]
+          report = []
+          for screen, state, width, height in cases:
+              command('Emulation.setDeviceMetricsOverride', {'width': width, 'height': height, 'deviceScaleFactor': 1, 'mobile': width <= 480, 'screenWidth': width, 'screenHeight': height})
+              url = f'http://127.0.0.1:3010/design-reference?variant=b&screen={screen}&state={state}'
+              command('Page.navigate', {'url': url})
+              time.sleep(1.2)
+              raw = command('Runtime.evaluate', {'expression': "JSON.stringify({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,bodyWidth:document.body.scrollWidth,title:document.title})", 'returnByValue': True})
+              metrics = json.loads(raw['result']['value'])
+              assert metrics['width'] == width, (url, metrics)
+              assert metrics['scrollWidth'] <= width and metrics['bodyWidth'] <= width, (url, metrics)
+              command('Input.dispatchKeyEvent', {'type': 'keyDown', 'key': 'Tab', 'code': 'Tab', 'windowsVirtualKeyCode': 9})
+              command('Input.dispatchKeyEvent', {'type': 'keyUp', 'key': 'Tab', 'code': 'Tab', 'windowsVirtualKeyCode': 9})
+              focus_raw = command('Runtime.evaluate', {'expression': "JSON.stringify((() => { const s=getComputedStyle(document.activeElement); return {tag:document.activeElement.tagName,outline:s.outlineStyle,width:s.outlineWidth}; })())", 'returnByValue': True})
+              focus = json.loads(focus_raw['result']['value'])
+              assert focus['tag'] in ('A', 'BUTTON', 'INPUT', 'SUMMARY'), (url, focus)
+              assert focus['outline'] != 'none' and focus['width'] != '0px', (url, focus)
+              report.append({'screen': screen, 'viewport': [width, height], 'metrics': metrics, 'focus': focus})
+
+          command('Page.navigate', {'url': 'http://127.0.0.1:3010/design-reference?variant=b&screen=home'})
+          time.sleep(1)
+          motion = command('Runtime.evaluate', {'expression': "getComputedStyle(document.querySelector('.platformHeroDecision')).animationName", 'returnByValue': True})['result']['value']
+          assert motion == 'none', motion
+          assert not errors, errors
+          print(json.dumps({'cases': report, 'reducedMotion': motion, 'pageErrors': errors}, ensure_ascii=False, indent=2))
+          PY

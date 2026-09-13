@@ -105,3 +105,26 @@ test("B route provides all required data states and responsive system rules", ()
   assert.match(css, /\.platformSourceTable/);
   assert.match(css, /\.platformExecution/);
 });
+
+test("B mobile Director puts the task and action before execution details", () => {
+  const director = component.slice(
+    component.indexOf("function PlatformDirector"),
+    component.indexOf("function PlatformPrototype"),
+  );
+  assert.ok(director.indexOf("platformFinding") < director.indexOf("platformExecution"));
+  assert.match(director, /platformActionControls[\s\S]*STOP/);
+  assert.doesNotMatch(css, /\.platformExecution\s*\{[\s\S]*?order:\s*-1/);
+});
+
+test("B work screens use readable body and secondary type tokens", () => {
+  assert.match(css, /--platform-body:\s*15px/);
+  assert.match(css, /--platform-secondary:\s*12px/);
+  assert.match(css, /\.platformEvidence li small[\s\S]*font-size:\s*var\(--platform-secondary\)/);
+  assert.match(css, /\.platformDataBanner p[\s\S]*font-size:\s*var\(--platform-secondary\)/);
+});
+
+test("B decision story exposes unambiguous numbered connections", () => {
+  assert.match(component, /data-from=\{item\.key\}/);
+  assert.match(component, /data-to=\{decisionStory\[index \+ 1\]\.key\}/);
+  assert.match(component, /aria-label=\{`Переход \$\{item\.key\} → \$\{decisionStory\[index \+ 1\]\.key\}`\}/);
+});

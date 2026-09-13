@@ -698,20 +698,39 @@
   right: -31px;
 }
 .step3 > i {
-  bottom: -30px;
-  left: 54%;
-  transform: rotate(90deg);
+  bottom: -56px;
+  left: -23px;
+  width: calc(54% + 23px);
+  height: 56px;
+  border-right: 2px solid var(--study-ink);
+  border-bottom: 2px solid var(--study-ink);
+  background: transparent;
 }
 .step3 > i::before {
-  transform: translateX(-50%) rotate(-90deg);
+  top: auto;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.step3 > i::after {
+  top: auto;
+  right: auto;
+  bottom: -5px;
+  left: -1px;
+  transform: rotate(-135deg);
 }
 .step4 > i {
   top: 54px;
   left: -31px;
-  transform: rotate(180deg);
+  transform: none;
 }
 .step4 > i::before {
-  transform: translateX(-50%) rotate(-180deg);
+  transform: translateX(-50%);
+}
+.step4 > i::after {
+  right: auto;
+  left: 0;
+  transform: rotate(-135deg);
 }
 
 .studyFooter {

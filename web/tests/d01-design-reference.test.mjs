@@ -148,6 +148,11 @@ test("B decision story exposes unambiguous numbered connections", () => {
 test("B decision story joins 03 to 04 with an elbow ending at card 04", () => {
   assert.match(
     css,
+    /\.step3\s*\{[^}]*z-index:\s*2[^}]*\}/,
+    "step 03 must paint above the later step 04 so its arrowhead stays visible at the target card",
+  );
+  assert.match(
+    css,
     /\.step3 > i\s*\{[\s\S]*?width:\s*calc\(54% \+ 23px\)[\s\S]*?height:\s*56px[\s\S]*?border-right:\s*2px solid var\(--study-ink\)[\s\S]*?border-bottom:\s*2px solid var\(--study-ink\)/,
   );
   assert.match(

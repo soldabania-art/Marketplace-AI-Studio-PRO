@@ -4,12 +4,13 @@
 
 Концепция одобрена; коммерческий запуск не одобрен. Первичный клиент — действующий продавец Wildberries. Ближайший процесс: подключение → полнота данных → детерминированная экономика → подтверждённые проблемы → задачи с доказательствами → разрешённое действие → статус и результат.
 
-Фактическое состояние issues на момент обновления: #1–#8 и #37–#39 закрыты; #9–#22, #44 и D01/#46 открыты. T02–T08C последовательно интегрированы и проверены на общем `main`. Текущий ограниченный приоритет владельца — D01/#46 в открытом PR #47; направление B выбрано, итоговая реализация связанного маршрута ожидает независимой приёмки. A и синяя версия сохранены как контрольные. Внешний блокер не разрешает обходить security gate.
+Фактическое состояние issues на момент обновления: #1–#8 и #37–#39 закрыты; #9–#22, #44, D01/#46 и D02/#48 открыты. T02–T08C последовательно интегрированы и проверены на общем `main`. D01 принят главным архитектором на head `6cc2a1b10b732255a9c85267c038209da6abd0d2`, но PR #47 ещё не интегрирован: публикация заблокирована дневным лимитом Vercel. D02 подготовлен как PLANNED и до закрытия gate D01 не выполняется. A и синяя версия сохранены как контрольные. Внешний блокер не разрешает обходить security gate или лимит провайдера.
 
 | Состояние | Задачи |
 | --- | --- |
 | Закрыто и интегрировано | [T01 / #1](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/1) — [T08 / #8](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/8), включая #37–#39 |
-| Текущая задача | [D01 / #46](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/46) — ограниченный визуальный эталон |
+| Текущий gate | [D01 / #46](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/46) — принятый визуальный эталон; ожидает разрешённого deployment и интеграции PR #47 |
+| Подготовлено, не начинать | [D02 / #48](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/48) — перенос B на публичную главную и выбор возможностей/площадок |
 | Открыто, выполнять по зависимостям | T09–T22; notification follow-up #44 остаётся отдельной задачей |
 
 
@@ -37,6 +38,27 @@
 | T20 | P2 | Реализовать операционный контур фулфилмента по состояниям | T19, T17, T02 | [Issue #20](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/20) |
 | T21 | P1 | Довести Beginner Studio до честного сохраняемого результата | T03, T05, T15 | [Issue #21](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/21) |
 | T22 | P1 | Сделать поддержку полноценной очередью обработки инцидентов | T13 | [Issue #22](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/22) |
+| D02 | P1 | Перенести принятое направление B на публичную главную и выбор возможностей/площадок | Интегрированный D01/#46; подтверждённый Vercel итогового main | [Issue #48](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/48) |
+
+## D01 · принятый визуальный эталон и gate интеграции
+
+**Статус:** ACCEPTED · head `6cc2a1b10b732255a9c85267c038209da6abd0d2` · [PR #47](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/47) открыт · [Issue #46](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/46) открыта.
+
+**Сохранено:** палитра aubergine/coral/signal-mint/lime, X/trace-знак, асимметричная композиция, типографика, Decision Orbit и контрольные варианты A/control. Тариф, backend-контракты, права, STOP и реальные интеграции не менялись.
+
+**Проверено:** exact-head Web Cloud CI #34741397183 и browser capture #34741211694 зелёные; 1440/1280/390, mobile sequence, cookie-consent, focus, reduced motion и overflow проверены.
+
+**BLOCKED_EXTERNAL:** Vercel отклонил deployment по `api-deployments-free-per-day`. Не запускать повторные deployments до снятия ограничения, не менять тариф и не обходить лимит. Затем проверить deployment актуального head, интегрировать PR только при зелёных обязательных проверках, проверить Actions/Vercel итогового `main` и лишь после этого закрыть #46.
+
+## D02 · P1 · Публичная главная и выбор возможностей в направлении B
+
+**Статус:** PLANNED · [GitHub #48](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/48). **Зависимости:** D01/#46 интегрирован; Vercel итогового `main` подтверждён; существующие вход, регистрация и cookie-consent закреплены regression-тестами.
+
+**Работа:** Перенести принятую систему B на рабочую публичную главную и экран выбора возможностей/площадок. Сохранить существующие URL и путь входа, регистрации и восстановления доступа. Доступные возможности показывать по фактическому состоянию; Ozon, Яндекс Маркет, Kaspi, Uzum и другие будущие функции явно обозначать как «Запланировано» текстом, а не только цветом.
+
+**Приёмка:** Принятые палитра, композиция, графика и X/trace-знак сохранены без нового направления; публичная главная и выбор работают на 1440/1280/390 без overflow и обрезки; keyboard focus, reduced motion и «Только обязательные» сохранены; вход/регистрация проходят regression/browser-проверку; frontend build, backend и PostgreSQL CI зелёные на exact head; Vercel проверен отдельно после разрешённого deployment.
+
+**Граница:** Не менять тарифы, entitlement, оплату, MFA, backend и marketplace-интеграции; не включать запланированные функции; не переносить стиль на авторизованный workspace и остальные экраны; реализацию до отдельного старта D02 не начинать.
 
 ## Горизонты поставки и коммерческие проверки
 
@@ -367,4 +389,4 @@
 
 T08C принят и интегрирован последним: [PR #45](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/45), итоговый `main` `3d5e59a17469bf622f858889adf75e585d3a5253`, [push CI](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/actions/runs/34704306856) и Vercel success.
 
-По повторному приоритету владельца активен только [D01/#46](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/46): два существенно разных арт-направления с одинаковой историей и сохранённый контрольный prototype. Визуальное направление не принято. До выбора не распространять этюды на весь продукт. T09–T22 и #44 сохраняются в очереди. `MARKETPLACE_ASSET_BLOB_HOSTS` остаётся BLOCKED_EXTERNAL до получения точного hostname выделенного public Blob store; значение не угадывать. GitHub Ruleset также остаётся BLOCKED_EXTERNAL до подтверждённого включения; CLOSED T01 не заменяет эту инфраструктурную проверку.
+[D01/#46](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/46) принят на head `6cc2a1b10b732255a9c85267c038209da6abd0d2`; PR #47 ожидает снятия ограничения Vercel, подтверждённого deployment и интеграции. [D02/#48](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/48) подготовлен, но не начат. T09–T22 и #44 сохраняются в очереди. `MARKETPLACE_ASSET_BLOB_HOSTS` остаётся BLOCKED_EXTERNAL до получения точного hostname выделенного public Blob store; значение не угадывать. GitHub Ruleset также остаётся BLOCKED_EXTERNAL до подтверждённого включения; CLOSED T01 не заменяет эту инфраструктурную проверку.

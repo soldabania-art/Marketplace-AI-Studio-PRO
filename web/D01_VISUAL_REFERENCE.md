@@ -90,8 +90,25 @@ B не превращён в A. Из A перенесены только при�
 
 Ширина каждого PNG проверена автоматически по заголовку файла. Capture run #34736402089 собрал Next.js, открыл четыре маршрута в реальном Chrome и сформировал артефакты без реальных API. Вспомогательный workflow после получения файлов удалён из итогового diff.
 
+Финальный пакет визуальной приёмки расположен в `selected-b/final-acceptance`:
+
+- `13-b-first-visit-cookie-1440.png` — отдельное первое посещение с настоящим cookie-баннером;
+- `14-b-home-full-1440.png` — полная главная после выбора «Только обязательные», включая инфографику;
+- `15-b-capabilities-1440.png` — возможности и честные статусы площадок;
+- `16-b-connect-full-1280.png` — подключение и локальная проверка;
+- `17-b-director-full-1440.png` — Director desktop;
+- `18-b-director-mobile-full-390.png` — полный Director mobile после локального STOP;
+- `d01-b-cookie-route.webm` — запись связанного маршрута после выбора cookie;
+- `browser-report.json` — машинно проверенные размеры, порядок, consent, focus, reduced motion, overflow и ошибки страницы.
+
+Capture run [#34739691996](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/actions/runs/34739691996) завершён успешно на исходном head `235eb12a1ab2ccfd4b9c783733328fad032cd7a0`. Кнопка «Только обязательные» нажата физическим browser click; сохранены `analytics=false` и `marketing=false`, cookie-баннер закрыт штатно. Ни элемент, ни стили баннера для съёмки не изменялись.
+
+В мобильном Director зафиксирован порядок: заголовок → ограничение данных → наблюдаемый расход → следующий шаг и STOP → доказательства → прибыль/эффект → исполнитель и статусы. Фактические размеры: основной текст 15 px, ограничение и второстепенные доказательства 12 px, заголовки доказательств 14 px, следующий шаг 17 px, сведения исполнения 15 px. Горизонтальное переполнение: 0 px.
+
+Переходы инфографики имеют явные пары и доступные подписи: `01 → 02 → 03 → 04 → 05`; линии и стрелки сохранены на desktop и mobile.
+
 ## Проверка и границы
 
-Обязательная проверка: frontend contract tests, Next.js production build, backend и PostgreSQL CI точного SHA, Vercel deployment отдельно. Browser capture подтверждает отрисовку маршрута на 1440, 1280 и 390 px и фактические размеры PNG. Contract tests проверяют responsive rules, keyboard focus, reduced motion, длинное название магазина, состояния и локальные реакции. Отсутствие runtime console errors дополнительно проверяется при независимой визуальной приёмке.
+Обязательная проверка: frontend contract tests, Next.js production build, backend и PostgreSQL CI точного SHA, Vercel deployment отдельно. Browser capture подтверждает отрисовку маршрута на 1440, 1280 и 390 px, фактические CSS-размеры и отсутствие горизонтального переполнения. Реальный Tab даёт видимый focus outline 3 px; `prefers-reduced-motion` отключает анимацию; все `complete/partial/loading/error/unknown` доступны; runtime/page errors отсутствуют.
 
 Зелёный CI не означает визуальную приёмку, production readiness или подтверждение реального WB-сценария. Окончательную приёмку выбранного B выполняет главный архитектор.

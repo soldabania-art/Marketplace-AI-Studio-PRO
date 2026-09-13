@@ -17,6 +17,8 @@ test("D01 stays an isolated synthetic prototype without backend calls", () => {
   assert.match(component, /variant=control/);
   assert.match(component, /routeHref\(["']connect["']/);
   assert.match(component, /routeHref\(["']director["']/);
+  assert.match(component, /platformHref\(["']connect["']/);
+  assert.match(component, /platformHref\(["']director["']/);
 });
 
 test("D01 exposes two distinct studies and preserves the control prototype", () => {
@@ -27,6 +29,11 @@ test("D01 exposes two distinct studies and preserves the control prototype", () 
   assert.match(component, /PlatformGraphic/);
   assert.match(component, /ArtDirection/);
   assert.match(component, /decisionStory\.map/);
+  assert.match(component, /PlatformPrototype/);
+  assert.match(component, /PlatformHome/);
+  assert.match(component, /PlatformCapabilities/);
+  assert.match(component, /PlatformConnect/);
+  assert.match(component, /PlatformDirector/);
   for (const state of ["complete", "partial", "loading", "error", "unknown"])
     assert.match(component, new RegExp(`["']${state}["']`));
   assert.match(component, /Сумка-шоппер женская повседневная/);
@@ -65,4 +72,34 @@ test("D01 demo controls provide local reactions without writes", () => {
   assert.match(component, /Локально, без запросов к WB/);
   assert.match(component, /Без записи в WB/);
   assert.match(component, /Демо-задача добавлена в контроль/);
+});
+
+
+test("selected direction B is the default connected route", () => {
+  assert.match(component, /: "b";/);
+  assert.match(component, /variant === "b".*PlatformPrototype/s);
+  assert.match(component, /Доступно в демонстрации/);
+  for (const marketplace of ["Ozon", "Яндекс Маркет", "Kaspi", "Uzum"])
+    assert.match(component, new RegExp(marketplace));
+  assert.match(component, /Будущие площадки показаны честно/);
+});
+
+test("B Director separates evidence, money, action and execution control", () => {
+  assert.match(component, /ПОДТВЕРЖДЁННАЯ ПРОБЛЕМА/);
+  assert.match(component, /НАБЛЮДАЕМЫЙ РАСХОД/);
+  assert.match(component, /ПРИБЫЛЬ ЗА ПЕРИОД/);
+  assert.match(component, /ЭФФЕКТ ДЕЙСТВИЯ/);
+  assert.match(component, /КОНТРОЛЬ ИСПОЛНЕНИЯ/);
+  assert.match(component, /STOP доступен/);
+  assert.match(component, /Слепая повторная отправка запрещена/);
+});
+
+test("B route provides all required data states and responsive system rules", () => {
+  for (const state of ["complete", "partial", "loading", "error", "unknown"])
+    assert.match(component, new RegExp(`${state}:`));
+  assert.match(css, /\.platformRoute/);
+  assert.match(css, /@media\s*\(max-width:\s*1100px\)/);
+  assert.match(css, /@media\s*\(max-width:\s*760px\)/);
+  assert.match(css, /\.platformSourceTable/);
+  assert.match(css, /\.platformExecution/);
 });

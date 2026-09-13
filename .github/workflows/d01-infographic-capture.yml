@@ -3,7 +3,11 @@ name: D01 infographic acceptance capture
 on:
   push:
     branches: [codex/d01-visual-reference]
-    paths: [.github/workflows/d01-infographic-capture.yml]
+    paths:
+      - .github/workflows/d01-infographic-capture.yml
+      - web/app/design-reference/d01.css
+      - web/components/D01DesignReference.js
+      - web/tests/d01-design-reference.test.mjs
 
 permissions:
   contents: write
@@ -104,6 +108,19 @@ jobs:
               shot = command('Page.captureScreenshot', params)
               with open(os.path.join(output, name), 'wb') as f: f.write(base64.b64decode(shot['data']))
 
+          def capture_region(name, selectors, margin=28):
+              rects = [rect(selector) for selector in selectors]
+              scroll_y = evaluate('scrollY')
+              left = max(0, min(item['left'] for item in rects) - margin)
+              top = max(0, min(item['top'] for item in rects) + scroll_y - margin)
+              right = max(item['right'] for item in rects) + margin
+              bottom = max(item['bottom'] for item in rects) + scroll_y + margin
+              shot = command('Page.captureScreenshot', {
+                  'format':'png', 'fromSurface':True, 'captureBeyondViewport':True,
+                  'clip': {'x':left, 'y':top, 'width':right-left, 'height':bottom-top, 'scale':1},
+              })
+              with open(os.path.join(output, name), 'wb') as f: f.write(base64.b64decode(shot['data']))
+
           command('Page.enable'); command('Runtime.enable')
           viewport(1440, 1000); navigate()
           if evaluate("Boolean(document.querySelector('.cookieBanner'))"):
@@ -113,17 +130,24 @@ jobs:
           s3, s4, s5 = rect('.step3'), rect('.step4'), rect('.step5')
           c34, c45 = rect('.step3 > .orbitConnector'), rect('.step4 > .orbitConnector')
           style34 = json.loads(evaluate("JSON.stringify((()=>{const s=getComputedStyle(document.querySelector('.step3 > .orbitConnector'));return {right:s.borderRightWidth,bottom:s.borderBottomWidth,background:s.backgroundColor}})())"))
+          stack34 = json.loads(evaluate("JSON.stringify({step3:getComputedStyle(document.querySelector('.step3')).zIndex,step4:getComputedStyle(document.querySelector('.step4')).zIndex})"))
           assert abs(c34['top'] - s3['bottom']) <= 2, (s3, c34)
           assert abs(c34['left'] - s4['right']) <= 3, (s4, c34)
           assert c34['bottom'] > s4['top'] + 50, (s4, c34)
           assert style34['right'] == '2px' and style34['bottom'] == '2px' and style34['background'] == 'rgba(0, 0, 0, 0)', style34
+          assert stack34['step3'] == '2' and stack34['step4'] == 'auto', stack34
           assert abs(c45['left'] - s5['right']) <= 10 and abs(c45['right'] - s4['left']) <= 2, (s4, s5, c45)
           capture('14-b-home-full-1440.png', full=True)
           capture('19-b-infographic-transition-1440.png', '.platformStory')
+          capture_region('22-b-transition-03-04-closeup-1440.png', ['.step3', '.step4'])
 
           viewport(1280, 900); navigate()
           capture('20-b-infographic-transition-1280.png', '.platformStory')
           desktop1280 = [rect(f'.step{i}') for i in range(1, 6)]
+          desktop1280_connectors = [rect('.step3 > .orbitConnector'), rect('.step4 > .orbitConnector')]
+          assert abs(desktop1280_connectors[0]['left'] - desktop1280[3]['right']) <= 3
+          assert abs(desktop1280_connectors[1]['left'] - desktop1280[4]['right']) <= 10
+          assert abs(desktop1280_connectors[1]['right'] - desktop1280[3]['left']) <= 2
 
           viewport(390, 844); navigate()
           mobile = [rect(f'.step{i}') for i in range(1, 6)]
@@ -133,7 +157,7 @@ jobs:
           assert evaluate('Math.max(document.documentElement.scrollWidth,document.body.scrollWidth)-innerWidth') <= 0
           capture('21-b-infographic-mobile-390.png', '.platformStory')
 
-          report = {'desktop1440': {'step3':s3,'step4':s4,'step5':s5,'connector03to04':c34,'connector04to05':c45}, 'desktop1280':desktop1280, 'mobile390':mobile, 'mobileConnectors':connectors}
+          report = {'desktop1440': {'step3':s3,'step4':s4,'step5':s5,'connector03to04':c34,'connector04to05':c45,'stacking':stack34}, 'desktop1280': {'steps':desktop1280,'connectors03to05':desktop1280_connectors}, 'mobile390':mobile, 'mobileConnectors':connectors}
           with open(os.path.join(output, 'infographic-report.json'), 'w') as f: json.dump(report, f, indent=2)
           print(json.dumps(report, indent=2))
           ws.close()

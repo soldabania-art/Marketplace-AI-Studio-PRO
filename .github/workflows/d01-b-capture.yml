@@ -1,0 +1,81 @@
+name: D01 B visual capture
+
+on:
+  push:
+    branches:
+      - codex/d01-visual-reference
+    paths:
+      - .github/workflows/d01-b-capture.yml
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/d01-visual-reference
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build preview
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+      - name: Capture real browser artifacts
+        working-directory: web
+        run: |
+          mkdir -p docs/design/d01/selected-b
+          HOSTNAME=127.0.0.1 npm run start -- -H 127.0.0.1 -p 3010 > /tmp/d01-next.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 40); do
+            if curl -fsS 'http://127.0.0.1:3010/design-reference?variant=b' >/dev/null; then break; fi
+            sleep 0.25
+          done
+          chrome_bin=$(command -v google-chrome || command -v chromium || command -v chromium-browser)
+          test -n "$chrome_bin"
+          common_flags='--headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --hide-scrollbars --force-device-scale-factor=1'
+          "$chrome_bin" $common_flags --window-size=1440,1050 --screenshot=docs/design/d01/selected-b/09-b-home-desktop-1440.png 'http://127.0.0.1:3010/design-reference?variant=b&screen=home'
+          "$chrome_bin" $common_flags --window-size=1280,900 --screenshot=docs/design/d01/selected-b/10-b-connect-laptop-1280.png 'http://127.0.0.1:3010/design-reference?variant=b&screen=connect&state=partial'
+          "$chrome_bin" $common_flags --window-size=1440,1050 --screenshot=docs/design/d01/selected-b/11-b-director-desktop-1440.png 'http://127.0.0.1:3010/design-reference?variant=b&screen=director&state=partial'
+          "$chrome_bin" $common_flags --window-size=390,844 --screenshot=docs/design/d01/selected-b/12-b-director-mobile-390.png 'http://127.0.0.1:3010/design-reference?variant=b&screen=director&state=partial'
+          node <<'NODE'
+          const fs = require('node:fs');
+          const files = [
+            ['09-b-home-desktop-1440.png', 1440],
+            ['10-b-connect-laptop-1280.png', 1280],
+            ['11-b-director-desktop-1440.png', 1440],
+            ['12-b-director-mobile-390.png', 390],
+          ];
+          for (const [name, expected] of files) {
+            const data = fs.readFileSync('docs/design/d01/selected-b/' + name);
+            const width = data.readUInt32BE(16);
+            if (width !== expected) throw new Error(name + ': expected ' + expected + ', got ' + width);
+          }
+          NODE
+          cat > docs/design/d01/selected-b/route-list.txt <<'LIST'
+          file '09-b-home-desktop-1440.png'
+          duration 1.6
+          file '10-b-connect-laptop-1280.png'
+          duration 1.6
+          file '11-b-director-desktop-1440.png'
+          duration 1.6
+          file '12-b-director-mobile-390.png'
+          duration 1.6
+          file '12-b-director-mobile-390.png'
+          LIST
+          ffmpeg -y -f concat -safe 0 -i docs/design/d01/selected-b/route-list.txt -vf "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=0x100d29,fps=24,format=yuv420p" -c:v libvpx-vp9 -b:v 0 -crf 34 docs/design/d01/selected-b/d01-b-connected-route.webm
+          rm docs/design/d01/selected-b/route-list.txt
+      - name: Commit capture artifacts
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add web/docs/design/d01/selected-b
+          git commit -m 'docs: add selected B browser artifacts'
+          git push origin HEAD:codex/d01-visual-reference

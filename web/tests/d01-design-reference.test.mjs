@@ -14,16 +14,19 @@ const css = fs.readFileSync(
 test("D01 stays an isolated synthetic prototype without backend calls", () => {
   assert.match(component, /демонстрационные данные/);
   assert.doesNotMatch(component, /fetch\s*\(/);
+  assert.match(component, /variant=control/);
   assert.match(component, /routeHref\(["']connect["']/);
   assert.match(component, /routeHref\(["']director["']/);
-  assert.doesNotMatch(component, /direction=/);
 });
 
-test("D01 exposes one final TROVENDI direction and required interface states", () => {
-  assert.doesNotMatch(component, /Signal Room|DirectionSwitcher|SignalGraphic/);
-  assert.match(component, /traceStory/);
-  assert.match(component, /traceMobile/);
-  assert.match(component, /КОНТУР РЕШЕНИЯ/);
+test("D01 exposes two distinct studies and preserves the control prototype", () => {
+  assert.match(component, /Монументальная точность/);
+  assert.match(component, /Технологическая платформа/);
+  assert.match(component, /Контроль/);
+  assert.match(component, /MonumentalGraphic/);
+  assert.match(component, /PlatformGraphic/);
+  assert.match(component, /ArtDirection/);
+  assert.match(component, /decisionStory\.map/);
   for (const state of ["complete", "partial", "loading", "error", "unknown"])
     assert.match(component, new RegExp(`["']${state}["']`));
   assert.match(component, /Сумка-шоппер женская повседневная/);
@@ -37,20 +40,20 @@ test("D01 exposes one final TROVENDI direction and required interface states", (
 test("D01 includes keyboard focus, mobile and reduced-motion rules", () => {
   assert.match(css, /:focus-visible/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
-  assert.match(css, /@media\s*\(max-width:\s*760px\)/);
-  assert.match(css, /\.traceMobile/);
-  assert.match(css, /\.prototypeHeader/);
-  assert.match(css, /\.inlineControl/);
+  assert.match(css, /@media\s*\(max-width:\s*700px\)/);
+  assert.match(css, /\.studyMobile/);
+  assert.match(css, /\.monumentalLedger/);
+  assert.match(css, /\.platformOrbit/);
 });
 
-test("D01 fixes the approved cloud ink blue and cyan tokens", () => {
+test("D01 gives A and B independent visual systems", () => {
   for (const token of [
-    "--paper: #f6f8fc",
-    "--panel: #ffffff",
-    "--ink: #111827",
-    "--blue: #345cff",
-    "--cyan: #71d7f7",
-    "--emerald: #11845b",
+    "--study-bg: #f2f2ee",
+    "--study-accent: #cc321b",
+    "--study-bg: #100d29",
+    "--study-accent: #f0526c",
+    "--study-signal: #43d8c6",
+    "--study-accent-text: #a92c52",
   ]) {
     assert.match(css, new RegExp(token));
   }
@@ -61,4 +64,5 @@ test("D01 demo controls provide local reactions without writes", () => {
   assert.match(component, /setActionStatus\("rejected"\)/);
   assert.match(component, /Локально, без запросов к WB/);
   assert.match(component, /Без записи в WB/);
+  assert.match(component, /Демо-задача добавлена в контроль/);
 });

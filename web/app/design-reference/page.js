@@ -3,9 +3,9 @@ import D01DesignReference from "../../components/D01DesignReference";
 import "./d01.css";
 
 export const metadata = {
-  title: "TROVENDI · D01 Product Experience",
+  title: "TROVENDI · D01 Art Direction Study",
   description:
-    "Связанный демонстрационный маршрут TROVENDI на синтетических данных.",
+    "Два арт-направления TROVENDI и сохранённый контрольный прототип.",
   robots: { index: false, follow: false },
 };
 

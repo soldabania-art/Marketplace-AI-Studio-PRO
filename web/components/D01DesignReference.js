@@ -26,7 +26,9 @@ import {
 } from "lucide-react";
 
 const routeHref = (screen = "home", state = "complete") =>
-  `/design-reference?screen=${screen}&state=${state}`;
+  `/design-reference?variant=control&screen=${screen}&state=${state}`;
+
+const studyHref = (variant) => `/design-reference?variant=${variant}`;
 
 const longProduct =
   "Сумка-шоппер женская повседневная с внутренним карманом и усиленными ручками — коллекция «Северный ветер»";
@@ -966,14 +968,320 @@ function Prototype({ screen, state }) {
   );
 }
 
+const decisionStory = [
+  {
+    key: "01",
+    label: "Данные магазина",
+    value: "Финансы WB · реклама · себестоимость",
+    note: "Сверено 09:42 · полнота 87%",
+    state: "partial",
+  },
+  {
+    key: "02",
+    label: "Проблема",
+    value: "Расход без подтверждённой выручки",
+    note: "18 420 ₽ · наблюдаемый расход",
+    state: "verified",
+  },
+  {
+    key: "03",
+    label: "Решение владельца",
+    value: "Проверить две рекламные кампании",
+    note: "Подтверждение обязательно",
+    state: "decision",
+  },
+  {
+    key: "04",
+    label: "Выполнение",
+    value: "Ожидает действия владельца",
+    note: "STOP доступен · записи в WB нет",
+    state: "waiting",
+  },
+  {
+    key: "05",
+    label: "Измерение",
+    value: "Эффект ещё не измерен",
+    note: "После свежих данных",
+    state: "unknown",
+  },
+];
+
+function StudyMark({ variant }) {
+  if (variant === "b") {
+    return (
+      <svg className="studyMark" viewBox="0 0 48 48" aria-hidden="true">
+        <path d="M5 8h14l5 8 5-8h14L32 24l11 16H29l-5-8-5 8H5l11-16z" />
+        <circle cx="24" cy="24" r="4" />
+      </svg>
+    );
+  }
+  return (
+    <svg className="studyMark" viewBox="0 0 48 48" aria-hidden="true">
+      <path d="M5 5h38v38H5zM14 15h20M24 15v20M16 35h16" />
+      <circle cx="24" cy="35" r="4" />
+    </svg>
+  );
+}
+
+function StudyNavigation({ variant }) {
+  return (
+    <header className="studyNav">
+      <Link className="studyBrand" href={studyHref(variant)}>
+        <StudyMark variant={variant} />
+        <span>
+          TROVENDI<small>VISUAL STUDY · D01</small>
+        </span>
+      </Link>
+      <nav aria-label="Сравнение арт-направлений">
+        <Link
+          href={studyHref("a")}
+          aria-current={variant === "a" ? "page" : undefined}
+        >
+          <span>A</span> Монументальная точность
+        </Link>
+        <Link
+          href={studyHref("b")}
+          aria-current={variant === "b" ? "page" : undefined}
+        >
+          <span>B</span> Технологическая платформа
+        </Link>
+        <Link href={routeHref("home")}>
+          Контроль <ArrowRight />
+        </Link>
+      </nav>
+    </header>
+  );
+}
+
+function MonumentalGraphic() {
+  return (
+    <section className="studyStory monumentalStory" aria-labelledby="story-a">
+      <div className="studySectionHead">
+        <span>КОНТУР РЕШЕНИЯ / 01—05</span>
+        <h2 id="story-a">Каждый вывод оставляет проверяемый след.</h2>
+        <p>
+          Не обещание роста, а последовательность фактов, решения и измерения.
+        </p>
+      </div>
+      <ol className="monumentalLedger">
+        {decisionStory.map((item) => (
+          <li key={item.key} data-state={item.state}>
+            <span>{item.key}</span>
+            <div>
+              <small>{item.label}</small>
+              <b>{item.value}</b>
+              <em>{item.note}</em>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function PlatformGraphic() {
+  return (
+    <section className="studyStory platformStory" aria-labelledby="story-b">
+      <div className="platformStoryTitle">
+        <span>DECISION SYSTEM / LIVE TRACE</span>
+        <h2 id="story-b">Данные становятся управляемым действием.</h2>
+        <p>Пять понятных состояний одного решения — без скрытой автономии.</p>
+      </div>
+      <ol className="platformOrbit">
+        {decisionStory.map((item, index) => (
+          <li
+            key={item.key}
+            className={`orbitStep step${index + 1}`}
+            data-state={item.state}
+          >
+            <span>{item.key}</span>
+            <div>
+              <small>{item.label}</small>
+              <b>{item.value}</b>
+              <em>{item.note}</em>
+            </div>
+            {index < decisionStory.length - 1 && <i aria-hidden="true" />}
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function StudyMobileDirector({ variant }) {
+  const [status, setStatus] = useState("idle");
+  return (
+    <section
+      className="studyMobile"
+      aria-label={`Mobile Director, направление ${variant.toUpperCase()}`}
+    >
+      <div className="mobileDirectorTop">
+        <span>DAILY DIRECTOR · ДЕМО</span>
+        <b>
+          <AlertTriangle /> ДАННЫЕ 87%
+        </b>
+      </div>
+      <div className="mobileDirectorIndex">01 / РЕШЕНИЕ ДНЯ</div>
+      <h1>Проверить расход без подтверждённой выручки.</h1>
+      <p>
+        Две кампании расходуют бюджет. Director предлагает проверку, а не
+        автоматическое отключение.
+      </p>
+      <div className="mobileAmount">
+        <small>НАБЛЮДАЕМЫЙ РАСХОД</small>
+        <strong>18 420,00 ₽</strong>
+        <span>условные демо-данные · не равно потере прибыли</span>
+      </div>
+      <div className="mobileFacts">
+        <div>
+          <CheckCircle2 />
+          <span>
+            <small>ПРОБЛЕМА</small>
+            <b>Подтверждена</b>
+          </span>
+        </div>
+        <div>
+          <CircleDashed />
+          <span>
+            <small>ЭФФЕКТ</small>
+            <b>Не измерен</b>
+          </span>
+        </div>
+      </div>
+      <div className="mobileRecommendation">
+        <small>СЛЕДУЮЩИЙ ШАГ</small>
+        <b>Открыть кампании и проверить поисковые фразы</b>
+        <span>Исполнитель: владелец · без записи в WB</span>
+      </div>
+      <div className="mobileActions">
+        <button
+          type="button"
+          className="studyReject"
+          onClick={() => setStatus("rejected")}
+        >
+          Отклонить
+        </button>
+        <button
+          type="button"
+          className="studyApprove"
+          onClick={() => setStatus("approved")}
+        >
+          Подтвердить <ArrowRight />
+        </button>
+      </div>
+      <div className="mobileControl">
+        <ShieldCheck />
+        <span>
+          <b>Контроль рядом с действием</b>
+          <small>STOP доступен всегда</small>
+        </span>
+        <button type="button">
+          <Pause /> STOP
+        </button>
+      </div>
+      {status !== "idle" && (
+        <div className={`studyReaction ${status}`} role="status">
+          {status === "approved"
+            ? "Демо-задача добавлена в контроль"
+            : "Рекомендация отклонена локально"}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ArtDirection({ variant }) {
+  const isA = variant === "a";
+  return (
+    <main className={`artStudy study${variant.toUpperCase()}`}>
+      <StudyNavigation variant={variant} />
+      <div className="studyDesktop">
+        <section className="studyHero">
+          <div className="studyHeroCopy">
+            <span className="studyKicker">
+              ДЛЯ ДЕЙСТВУЮЩИХ ПРОДАВЦОВ WILDBERRIES
+            </span>
+            <h1>
+              {isA ? (
+                <>
+                  Решения,
+                  <br />
+                  которые выдерживают <em>проверку.</em>
+                </>
+              ) : (
+                <>
+                  Видеть потери.
+                  <br />
+                  Выбирать действие.
+                  <br />
+                  <em>Доводить до результата.</em>
+                </>
+              )}
+            </h1>
+            <p>
+              TROVENDI находит подтверждённые проблемы магазина, показывает
+              доказательства и сохраняет контроль от решения владельца до
+              измерения.
+            </p>
+            <div className="studyHeroActions">
+              <button type="button">
+                Начать с подключения <ArrowRight />
+              </button>
+              <span>
+                <ShieldCheck /> Без действия без подтверждения
+              </span>
+            </div>
+          </div>
+          <aside className="studyDecisionPreview">
+            <div className="studyDecisionHead">
+              <span>TRACE / WB–01 · ДЕМО</span>
+              <b>НУЖНО РЕШЕНИЕ</b>
+            </div>
+            <small>НАБЛЮДАЕМЫЙ РАСХОД</small>
+            <strong>18 420,00 ₽</strong>
+            <p>Две кампании без подтверждённой выручки</p>
+            <dl>
+              <div>
+                <dt>Данные</dt>
+                <dd>87% · неполно</dd>
+              </div>
+              <div>
+                <dt>Действие</dt>
+                <dd>Проверить кампании</dd>
+              </div>
+              <div>
+                <dt>Эффект</dt>
+                <dd>Ещё не измерен</dd>
+              </div>
+            </dl>
+            <button type="button">
+              Открыть доказательства <ArrowRight />
+            </button>
+          </aside>
+        </section>
+        {isA ? <MonumentalGraphic /> : <PlatformGraphic />}
+        <footer className="studyFooter">
+          <span>НАПРАВЛЕНИЕ {variant.toUpperCase()} · ИЗОЛИРОВАННЫЙ ЭТЮД</span>
+          <p>Только синтетические данные · внешние действия не выполняются</p>
+        </footer>
+      </div>
+      <StudyMobileDirector variant={variant} />
+    </main>
+  );
+}
+
 export default function D01DesignReference() {
   const params = useSearchParams();
+  const variant = ["a", "b", "control"].includes(params.get("variant"))
+    ? params.get("variant")
+    : "a";
   const screen = ["home", "connect", "director"].includes(params.get("screen"))
     ? params.get("screen")
     : "home";
   const state = directorStates.some(([key]) => key === params.get("state"))
     ? params.get("state")
     : "complete";
+  if (variant !== "control") return <ArtDirection variant={variant} />;
   return (
     <main className="d01 d01-final has-prototype">
       <Prototype screen={screen} state={state} />

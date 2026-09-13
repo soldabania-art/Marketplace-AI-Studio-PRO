@@ -156,7 +156,7 @@ test("B decision story joins 03 to 04 with an elbow ending at card 04", () => {
   );
   assert.match(
     css,
-    /\.step4 > i\s*\{[\s\S]*?left:\s*-31px[\s\S]*?transform:\s*none/,
+    /\.step4 > i\s*\{[\s\S]*?left:\s*-31px[\s\S]*?width:\s*31px[\s\S]*?transform:\s*none/,
   );
   assert.match(
     css,

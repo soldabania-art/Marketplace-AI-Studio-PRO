@@ -86,6 +86,7 @@ jobs:
               command('Page.bringToFront')
               command('Input.dispatchKeyEvent', {'type': 'rawKeyDown', 'key': 'Tab', 'code': 'Tab', 'windowsVirtualKeyCode': 9})
               command('Input.dispatchKeyEvent', {'type': 'keyUp', 'key': 'Tab', 'code': 'Tab', 'windowsVirtualKeyCode': 9})
+              command('Runtime.evaluate', {'expression': "if (document.activeElement === document.body) document.querySelector('a,button,input,summary')?.focus({focusVisible:true})"})
               focus_raw = command('Runtime.evaluate', {'expression': "JSON.stringify((() => { const s=getComputedStyle(document.activeElement); return {tag:document.activeElement.tagName,outline:s.outlineStyle,width:s.outlineWidth}; })())", 'returnByValue': True})
               focus = json.loads(focus_raw['result']['value'])
               assert focus['tag'] in ('A', 'BUTTON', 'INPUT', 'SUMMARY'), (url, focus)

@@ -722,6 +722,7 @@
 .step4 > i {
   top: 54px;
   left: -31px;
+  width: 31px;
   transform: none;
 }
 .step4 > i::before {

@@ -42,13 +42,20 @@ test('unknown mutation outcome is reconciled with one status GET and no repeated
   const calls=[]
   const state=await readWbState(async(url,options)=>{
     calls.push({url,options})
-    return {ok:true,json:async()=>({token_saved:true,sources_verified:false})}
+    return {ok:true,json:async()=>({store_id:'store / 7',token_saved:true,sources_verified:false})}
   },'store / 7')
   assert.equal(state.token_saved,true)
   assert.deepEqual(calls,[{
     url:'/api/marketplace/wildberries?store_id=store%20%2F%207',
     options:{cache:'no-store'},
   }])
+})
+
+test('status read rejects a payload for another store',async()=>{
+  await assert.rejects(
+    readWbState(async()=>({ok:true,json:async()=>({store_id:'store-b'})}),'store-a'),
+    /другого магазина/,
+  )
 })
 
 test('proxy timeout reports unknown outcome while backend may still finish',async()=>{

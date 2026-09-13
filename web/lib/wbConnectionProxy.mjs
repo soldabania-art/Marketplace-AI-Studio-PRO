@@ -20,6 +20,7 @@ export async function readWbState(fetchImpl,storeId){
   )
   const payload=await response.json()
   if(!response.ok) throw new Error(payload.error||'Не удалось перечитать состояние WB')
+  if(payload.store_id!==storeId)throw new Error('Backend вернул состояние WB другого магазина')
   return payload
 }
 

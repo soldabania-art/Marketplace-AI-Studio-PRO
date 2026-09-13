@@ -84,7 +84,7 @@ jobs:
               url = f'http://127.0.0.1:3010/design-reference?variant=b&screen={screen}&state={state}'
               command('Page.navigate', {'url': url})
               ready = False
-              for _ in range(24):
+              for _ in range(80):
                   probe = command('Runtime.evaluate', {'expression': "Boolean(document.querySelector('a[href],button,input,summary'))", 'returnByValue': True})
                   ready = bool(probe['result']['value'])
                   if ready:

@@ -98,7 +98,7 @@ URL: `/design-reference?variant=b`.
 - Keyboard focus имеет видимую рамку 3 px. При `prefers-reduced-motion: reduce` computed animation — `none / 0s`.
 - Проверена локальная реакция подтверждения на обеих mobile-карточках; внешний запрос не выполняется. Контрольный маршрут открывается отдельно и сохранён.
 - Контраст ключевых пар: A — 4.63–15.98:1; B — 5.28–17.40:1. Малый coral-текст B отделён в более тёмный token `#A92C52`.
-- Browser-артефакты из реально собранного route: `05-direction-a-desktop-1440.webp`, `06-direction-b-desktop-1440.webp`, `07-direction-a-mobile-390.webp`, `08-direction-b-mobile-390.webp`. Контрольные снимки `01`–`04` сохранены без замены.
+- Browser-артефакты из реально собранного route: `05-direction-a-desktop-1440.webp` (1440×1838), `06-direction-b-desktop-1440.webp` (1440×2000), `07-direction-a-mobile-390.webp` (390×947), `08-direction-b-mobile-390.webp` (390×955). Контрольные снимки `01`–`04` сохранены без замены.
 - Preview Vercel создаётся из PR #47. Deployment status и доступ через Vercel protection фиксируются отдельно.
 
 Окончательный выбор делает владелец и главный архитектор. До выбора ни A, ни B не распространяются на остальные экраны.

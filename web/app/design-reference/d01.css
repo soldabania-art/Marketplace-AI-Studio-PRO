@@ -641,6 +641,21 @@
   background: var(--study-ink);
 }
 
+.orbitStep > i::before {
+  position: absolute;
+  top: -21px;
+  left: 50%;
+  min-width: 48px;
+  padding: 2px 4px;
+  transform: translateX(-50%);
+  background: var(--study-panel);
+  color: var(--study-ink);
+  content: attr(data-from) " → " attr(data-to);
+  font: 800 9px monospace;
+  text-align: center;
+  white-space: nowrap;
+}
+
 .orbitStep > i::after {
   position: absolute;
   top: -4px;
@@ -687,10 +702,16 @@
   left: 54%;
   transform: rotate(90deg);
 }
+.step3 > i::before {
+  transform: translateX(-50%) rotate(-90deg);
+}
 .step4 > i {
   top: 54px;
   left: -31px;
   transform: rotate(180deg);
+}
+.step4 > i::before {
+  transform: translateX(-50%) rotate(-180deg);
 }
 
 .studyFooter {
@@ -3798,6 +3819,8 @@
   --platform-warning: #8c5b00;
   --platform-danger: #b52e4c;
   --platform-unknown: #625b70;
+  --platform-body: 15px;
+  --platform-secondary: 12px;
   --study-bg: var(--platform-bg);
   --study-panel: var(--platform-panel);
   --study-ink: var(--platform-ink);
@@ -4297,6 +4320,12 @@
   min-height: calc(100vh - 76px);
   padding: 70px clamp(32px, 6vw, 96px) 110px;
   background: #f3effb;
+  font-size: var(--platform-body);
+}
+
+.platformWorkspaceIntro > span,
+.platformDirectorTop > div > span {
+  font-size: var(--platform-secondary);
 }
 
 .platformWorkspaceIntro {
@@ -4359,14 +4388,14 @@
 
 .platformPanelHead b {
   color: var(--platform-success);
-  font-size: 10px;
+  font-size: var(--platform-secondary);
 }
 
 .platformConnectPanel label {
   display: block;
   margin-top: 22px;
   color: var(--platform-muted);
-  font: 800 9px monospace;
+  font: 800 var(--platform-secondary) monospace;
   letter-spacing: 0.08em;
 }
 
@@ -4378,7 +4407,7 @@
   border: 1px solid #bdb3d5;
   background: #fff;
   color: var(--platform-ink);
-  font: 600 13px Manrope, sans-serif;
+  font: 600 14px Manrope, sans-serif;
 }
 
 .platformSecret {
@@ -4403,7 +4432,7 @@
   top: 27px;
   right: 14px;
   color: var(--platform-success);
-  font: 800 8px monospace;
+  font: 800 var(--platform-secondary) monospace;
 }
 
 .platformConnectPanel > button {
@@ -4418,7 +4447,7 @@
   padding: 12px 14px;
   background: #e7f4ef;
   color: #08694f !important;
-  font-size: 10px !important;
+  font-size: var(--platform-secondary) !important;
   font-weight: 800;
 }
 
@@ -4436,7 +4465,7 @@
 
 .platformCompleteness > div:first-child span {
   color: #b9b0d2;
-  font: 9px monospace;
+  font: var(--platform-secondary) monospace;
   letter-spacing: 0.1em;
 }
 
@@ -4470,7 +4499,7 @@
   align-items: center;
   padding: 12px 0;
   border-bottom: 1px solid rgba(247, 244, 255, 0.14);
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .platformCompleteness li svg {
@@ -4484,12 +4513,12 @@
 
 .platformCompleteness li b {
   color: #b9b0d2;
-  font-size: 9px;
+  font-size: var(--platform-secondary);
 }
 
 .platformCompleteness > p {
   color: #b9b0d2;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.55;
 }
 
@@ -4510,14 +4539,14 @@
   min-height: 56px;
   padding: 0 22px;
   border-bottom: 1px solid var(--platform-line);
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .platformSourceTable > div:first-child {
   min-height: 48px;
   background: #e9e3f5;
   color: var(--platform-muted);
-  font: 800 9px monospace;
+  font: 800 var(--platform-secondary) monospace;
   letter-spacing: 0.08em;
 }
 
@@ -4526,7 +4555,7 @@
   padding: 5px 8px;
   background: #e7f4ef;
   color: var(--platform-success);
-  font-size: 9px;
+  font-size: var(--platform-secondary);
   font-style: normal;
   font-weight: 800;
 }
@@ -4562,7 +4591,7 @@
 .platformDirectorTop p {
   margin: 0;
   color: var(--platform-muted);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .platformStateSwitcher {
@@ -4576,7 +4605,7 @@
   padding: 11px 13px;
   border-left: 1px solid var(--platform-line);
   color: var(--platform-muted);
-  font: 800 9px monospace;
+  font: 800 var(--platform-secondary) monospace;
 }
 
 .platformStateSwitcher a:first-child {
@@ -4612,19 +4641,19 @@
 
 .platformDataBanner small {
   color: var(--platform-success);
-  font: 800 8px monospace;
+  font: 800 var(--platform-secondary) monospace;
   letter-spacing: 0.1em;
 }
 
 .platformDataBanner b {
   margin-top: 4px;
-  font-size: 13px;
+  font-size: var(--platform-body);
 }
 
 .platformDataBanner p {
   margin: 4px 0 0;
   color: #42655a;
-  font-size: 10px;
+  font-size: var(--platform-secondary);
 }
 
 .platformDataBanner[data-tone="warning"] {
@@ -4687,7 +4716,7 @@
 
 .platformFindingHead > span {
   color: var(--platform-coral-text);
-  font: 800 9px monospace;
+  font: 800 var(--platform-secondary) monospace;
   letter-spacing: 0.1em;
 }
 
@@ -4696,32 +4725,56 @@
   gap: 5px;
   align-items: center;
   color: var(--platform-success);
-  font-size: 10px;
+  font-size: var(--platform-secondary);
 }
 
 .platformFindingHead svg {
   width: 15px;
 }
 
-.platformFinding > h2 {
-  max-width: 760px;
-  margin: 22px 0 14px;
-  font-family: Unbounded, Manrope, sans-serif;
-  font-size: clamp(28px, 3vw, 44px);
-  line-height: 1.08;
-  letter-spacing: -0.05em;
-}
-
 .platformFinding > p {
   max-width: 760px;
+  margin: 18px 0 0;
   color: var(--platform-muted);
-  font-size: 13px;
+  font-size: var(--platform-body);
   line-height: 1.6;
+}
+
+.platformObservedAmount {
+  margin-top: 24px;
+  padding: 24px;
+  background: #211849;
+  color: #fff;
+}
+
+.platformObservedAmount small,
+.platformObservedAmount strong,
+.platformObservedAmount span {
+  display: block;
+}
+
+.platformObservedAmount small {
+  color: #bdb2d9;
+  font: 800 var(--platform-secondary) monospace;
+  letter-spacing: 0.08em;
+}
+
+.platformObservedAmount strong {
+  margin: 9px 0 6px;
+  font-family: Unbounded, Manrope, sans-serif;
+  font-size: clamp(27px, 3vw, 38px);
+  letter-spacing: -0.05em;
+  overflow-wrap: anywhere;
+}
+
+.platformObservedAmount span {
+  color: #bdb2d9;
+  font-size: var(--platform-secondary);
 }
 
 .platformMoney {
   display: grid;
-  grid-template-columns: 1.15fr 1fr 0.9fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: 28px;
   border: 1px solid var(--platform-line);
 }
@@ -4732,11 +4785,7 @@
   border-left: 1px solid var(--platform-line);
 }
 
-.platformMoney > div:first-child {
-  border-left: 0;
-  background: #211849;
-  color: #fff;
-}
+.platformMoney > div:first-child { border-left: 0; }
 
 .platformMoney small,
 .platformMoney strong,
@@ -4746,13 +4795,8 @@
 
 .platformMoney small {
   color: var(--platform-muted);
-  font: 800 8px monospace;
+  font: 800 var(--platform-secondary) monospace;
   letter-spacing: 0.08em;
-}
-
-.platformMoney > div:first-child small,
-.platformMoney > div:first-child span {
-  color: #bdb2d9;
 }
 
 .platformMoney strong {
@@ -4765,7 +4809,7 @@
 
 .platformMoney span {
   color: var(--platform-muted);
-  font-size: 9px;
+  font-size: var(--platform-secondary);
 }
 
 .platformEvidence {
@@ -4783,11 +4827,11 @@
 
 .platformEvidence > div span {
   color: var(--platform-coral-text);
-  font: 800 8px monospace;
+  font: 800 var(--platform-secondary) monospace;
 }
 
 .platformEvidence > div b {
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .platformEvidence ol {
@@ -4819,13 +4863,13 @@
 }
 
 .platformEvidence li b {
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .platformEvidence li small {
   margin-top: 4px;
   color: var(--platform-muted);
-  font-size: 9px;
+  font-size: var(--platform-secondary);
 }
 
 .platformNextStep {
@@ -4837,7 +4881,7 @@
 
 .platformNextStep > span {
   color: var(--platform-coral-text);
-  font: 800 8px monospace;
+  font: 800 var(--platform-secondary) monospace;
 }
 
 .platformNextStep h3 {
@@ -4848,11 +4892,12 @@
 .platformNextStep > p {
   margin: 0;
   color: var(--platform-muted);
-  font-size: 10px;
+  font-size: var(--platform-secondary);
 }
 
-.platformNextStep > div {
+.platformActionControls {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 20px;
 }
@@ -4871,6 +4916,16 @@
   color: #fff;
 }
 
+.platformNextStep button.platformStop {
+  margin-left: auto;
+  border-color: var(--platform-danger);
+  color: var(--platform-danger);
+}
+
+.platformNextStep button.platformStop svg {
+  width: 14px;
+}
+
 .platformExecution {
   align-self: start;
   overflow: hidden;
@@ -4878,7 +4933,7 @@
 
 .platformExecution > div {
   display: grid;
-  grid-template-columns: 24px 1fr auto;
+  grid-template-columns: 24px 1fr;
   gap: 10px;
   align-items: center;
   padding: 20px;
@@ -4898,29 +4953,12 @@
 
 .platformExecution small {
   color: #aaa0c8;
-  font: 8px monospace;
+  font: var(--platform-secondary) monospace;
 }
 
 .platformExecution b {
   margin-top: 4px;
-  font-size: 11px;
-}
-
-.platformExecution button {
-  display: inline-flex;
-  gap: 5px;
-  align-items: center;
-  min-height: 34px;
-  padding: 0 9px;
-  border: 1px solid var(--platform-lime);
-  background: transparent;
-  color: var(--platform-lime);
-  font-size: 9px;
-  font-weight: 850;
-}
-
-.platformExecution button svg {
-  width: 12px;
+  font-size: 14px;
 }
 
 .platformExecution dl {
@@ -4934,7 +4972,7 @@
   gap: 10px;
   padding: 13px 0;
   border-bottom: 1px solid var(--platform-line);
-  font-size: 10px;
+  font-size: 13px;
 }
 
 .platformExecution dt {
@@ -4950,7 +4988,7 @@
   margin: 0;
   padding: 4px 20px 22px;
   color: var(--platform-muted);
-  font-size: 9px;
+  font-size: var(--platform-secondary);
   line-height: 1.55;
 }
 
@@ -4973,8 +5011,10 @@
 
 .platformLoading span {
   color: var(--platform-muted);
-  font-size: 11px;
+  font-size: 14px;
 }
+
+.mobileStates { display: none; }
 
 .platformFooter {
   display: flex;
@@ -5192,7 +5232,7 @@
     display: grid;
     grid-template-columns: 1fr;
     grid-template-rows: none;
-    gap: 14px;
+    gap: 34px;
     margin-top: 40px;
   }
   .platformRoute .orbitStep {
@@ -5202,7 +5242,31 @@
     transform: none;
   }
   .platformRoute .orbitStep > i {
-    display: none;
+    position: absolute;
+    right: auto;
+    bottom: -27px;
+    left: 21px;
+    display: block;
+    width: 2px;
+    height: 22px;
+    transform: none;
+    background: var(--platform-ink);
+  }
+  .platformRoute .orbitStep > i::before,
+  .platformRoute .step3 > i::before,
+  .platformRoute .step4 > i::before {
+    top: 5px;
+    left: 17px;
+    min-width: 52px;
+    transform: none;
+    background: var(--platform-panel);
+    text-align: left;
+  }
+  .platformRoute .orbitStep > i::after {
+    top: auto;
+    right: -4px;
+    bottom: 0;
+    transform: rotate(135deg);
   }
   .platformWorkspaceIntro h1 {
     font-size: 38px;
@@ -5242,7 +5306,16 @@
     display: block;
   }
   .platformDirectorTop h1 {
-    font-size: 38px;
+    max-width: 350px;
+    font-size: 29px;
+    line-height: 1.08;
+  }
+  .platformDirectorTop .desktopStates {
+    display: none;
+  }
+  .platformStateSwitcher.mobileStates {
+    display: flex;
+    margin-top: 22px;
   }
   .platformStateSwitcher {
     margin-top: 22px;
@@ -5255,8 +5328,8 @@
   .platformDataBanner {
     padding: 16px;
   }
-  .platformFinding > h2 {
-    font-size: 31px;
+  .platformObservedAmount {
+    padding: 20px 16px;
   }
   .platformMoney {
     grid-template-columns: 1fr;
@@ -5280,14 +5353,17 @@
   .platformNextStep {
     padding: 20px 16px;
   }
-  .platformNextStep > div {
+  .platformActionControls {
     display: grid;
   }
   .platformNextStep button {
     width: 100%;
   }
+  .platformNextStep button.platformStop {
+    margin-left: 0;
+  }
   .platformExecution {
-    order: -1;
+    margin-top: 0;
   }
   .platformFooter {
     display: block;

@@ -1103,7 +1103,14 @@ function PlatformGraphic() {
               <b>{item.value}</b>
               <em>{item.note}</em>
             </div>
-            {index < decisionStory.length - 1 && <i aria-hidden="true" />}
+            {index < decisionStory.length - 1 && (
+              <i
+                className="orbitConnector"
+                data-from={item.key}
+                data-to={decisionStory[index + 1].key}
+                aria-label={`Переход ${item.key} → ${decisionStory[index + 1].key}`}
+              />
+            )}
           </li>
         ))}
       </ol>
@@ -1470,9 +1477,12 @@ function PlatformConnect({ state }) {
   );
 }
 
-function PlatformStateSwitcher({ state }) {
+function PlatformStateSwitcher({ state, className = "" }) {
   return (
-    <nav className="platformStateSwitcher" aria-label="Состояния Director">
+    <nav
+      className={`platformStateSwitcher ${className}`.trim()}
+      aria-label="Состояния Director"
+    >
       {Object.keys(platformStates).map((key) => (
         <Link
           key={key}
@@ -1486,6 +1496,21 @@ function PlatformStateSwitcher({ state }) {
   );
 }
 
+function PlatformDataNotice({ data }) {
+  return (
+    <div className="platformDataBanner" data-tone={data.tone} role="status">
+      {data.tone === "verified" ? <CheckCircle2 /> :
+        data.tone === "error" ? <WifiOff /> :
+        data.tone === "loading" ? <RefreshCw /> : <AlertTriangle />}
+      <div>
+        <small>{data.label}</small>
+        <b>{data.title}</b>
+        <p>{data.note}</p>
+      </div>
+    </div>
+  );
+}
+
 function PlatformDirector({ state }) {
   const [action, setAction] = useState("idle");
   const data = platformStates[state] || platformStates.complete;
@@ -1493,22 +1518,13 @@ function PlatformDirector({ state }) {
     <section className="platformWorkspace platformDirector">
       <div className="platformDirectorTop">
         <div>
-          <span>ШАГ 03 / DAILY DIRECTOR</span>
-          <h1>Решение дня</h1>
+          <span>РЕШЕНИЕ ДНЯ · 01 / DAILY DIRECTOR</span>
+          <h1>Расход без подтверждённой выручки</h1>
           <p>Северный ветер — основной магазин Wildberries</p>
         </div>
-        <PlatformStateSwitcher state={state} />
+        <PlatformStateSwitcher state={state} className="desktopStates" />
       </div>
-      <div className="platformDataBanner" data-tone={data.tone} role="status">
-        {data.tone === "verified" ? <CheckCircle2 /> :
-          data.tone === "error" ? <WifiOff /> :
-          data.tone === "loading" ? <RefreshCw /> : <AlertTriangle />}
-        <div>
-          <small>{data.label}</small>
-          <b>{data.title}</b>
-          <p>{data.note}</p>
-        </div>
-      </div>
+      <PlatformDataNotice data={data} />
       {state === "loading" ? (
         <div className="platformLoading" aria-label="Загрузка решения">
           <i /><i /><i /><span>Проверяем полноту и свежесть источников…</span>
@@ -1520,44 +1536,20 @@ function PlatformDirector({ state }) {
               <span>01 / ПОДТВЕРЖДЁННАЯ ПРОБЛЕМА</span>
               <b><CheckCircle2 /> Факт</b>
             </div>
-            <h2>Расход без подтверждённой выручки.</h2>
             <p>
               Две рекламные кампании расходуют бюджет. Director предлагает
               проверку, а не автоматическое отключение.
             </p>
-            <div className="platformMoney">
-              <div>
-                <small>НАБЛЮДАЕМЫЙ РАСХОД</small>
-                <strong>18 420,00 ₽</strong>
-                <span>условные демо-данные</span>
-              </div>
-              <div>
-                <small>ПРИБЫЛЬ ЗА ПЕРИОД</small>
-                <strong>126 780,00 ₽</strong>
-                <span>рассчитана отдельно</span>
-              </div>
-              <div>
-                <small>ЭФФЕКТ ДЕЙСТВИЯ</small>
-                <strong>Не измерен</strong>
-                <span>не приписан AI</span>
-              </div>
+            <div className="platformObservedAmount">
+              <small>НАБЛЮДАЕМЫЙ РАСХОД</small>
+              <strong>18 420,00 ₽</strong>
+              <span>условные демо-данные · не равно потере прибыли</span>
             </div>
-            <section className="platformEvidence">
-              <div>
-                <span>ДОКАЗАТЕЛЬСТВА / 3</span>
-                <b>Почему показана эта задача</b>
-              </div>
-              <ol>
-                <li><CheckCircle2 /><span><b>Расход зафиксирован</b><small>Источник: реклама WB · 18 420 ₽</small></span></li>
-                <li><CheckCircle2 /><span><b>Выручка не подтверждена</b><small>В доступном окне атрибуции — неизвестно</small></span></li>
-                <li><AlertTriangle /><span><b>Импорт рекламы неполный</b><small>Полнота 87% · вывод ограничен</small></span></li>
-              </ol>
-            </section>
             <div className="platformNextStep">
-              <span>РЕКОМЕНДОВАННОЕ ДЕЙСТВИЕ</span>
+              <span>СЛЕДУЮЩИЙ ШАГ</span>
               <h3>Открыть кампании и проверить поисковые фразы</h3>
-              <p>Исполнитель: владелец · внешняя запись не выполняется</p>
-              <div>
+              <p>Внешняя запись не выполняется</p>
+              <div className="platformActionControls">
                 <button type="button" onClick={() => setAction("rejected")}>
                   Отклонить
                 </button>
@@ -1567,6 +1559,13 @@ function PlatformDirector({ state }) {
                   onClick={() => setAction("approved")}
                 >
                   Подтвердить задачу <ArrowRight />
+                </button>
+                <button
+                  type="button"
+                  className="platformStop"
+                  onClick={() => setAction("stopped")}
+                >
+                  <Pause /> STOP
                 </button>
               </div>
               {action !== "idle" && (
@@ -1579,12 +1578,34 @@ function PlatformDirector({ state }) {
                 </p>
               )}
             </div>
+            <section className="platformEvidence">
+              <div>
+                <span>ДОКАЗАТЕЛЬСТВА / 3</span>
+                <b>Почему показана эта задача</b>
+              </div>
+              <ol>
+                <li><CheckCircle2 /><span><b>Расход зафиксирован</b><small>Источник: реклама WB · 18 420 ₽</small></span></li>
+                <li><CircleDashed /><span><b>Выручка не подтверждена</b><small>В доступном окне атрибуции — неизвестно</small></span></li>
+                <li><AlertTriangle /><span><b>Импорт рекламы неполный</b><small>Полнота 87% · вывод ограничен</small></span></li>
+              </ol>
+            </section>
+            <div className="platformMoney" aria-label="Дополнительные финансовые показатели">
+              <div>
+                <small>ПРИБЫЛЬ ЗА ПЕРИОД</small>
+                <strong>126 780,00 ₽</strong>
+                <span>рассчитана отдельно</span>
+              </div>
+              <div>
+                <small>ЭФФЕКТ ДЕЙСТВИЯ</small>
+                <strong>Не измерен</strong>
+                <span>не приписан AI</span>
+              </div>
+            </div>
           </article>
           <aside className="platformExecution">
             <div>
               <ShieldCheck />
-              <span><small>КОНТРОЛЬ ИСПОЛНЕНИЯ</small><b>STOP доступен</b></span>
-              <button type="button" onClick={() => setAction("stopped")}><Pause /> STOP</button>
+              <span><small>КОНТРОЛЬ ИСПОЛНЕНИЯ</small><b>Подробности задачи</b></span>
             </div>
             <dl>
               <div><dt>Статус</dt><dd>Ожидает владельца</dd></div>
@@ -1599,6 +1620,7 @@ function PlatformDirector({ state }) {
           </aside>
         </div>
       )}
+      <PlatformStateSwitcher state={state} className="mobileStates" />
     </section>
   );
 }

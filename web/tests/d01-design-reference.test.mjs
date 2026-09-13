@@ -10,6 +10,10 @@ const css = fs.readFileSync(
   new URL("../app/design-reference/d01.css", import.meta.url),
   "utf8",
 );
+const cookieConsent = fs.readFileSync(
+  new URL("../app/components/CookieConsent.js", import.meta.url),
+  "utf8",
+);
 
 test("D01 stays an isolated synthetic prototype without backend calls", () => {
   assert.match(component, /демонстрационные данные/);
@@ -111,9 +115,21 @@ test("B mobile Director puts the task and action before execution details", () =
     component.indexOf("function PlatformDirector"),
     component.indexOf("function PlatformPrototype"),
   );
+  const title = director.indexOf("Расход без подтверждённой выручки");
+  const limitation = director.indexOf("PlatformDataNotice");
+  const amount = director.indexOf("platformObservedAmount");
+  const nextStep = director.indexOf("platformNextStep");
+  assert.ok(title < limitation && limitation < amount && amount < nextStep);
   assert.ok(director.indexOf("platformFinding") < director.indexOf("platformExecution"));
   assert.match(director, /platformActionControls[\s\S]*STOP/);
   assert.doesNotMatch(css, /\.platformExecution\s*\{[\s\S]*?order:\s*-1/);
+});
+
+test("cookie choice keeps an explicit essential-only path", () => {
+  assert.match(cookieConsent, /Только обязательные/);
+  assert.match(cookieConsent, /save\(\{analytics:false,marketing:false\}\)/);
+  assert.match(cookieConsent, /localStorage\.setItem\(STORAGE_KEY/);
+  assert.doesNotMatch(cookieConsent, /display:\s*none|remove\(\)/);
 });
 
 test("B work screens use readable body and secondary type tokens", () => {

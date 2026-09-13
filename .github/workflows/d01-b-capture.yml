@@ -44,7 +44,7 @@ jobs:
           done
           chrome_bin=$(command -v google-chrome || command -v chromium || command -v chromium-browser)
           test -n "$chrome_bin"
-          common_flags='--headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --hide-scrollbars --force-device-scale-factor=1'
+          common_flags='--headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --hide-scrollbars --force-device-scale-factor=1 --virtual-time-budget=2500'
           "$chrome_bin" $common_flags --window-size=1440,1050 --screenshot=docs/design/d01/selected-b/09-b-home-desktop-1440.png 'http://127.0.0.1:3010/design-reference?variant=b&screen=home'
           "$chrome_bin" $common_flags --window-size=1280,900 --screenshot=docs/design/d01/selected-b/10-b-connect-laptop-1280.png 'http://127.0.0.1:3010/design-reference?variant=b&screen=connect&state=partial'
           "$chrome_bin" $common_flags --window-size=1440,1050 --screenshot=docs/design/d01/selected-b/11-b-director-desktop-1440.png 'http://127.0.0.1:3010/design-reference?variant=b&screen=director&state=partial'

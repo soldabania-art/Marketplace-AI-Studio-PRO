@@ -1,6 +1,6 @@
 # Передача TROVENDI следующему разработчику
 
-Дата: 12.09.2026. Проверенный `main`: `1c880be00b6bc8117767c3ee4564f986086c3767`.
+Дата: 13.09.2026. Проверенный `main`: `3d5e59a17469bf622f858889adf75e585d3a5253`.
 
 ## Решение и клиентский фокус
 
@@ -21,8 +21,11 @@
 - PR #36/T07 принят после дополнительной проверки полноты на head `e19cf107f902fde2a88aff54c335c63b5deebad8` и слит: merge SHA `700436f7161972ea1b2dcf9ff83fbdeb975ae822`; issue #7 закрыт.
 - T08A/#37 принят на `63c11d1460131514b2d94c3598e9c626727ae5d2` и интегрирован PR #41: `7f43ce131f879c353842890524b9c030374e4010`. PR #40 с документацией также слит.
 - T08B/#38 принят на `b179d4f1fafc32fda14be2aa81e39b60cbe63c1e` и интегрирован PR #43: merge `1c880be00b6bc8117767c3ee4564f986086c3767`. PR #42 с handoff/backlog также слит; issue #38 закрыта.
-- Итоговый [push CI](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/actions/runs/34702338087): exact head `1c880be00b6bc8117767c3ee4564f986086c3767`, frontend/backend/PostgreSQL success; Vercel commit status success.
-- #1–#7 и дочерние #37–#38 закрыты; #8–#22 и #39 открыты. Единственная активная функциональная задача — **T08C/#39**. Regression `a5df2be7f3b42509c71123487b5f608a9a8c87e5`, исправление `80ca828f98d8c431ba14554ebfca946ae7ca8a35`, [PR #45](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/45) оставлен для независимой приёмки.
+- T08C/#39 принят на `9b4946aedfda95ebf103a4a7621d911a03c53c5c` и интегрирован PR #45: merge `3d5e59a17469bf622f858889adf75e585d3a5253`; #39 и эпик #8 закрыты.
+- Итоговый [push CI](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/actions/runs/34704306856): exact head `3d5e59a17469bf622f858889adf75e585d3a5253`, frontend/backend/PostgreSQL success; Vercel commit status success.
+- #1–#8 и дочерние #37–#39 закрыты. D01/#46 принят главным архитектором как отдельный визуальный эталон без изменения backend-контрактов; интеграция и публикация ещё не подтверждены. T09–T22 и #44 остаются в очереди. D02/#48 подготовлен, но реализацию не начинать до закрытия gate D01.
+- D01 продолжается в открытом PR #47. **Направление B и итоговая реализация приняты на head `6cc2a1b10b732255a9c85267c038209da6abd0d2`.** Exact-head [Web Cloud CI #34741397183](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/actions/runs/34741397183) завершён успешно; browser capture [#34741211694](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/actions/runs/34741211694) подтвердил инфографику на 1440/1280/390. Публикация ожидает снятия дневного ограничения Vercel `api-deployments-free-per-day`; повторные deployments, смена тарифа и обход лимита запрещены. До подтверждённого deployment актуального head PR не интегрировать, issue #46 не закрывать.
+- Принятая визуальная система сохраняется без изменений: deep aubergine, coral, signal-mint, lime, X/trace-знак, асимметричная композиция, выразительная типографика и Decision Orbit. A и синяя версия на `7326b9fb759f463515948e548841804dbc23ace1` остаются контрольными.
 
 Зелёные CI и deployment подтверждают только заявленные проверки конкретного SHA. Они не доказывают production readiness, работоспособность реального WB-сценария или готовность платного запуска.
 
@@ -70,12 +73,15 @@ PostgreSQL migrations проверять на отдельной тестово�
 
 Источники: [аудит](ARCHITECTURE_REVIEW_2026-09-12.md), [дерево](PRODUCT_TREE.md), [roadmap](PRODUCT_ROADMAP.md), [backlog](DEVELOPER_BACKLOG.md), [security](SECURITY_MODEL.md).
 
-
 ## Итог интеграции и следующий gate
 
-T02, T04, T05, T06, T07, T08A и T08B приняты и интегрированы последовательно; их совместная работа подтверждена CI итогового `main`. Реальный WB, рекламный бюджет и платный AI в проверках не использовались.
+T02, T04, T05, T06, T07 и весь T08 (A/B/C) приняты и интегрированы последовательно; их совместная работа подтверждена CI итогового `main`. Это не подтверждает production rollout Redis/workers или exactly-once внешнего HTTP. Реальный WB, рекламный бюджет и платный AI в проверках не использовались.
 
-Текущая работа — только T08C: закреплённые PostgreSQL-соединения для session advisory locks и общий fail-closed Redis limiter. PR #45 не сливать до независимой приёмки владельца; T15, notification follow-up [#44](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/44) и дизайн не начинать.
+Текущий gate — [D01/#46](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/46), PR #47. Направление B принято главным архитектором на head `6cc2a1b10b732255a9c85267c038209da6abd0d2`. Финальный capture подтвердил маршрут на 1440, 1280 и 390 px, порядок mobile Director, размеры текста, физический cookie-consent click, все состояния, keyboard focus, reduced motion, отсутствие overflow и runtime errors.
+
+Vercel для принятого head возвращает `build-rate-limit`. До снятия ограничения deployment повторно не запускать, тариф не менять и лимит не обходить. После снятия ограничения проверить deployment актуального head; только при зелёных обязательных проверках интегрировать PR #47, затем проверить Actions и Vercel итогового `main` и закрыть issue #46. Если head PR изменился, прежняя приёмка автоматически не переносится: нужен повторный exact-head контроль изменившейся части.
+
+[D02/#48](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/48) подготовлен как отдельная задача переноса принятого дизайна на публичную главную и выбор возможностей/площадок с сохранением входа и регистрации. Статус D02 — PLANNED; реализацию до подтверждённой интеграции D01 не начинать.
 
 При обновлении workers сначала прекратить захват старой версией и завершить либо остановить старые обработчики; смешивание workers без fencing с новой версией недопустимо. Затем выполнить миграцию, развернуть API/workers и проверить heartbeat/recovery. Неизвестный результат уже отправленного HTTP требует сверки. Подробности — [deployment](backend/DEPLOYMENT.md). Runtime rollout не подтверждён.
 

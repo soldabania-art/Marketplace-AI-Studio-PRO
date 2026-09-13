@@ -1,15 +1,19 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import { Building2, ChevronDown } from 'lucide-react'
 import { getActiveStoreId, setActiveStoreId, STORE_EVENT } from '../../lib/useActiveStore'
 
 export default function GlobalStoreSelector(){
+  const pathname=usePathname()
+  const isDesignReference=pathname?.startsWith('/design-reference')
   const [stores,setStores]=useState([])
   const [activeId,setActiveId]=useState('')
   const [error,setError]=useState('')
 
   useEffect(()=>{
+    if(isDesignReference) return
     let alive=true
     fetch('/api/stores',{cache:'no-store'})
       .then(async response=>{
@@ -25,7 +29,7 @@ export default function GlobalStoreSelector(){
       })
       .catch(e=>alive&&setError(e.message))
     return ()=>{alive=false}
-  },[])
+  },[isDesignReference])
 
   useEffect(()=>{
     function sync(event){
@@ -43,7 +47,7 @@ export default function GlobalStoreSelector(){
     setActiveStoreId(nextId)
   }
 
-  if(!stores.length) return null
+  if(isDesignReference||!stores.length) return null
 
   return <div className="globalStoreSelector" title={error||'Активный магазин для всех рабочих разделов'}>
     <Building2 size={16}/>

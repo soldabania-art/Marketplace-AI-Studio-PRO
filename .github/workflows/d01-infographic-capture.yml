@@ -66,10 +66,11 @@ jobs:
               return command('Runtime.evaluate', {'expression': expression, 'returnByValue': True})['result']['value']
 
           def wait_for(expression, message):
-              for _ in range(100):
+              for _ in range(300):
                   if evaluate(expression): return
                   time.sleep(.1)
-              raise AssertionError(message)
+              debug = evaluate("JSON.stringify({url:location.href,ready:document.readyState,text:document.body?.innerText?.slice(0,500),html:document.documentElement?.outerHTML?.slice(0,500)})")
+              raise AssertionError(f'{message}: {debug}')
 
           def viewport(width, height):
               command('Emulation.setDeviceMetricsOverride', {

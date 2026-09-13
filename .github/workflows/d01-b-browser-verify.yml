@@ -1,4 +1,5 @@
 name: D01 B browser verification
+# Waits for the hydrated interactive route before assertions.
 
 on:
   push:

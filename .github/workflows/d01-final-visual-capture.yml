@@ -111,6 +111,16 @@ jobs:
           def activate(selector, text=None):
               query = json.dumps(selector)
               wanted = json.dumps(text) if text else 'null'
+              found = evaluate(f"""(() => {{
+                const nodes=[...document.querySelectorAll({query})];
+                const wanted={wanted};
+                const node=wanted ? nodes.find(el=>el.textContent.trim().includes(wanted)) : nodes[0];
+                if(!node) return false;
+                node.scrollIntoView({{block:'center',inline:'center'}});
+                return true;
+              }})()""")
+              assert found, f'control not found: {selector} {text}'
+              time.sleep(.15)
               target = evaluate(f"""JSON.stringify((() => {{
                 const nodes=[...document.querySelectorAll({query})];
                 const wanted={wanted};

@@ -1245,7 +1245,7 @@ function PlatformHeader({ screen }) {
           Главная
         </Link>
         <Link
-          href={platformHref("connect")}
+          href={platformHref("connect", "partial")}
           aria-current={screen === "connect" ? "page" : undefined}
         >
           Подключение
@@ -1313,7 +1313,7 @@ function PlatformCapabilities() {
               <em>{status}</em>
             </div>
           ))}
-          <Link href={platformHref("connect")}>
+          <Link href={platformHref("connect", "partial")}>
             Подключить Wildberries <ArrowRight />
           </Link>
         </div>
@@ -1341,7 +1341,7 @@ function PlatformHome() {
             измерения.
           </p>
           <div>
-            <Link className="platformPrimary" href={platformHref("connect")}>
+            <Link className="platformPrimary" href={platformHref("connect", "partial")}>
               Начать с подключения <ArrowRight />
             </Link>
             <a className="platformQuiet" href="#capabilities">
@@ -1429,10 +1429,10 @@ function PlatformConnect({ state }) {
         <aside className="platformCompleteness">
           <div>
             <span>ПОЛНОТА ДАННЫХ</span>
-            <strong>{state === "complete" ? "100" : "87"}%</strong>
+            <strong>87%</strong>
           </div>
           <div className="platformProgress" aria-label="Полнота импорта 87%">
-            <i style={{ width: state === "complete" ? "100%" : "87%" }} />
+            <i style={{ width: "87%" }} />
           </div>
           <ul>
             <li><CheckCircle2 /> Финансы <b>получены</b></li>
@@ -1573,7 +1573,9 @@ function PlatformDirector({ state }) {
                 <p className="platformLocalReaction" role="status">
                   {action === "approved"
                     ? "Демо-задача добавлена в контроль. Записи в WB нет."
-                    : "Рекомендация отклонена локально."}
+                    : action === "stopped"
+                      ? "Демо-STOP включён локально. Внешних действий нет."
+                      : "Рекомендация отклонена локально."}
                 </p>
               )}
             </div>
@@ -1582,7 +1584,7 @@ function PlatformDirector({ state }) {
             <div>
               <ShieldCheck />
               <span><small>КОНТРОЛЬ ИСПОЛНЕНИЯ</small><b>STOP доступен</b></span>
-              <button type="button"><Pause /> STOP</button>
+              <button type="button" onClick={() => setAction("stopped")}><Pause /> STOP</button>
             </div>
             <dl>
               <div><dt>Статус</dt><dd>Ожидает владельца</dd></div>

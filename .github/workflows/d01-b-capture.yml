@@ -27,6 +27,10 @@ jobs:
         run: |
           npm ci
           npm run build
+      - name: Install video encoder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
       - name: Capture real browser artifacts
         working-directory: web
         run: |

@@ -1,0 +1,255 @@
+name: D01 final visual acceptance capture
+
+on:
+  push:
+    branches:
+      - codex/d01-visual-reference
+    paths:
+      - .github/workflows/d01-final-visual-capture.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: d01-final-visual-capture
+  cancel-in-progress: true
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/d01-visual-reference
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build preview
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+      - name: Capture cookie journey and visual evidence
+        working-directory: web
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install websocket-client
+          mkdir -p docs/design/d01/selected-b/final-acceptance
+          HOSTNAME=127.0.0.1 npm run start -- -H 127.0.0.1 -p 3010 > /tmp/d01-next.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl -fsS 'http://127.0.0.1:3010/design-reference?variant=b' >/dev/null; then break; fi
+            sleep 0.25
+          done
+          chrome_bin=$(command -v google-chrome || command -v chromium || command -v chromium-browser)
+          test -n "$chrome_bin"
+          "$chrome_bin" --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage \
+            --hide-scrollbars --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 \
+            --remote-allow-origins='*' --user-data-dir=/tmp/d01-final-browser about:blank \
+            >/tmp/d01-chrome.log 2>&1 &
+          python <<'PY'
+          import base64, json, os, time, urllib.request
+          from websocket import create_connection
+
+          output = 'docs/design/d01/selected-b/final-acceptance'
+          target = None
+          for _ in range(60):
+              try:
+                  targets = json.load(urllib.request.urlopen('http://127.0.0.1:9222/json'))
+                  target = next(item for item in targets if item.get('type') == 'page' and not item.get('url', '').startswith('chrome-extension://'))
+                  break
+              except Exception:
+                  time.sleep(.25)
+          assert target, 'Chrome DevTools page unavailable'
+          ws = create_connection(target['webSocketDebuggerUrl'], timeout=10, origin='http://127.0.0.1:9222')
+          seq = 0
+          page_errors = []
+
+          def command(method, params=None):
+              global seq
+              seq += 1
+              current = seq
+              ws.send(json.dumps({'id': current, 'method': method, 'params': params or {}}))
+              while True:
+                  message = json.loads(ws.recv())
+                  if message.get('method') == 'Runtime.exceptionThrown':
+                      page_errors.append(json.dumps(message.get('params', {})))
+                  if message.get('method') == 'Log.entryAdded':
+                      entry = message.get('params', {}).get('entry', {})
+                      if entry.get('level') == 'error':
+                          page_errors.append(entry.get('text', 'browser log error'))
+                  if message.get('id') == current:
+                      assert 'error' not in message, message
+                      return message.get('result', {})
+
+          def evaluate(expression):
+              result = command('Runtime.evaluate', {'expression': expression, 'returnByValue': True, 'awaitPromise': True})
+              return result['result'].get('value')
+
+          def wait_for(expression, message):
+              for _ in range(100):
+                  if evaluate(expression):
+                      return
+                  time.sleep(.1)
+              raise AssertionError(message)
+
+          def viewport(width, height):
+              command('Emulation.setDeviceMetricsOverride', {
+                  'width': width, 'height': height, 'deviceScaleFactor': 1,
+                  'mobile': width <= 480, 'screenWidth': width, 'screenHeight': height,
+              })
+
+          def navigate(url, ready_selector='.platformRoute'):
+              command('Page.navigate', {'url': url})
+              wait_for(f"document.readyState === 'complete' && Boolean(document.querySelector('{ready_selector}'))", url)
+              time.sleep(.35)
+
+          def press_enter(selector, text=None):
+              query = json.dumps(selector)
+              wanted = json.dumps(text) if text else 'null'
+              found = evaluate(f"""(() => {{
+                const nodes=[...document.querySelectorAll({query})];
+                const wanted={wanted};
+                const node=wanted ? nodes.find(el=>el.textContent.trim().includes(wanted)) : nodes[0];
+                if(!node) return false;
+                node.focus(); return document.activeElement===node;
+              }})()""")
+              assert found, f'control not found: {selector} {text}'
+              command('Input.dispatchKeyEvent', {'type': 'keyDown', 'key': 'Enter', 'code': 'Enter', 'windowsVirtualKeyCode': 13})
+              command('Input.dispatchKeyEvent', {'type': 'keyUp', 'key': 'Enter', 'code': 'Enter', 'windowsVirtualKeyCode': 13})
+              time.sleep(.45)
+
+          def capture_full(name):
+              size = command('Page.getLayoutMetrics')['cssContentSize']
+              shot = command('Page.captureScreenshot', {
+                  'format': 'png', 'fromSurface': True, 'captureBeyondViewport': True,
+                  'clip': {'x': 0, 'y': 0, 'width': size['width'], 'height': size['height'], 'scale': 1},
+              })
+              with open(os.path.join(output, name), 'wb') as handle:
+                  handle.write(base64.b64decode(shot['data']))
+
+          def capture_viewport(name):
+              shot = command('Page.captureScreenshot', {
+                  'format': 'png', 'fromSurface': True, 'captureBeyondViewport': False,
+              })
+              with open(os.path.join(output, name), 'wb') as handle:
+                  handle.write(base64.b64decode(shot['data']))
+
+          def capture_element(name, selector):
+              rect = json.loads(evaluate(f"JSON.stringify((()=>{{const r=document.querySelector({json.dumps(selector)}).getBoundingClientRect();return {{x:r.x,y:r.y+scrollY,width:r.width,height:r.height}}}})())"))
+              shot = command('Page.captureScreenshot', {
+                  'format': 'png', 'fromSurface': True, 'captureBeyondViewport': True,
+                  'clip': {**rect, 'scale': 1},
+              })
+              with open(os.path.join(output, name), 'wb') as handle:
+                  handle.write(base64.b64decode(shot['data']))
+
+          command('Page.enable')
+          command('Runtime.enable')
+          command('Log.enable')
+          command('Network.enable')
+          viewport(1440, 1050)
+          navigate('http://127.0.0.1:3010/design-reference?variant=b&screen=home')
+
+          # First visit is captured with the real consent banner present.
+          wait_for("Boolean(document.querySelector('.cookieBanner'))", 'cookie banner missing on first visit')
+          capture_viewport('13-b-first-visit-cookie-1440.png')
+
+          # Choose essential-only through the actual focusable button and keyboard activation.
+          press_enter('.cookieActions button', 'Только обязательные')
+          wait_for("!document.querySelector('.cookieBanner')", 'cookie banner did not close')
+          consent = json.loads(evaluate("localStorage.getItem('mai_cookie_consent_v1')"))
+          assert consent['analytics'] is False and consent['marketing'] is False, consent
+          resources = json.loads(evaluate("JSON.stringify(performance.getEntriesByType('resource').map(item => item.name))"))
+          assert not any(token in url.lower() for url in resources for token in ('google-analytics', 'googletagmanager', 'metrika')), resources
+          capture_full('14-b-home-full-1440.png')
+
+          # Follow the visible route controls after consent.
+          press_enter('a', 'Выбрать возможности')
+          capture_element('15-b-capabilities-1440.png', '#capabilities')
+          viewport(1280, 900)
+          press_enter('#capabilities a', 'Подключить Wildberries')
+          wait_for("Boolean(document.querySelector('.platformConnect'))", 'connect route missing')
+          press_enter('.platformConnectPanel button', 'Проверить локально')
+          wait_for("document.body.innerText.includes('Демо-проверка завершена локально')", 'local connection response missing')
+          capture_full('16-b-connect-full-1280.png')
+          viewport(1440, 1050)
+          press_enter('.platformCompleteness a', 'Перейти в AI Director')
+          wait_for("Boolean(document.querySelector('.platformDirector'))", 'Director route missing')
+          capture_full('17-b-director-full-1440.png')
+
+          # Every Director state remains reachable without provider calls.
+          expected = {
+              'complete': 'Источники сверены', 'partial': 'Полнота импорта — 87%',
+              'loading': 'Получаем свежие данные', 'error': 'Реклама WB временно недоступна',
+              'unknown': 'Результат действия неизвестен',
+          }
+          for state, label in expected.items():
+              press_enter('.platformStateSwitcher.desktopStates a', state)
+              wait_for(f"document.body.innerText.includes({json.dumps(label)})", f'{state} state missing')
+          press_enter('.platformStateSwitcher.desktopStates a', 'partial')
+          wait_for("document.body.innerText.includes('Полнота импорта — 87%')", 'partial state not restored')
+
+          viewport(390, 844)
+          order = json.loads(evaluate("""JSON.stringify((()=>{
+            const top=s=>Math.round(document.querySelector(s).getBoundingClientRect().top+scrollY);
+            return {title:top('.platformDirectorTop h1'),limit:top('.platformDataBanner'),amount:top('.platformObservedAmount'),next:top('.platformNextStep'),evidence:top('.platformEvidence'),execution:top('.platformExecution'),states:top('.mobileStates')};
+          })())"""))
+          assert order['title'] < order['limit'] < order['amount'] < order['next'] < order['evidence'] < order['execution'] < order['states'], order
+          fonts = json.loads(evaluate("""JSON.stringify(Object.fromEntries(Object.entries({
+            body:'.platformFinding > p', limitation:'.platformDataBanner p', evidence:'.platformEvidence li small',
+            evidenceTitle:'.platformEvidence li b', action:'.platformNextStep h3', execution:'.platformExecution dl'
+          }).map(([key,selector])=>[key,parseFloat(getComputedStyle(document.querySelector(selector)).fontSize)])))"""))
+          assert fonts['body'] >= 14, fonts
+          assert min(fonts['limitation'], fonts['evidence'], fonts['evidenceTitle'], fonts['action'], fonts['execution']) >= 12, fonts
+          overflow = evaluate("Math.max(document.documentElement.scrollWidth,document.body.scrollWidth)-innerWidth")
+          assert overflow <= 0, overflow
+          press_enter('.platformStop', 'STOP')
+          wait_for("document.body.innerText.includes('Демо-STOP включён локально')", 'STOP local response missing')
+          capture_full('18-b-director-mobile-full-390.png')
+
+          # Keyboard focus and reduced motion are verified in the running browser.
+          evaluate("document.activeElement?.blur(); document.body.tabIndex=-1; document.body.focus()")
+          command('Input.dispatchKeyEvent', {'type': 'keyDown', 'key': 'Tab', 'code': 'Tab', 'windowsVirtualKeyCode': 9})
+          command('Input.dispatchKeyEvent', {'type': 'keyUp', 'key': 'Tab', 'code': 'Tab', 'windowsVirtualKeyCode': 9})
+          focus = json.loads(evaluate("JSON.stringify((()=>{const s=getComputedStyle(document.activeElement);return {tag:document.activeElement.tagName,style:s.outlineStyle,width:s.outlineWidth}})())"))
+          assert focus['tag'] in ('A','BUTTON','INPUT','SUMMARY') and focus['style'] != 'none' and focus['width'] != '0px', focus
+          command('Emulation.setEmulatedMedia', {'features': [{'name': 'prefers-reduced-motion', 'value': 'reduce'}]})
+          navigate('http://127.0.0.1:3010/design-reference?variant=b&screen=home')
+          motion = evaluate("getComputedStyle(document.querySelector('.platformHeroDecision')).animationName")
+          assert motion == 'none', motion
+          assert not page_errors, page_errors
+          report = {'consent': consent, 'order': order, 'fonts': fonts, 'overflow': overflow, 'focus': focus, 'reducedMotion': motion, 'pageErrors': page_errors}
+          with open(os.path.join(output, 'browser-report.json'), 'w', encoding='utf-8') as handle:
+              json.dump(report, handle, ensure_ascii=False, indent=2)
+          print(json.dumps(report, ensure_ascii=False, indent=2))
+          ws.close()
+          PY
+          cat > docs/design/d01/selected-b/final-acceptance/route-list.txt <<'LIST'
+          file '14-b-home-full-1440.png'
+          duration 1.5
+          file '15-b-capabilities-1440.png'
+          duration 1.5
+          file '16-b-connect-full-1280.png'
+          duration 1.5
+          file '17-b-director-full-1440.png'
+          duration 1.5
+          file '18-b-director-mobile-full-390.png'
+          duration 1.5
+          file '18-b-director-mobile-full-390.png'
+          LIST
+          ffmpeg -y -f concat -safe 0 -i docs/design/d01/selected-b/final-acceptance/route-list.txt \
+            -vf "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=0x100d29,fps=24,format=yuv420p" \
+            -c:v libvpx-vp9 -b:v 0 -crf 34 docs/design/d01/selected-b/final-acceptance/d01-b-cookie-route.webm
+          rm docs/design/d01/selected-b/final-acceptance/route-list.txt
+      - name: Commit acceptance evidence
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add web/docs/design/d01/selected-b/final-acceptance
+          git commit -m 'docs: add final D01 B acceptance evidence'
+          git push origin HEAD:codex/d01-visual-reference

@@ -82,6 +82,7 @@ test("selected direction B is the default connected route", () => {
   for (const marketplace of ["Ozon", "Яндекс Маркет", "Kaspi", "Uzum"])
     assert.match(component, new RegExp(marketplace));
   assert.match(component, /Будущие площадки показаны честно/);
+  assert.match(component, /platformHref\("connect", "partial"\)/);
 });
 
 test("B Director separates evidence, money, action and execution control", () => {
@@ -92,6 +93,7 @@ test("B Director separates evidence, money, action and execution control", () =>
   assert.match(component, /КОНТРОЛЬ ИСПОЛНЕНИЯ/);
   assert.match(component, /STOP доступен/);
   assert.match(component, /Слепая повторная отправка запрещена/);
+  assert.match(component, /Демо-STOP включён локально/);
 });
 
 test("B route provides all required data states and responsive system rules", () => {

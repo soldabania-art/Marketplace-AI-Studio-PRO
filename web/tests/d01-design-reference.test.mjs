@@ -144,3 +144,22 @@ test("B decision story exposes unambiguous numbered connections", () => {
   assert.match(component, /data-to=\{decisionStory\[index \+ 1\]\.key\}/);
   assert.match(component, /aria-label=\{`Переход \$\{item\.key\} → \$\{decisionStory\[index \+ 1\]\.key\}`\}/);
 });
+
+test("B decision story joins 03 to 04 with an elbow ending at card 04", () => {
+  assert.match(
+    css,
+    /\.step3 > i\s*\{[\s\S]*?width:\s*calc\(54% \+ 23px\)[\s\S]*?height:\s*56px[\s\S]*?border-right:\s*2px solid var\(--study-ink\)[\s\S]*?border-bottom:\s*2px solid var\(--study-ink\)/,
+  );
+  assert.match(
+    css,
+    /\.step3 > i::after\s*\{[\s\S]*?left:\s*-1px[\s\S]*?transform:\s*rotate\(-135deg\)/,
+  );
+  assert.match(
+    css,
+    /\.step4 > i\s*\{[\s\S]*?left:\s*-31px[\s\S]*?transform:\s*none/,
+  );
+  assert.match(
+    css,
+    /\.platformRoute \.orbitStep > i\s*\{[\s\S]*?width:\s*2px[\s\S]*?height:\s*22px[\s\S]*?transform:\s*none/,
+  );
+});

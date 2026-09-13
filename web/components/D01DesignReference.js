@@ -30,6 +30,9 @@ const routeHref = (screen = "home", state = "complete") =>
 
 const studyHref = (variant) => `/design-reference?variant=${variant}`;
 
+const platformHref = (screen = "home", state = "complete") =>
+  `/design-reference?variant=b&screen=${screen}&state=${state}`;
+
 const longProduct =
   "Сумка-шоппер женская повседневная с внутренним карманом и усиленными ручками — коллекция «Северный ветер»";
 
@@ -1190,6 +1193,434 @@ function StudyMobileDirector({ variant }) {
   );
 }
 
+
+const platformStates = {
+  complete: {
+    label: "Данные полные",
+    title: "Источники сверены",
+    note: "Финансы, реклама и себестоимость доступны за выбранный период.",
+    tone: "verified",
+  },
+  partial: {
+    label: "Данные неполные",
+    title: "Полнота импорта — 87%",
+    note: "Часть рекламной статистики ещё загружается. Вывод ограничен доступными фактами.",
+    tone: "warning",
+  },
+  loading: {
+    label: "Обновление",
+    title: "Получаем свежие данные",
+    note: "Решение станет доступно после проверки полноты источников.",
+    tone: "loading",
+  },
+  error: {
+    label: "Ошибка источника",
+    title: "Реклама WB временно недоступна",
+    note: "Сохранённые данные не удалены. Повторное чтение выполняется без внешней записи.",
+    tone: "error",
+  },
+  unknown: {
+    label: "Не подтверждено",
+    title: "Результат действия неизвестен",
+    note: "Сначала требуется сверка состояния. Слепая повторная отправка запрещена.",
+    tone: "unknown",
+  },
+};
+
+function PlatformHeader({ screen }) {
+  return (
+    <header className="platformHeader">
+      <Link className="platformBrand" href={platformHref()}>
+        <StudyMark variant="b" />
+        <span>
+          TROVENDI
+          <small>DECISION PLATFORM · DEMO</small>
+        </span>
+      </Link>
+      <nav aria-label="Основной маршрут демонстрации">
+        <Link
+          href={platformHref("home")}
+          aria-current={screen === "home" ? "page" : undefined}
+        >
+          Главная
+        </Link>
+        <Link
+          href={platformHref("connect")}
+          aria-current={screen === "connect" ? "page" : undefined}
+        >
+          Подключение
+        </Link>
+        <Link
+          href={platformHref("director")}
+          aria-current={screen === "director" ? "page" : undefined}
+        >
+          AI Director
+        </Link>
+      </nav>
+      <details className="platformReferences">
+        <summary>Эталоны</summary>
+        <div>
+          <Link href={studyHref("a")}>A · контроль</Link>
+          <Link href={routeHref("home")}>Синяя версия</Link>
+        </div>
+      </details>
+    </header>
+  );
+}
+
+function PlatformCapabilities() {
+  const marketplaces = [
+    ["Wildberries", "Доступно в демонстрации", "available"],
+    ["Ozon", "Запланировано", "planned"],
+    ["Яндекс Маркет", "Запланировано", "planned"],
+    ["Kaspi", "Запланировано", "planned"],
+    ["Uzum", "Запланировано", "planned"],
+  ];
+  return (
+    <section className="platformCapabilities" id="capabilities">
+      <div className="platformSectionTitle">
+        <span>02 / ВЫБОР КОНТУРА</span>
+        <h2>Соберите рабочее пространство вокруг реальных задач.</h2>
+        <p>
+          На этом этапе работает только демонстрационный маршрут Wildberries.
+          Будущие площадки показаны честно и не выглядят подключёнными.
+        </p>
+      </div>
+      <div className="platformChoiceGrid">
+        <article className="platformModuleCard featured">
+          <small>ОСНОВНОЙ МОДУЛЬ</small>
+          <Gauge />
+          <h3>AI Director</h3>
+          <p>Проблемы, доказательства, решение владельца и контроль результата.</p>
+          <b>Доступно в демонстрации</b>
+        </article>
+        <article className="platformModuleCard">
+          <small>ОПЕРАЦИОННЫЙ КОНТУР</small>
+          <FileCheck2 />
+          <h3>Документы и исполнение</h3>
+          <p>История задач и документов магазина и фулфилмента.</p>
+          <b>Запланировано</b>
+        </article>
+        <div className="platformMarketplaces">
+          <div>
+            <span>ПЛОЩАДКИ</span>
+            <small>Статус подключения</small>
+          </div>
+          {marketplaces.map(([name, status, tone], index) => (
+            <div key={name} data-tone={tone}>
+              <span>{String(index + 1).padStart(2, "0")}</span>
+              <b>{name}</b>
+              <em>{status}</em>
+            </div>
+          ))}
+          <Link href={platformHref("connect")}>
+            Подключить Wildberries <ArrowRight />
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PlatformHome() {
+  return (
+    <>
+      <section className="platformHero">
+        <div className="platformHeroCopy">
+          <span>ДЛЯ ДЕЙСТВУЮЩИХ ПРОДАВЦОВ WILDBERRIES</span>
+          <h1>
+            Видеть потери.
+            <br />
+            Выбирать действие.
+            <br />
+            <em>Доводить до результата.</em>
+          </h1>
+          <p>
+            TROVENDI находит подтверждённые проблемы магазина, показывает
+            доказательства и сохраняет контроль от решения владельца до
+            измерения.
+          </p>
+          <div>
+            <Link className="platformPrimary" href={platformHref("connect")}>
+              Начать с подключения <ArrowRight />
+            </Link>
+            <a className="platformQuiet" href="#capabilities">
+              Выбрать возможности
+            </a>
+            <span>
+              <ShieldCheck /> Без действия без подтверждения
+            </span>
+          </div>
+        </div>
+        <aside className="platformHeroDecision">
+          <div>
+            <span>TRACE / WB–01 · ДЕМО</span>
+            <b>НУЖНО РЕШЕНИЕ</b>
+          </div>
+          <small>НАБЛЮДАЕМЫЙ РАСХОД</small>
+          <strong>18 420,00 ₽</strong>
+          <p>Две кампании без подтверждённой выручки</p>
+          <dl>
+            <div><dt>Данные</dt><dd>87% · неполно</dd></div>
+            <div><dt>Действие</dt><dd>Проверить кампании</dd></div>
+            <div><dt>Эффект</dt><dd>Ещё не измерен</dd></div>
+          </dl>
+          <Link href={platformHref("director", "partial")}>
+            Открыть доказательства <ArrowRight />
+          </Link>
+        </aside>
+      </section>
+      <PlatformCapabilities />
+      <PlatformGraphic />
+    </>
+  );
+}
+
+function PlatformConnect({ state }) {
+  const [connection, setConnection] = useState("idle");
+  return (
+    <section className="platformWorkspace platformConnect">
+      <div className="platformWorkspaceIntro">
+        <span>ШАГ 02 / ПОДКЛЮЧЕНИЕ</span>
+        <h1>Подключите магазин. Сначала — видимость данных.</h1>
+        <p>
+          Ключ хранится на сервере и показан только маской. Демонстрация не
+          отправляет запросы в Wildberries.
+        </p>
+      </div>
+      <div className="platformConnectGrid">
+        <div className="platformConnectPanel">
+          <div className="platformPanelHead">
+            <span><Store /> Wildberries</span>
+            <b>Доступно в демонстрации</b>
+          </div>
+          <label>
+            Название магазина
+            <input
+              defaultValue="Северный ветер — основной магазин Wildberries"
+              aria-label="Название магазина"
+            />
+          </label>
+          <label>
+            API-ключ
+            <div className="platformSecret">
+              <LockKeyhole />
+              <input
+                type="password"
+                defaultValue="trovendi-demonstration-key"
+                aria-label="API-ключ Wildberries"
+              />
+              <span>Хранится на сервере</span>
+            </div>
+          </label>
+          <button
+            type="button"
+            className="platformPrimary"
+            onClick={() => setConnection("checked")}
+          >
+            Проверить локально <RefreshCw />
+          </button>
+          {connection === "checked" && (
+            <p className="platformLocalReaction" role="status">
+              Демо-проверка завершена локально. Запрос к WB не выполнялся.
+            </p>
+          )}
+        </div>
+        <aside className="platformCompleteness">
+          <div>
+            <span>ПОЛНОТА ДАННЫХ</span>
+            <strong>{state === "complete" ? "100" : "87"}%</strong>
+          </div>
+          <div className="platformProgress" aria-label="Полнота импорта 87%">
+            <i style={{ width: state === "complete" ? "100%" : "87%" }} />
+          </div>
+          <ul>
+            <li><CheckCircle2 /> Финансы <b>получены</b></li>
+            <li><CheckCircle2 /> Себестоимость <b>получена</b></li>
+            <li><AlertTriangle /> Реклама <b>частично</b></li>
+            <li><Clock3 /> Отзывы <b>ожидаются</b></li>
+          </ul>
+          <p>
+            Неполный импорт не превращается в полный. Director явно ограничит
+            вывод доступными источниками.
+          </p>
+          <Link className="platformPrimary" href={platformHref("director", "partial")}>
+            Перейти в AI Director <ArrowRight />
+          </Link>
+        </aside>
+      </div>
+      <div className="platformSourceTable" role="table" aria-label="Источники магазина">
+        <div role="row">
+          <span role="columnheader">Источник</span>
+          <span role="columnheader">Последняя сверка</span>
+          <span role="columnheader">Полнота</span>
+          <span role="columnheader">Статус</span>
+        </div>
+        <div role="row">
+          <b role="cell">Финансы WB</b><span role="cell">09:42</span><span role="cell">100%</span><em role="cell">Факт</em>
+        </div>
+        <div role="row">
+          <b role="cell">Реклама</b><span role="cell">09:38</span><span role="cell">87%</span><em role="cell" data-tone="warning">Неполно</em>
+        </div>
+        <div role="row">
+          <b role="cell">Отзывы</b><span role="cell">—</span><span role="cell">—</span><em role="cell" data-tone="unknown">Ожидается</em>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PlatformStateSwitcher({ state }) {
+  return (
+    <nav className="platformStateSwitcher" aria-label="Состояния Director">
+      {Object.keys(platformStates).map((key) => (
+        <Link
+          key={key}
+          href={platformHref("director", key)}
+          aria-current={state === key ? "page" : undefined}
+        >
+          {key}
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
+function PlatformDirector({ state }) {
+  const [action, setAction] = useState("idle");
+  const data = platformStates[state] || platformStates.complete;
+  return (
+    <section className="platformWorkspace platformDirector">
+      <div className="platformDirectorTop">
+        <div>
+          <span>ШАГ 03 / DAILY DIRECTOR</span>
+          <h1>Решение дня</h1>
+          <p>Северный ветер — основной магазин Wildberries</p>
+        </div>
+        <PlatformStateSwitcher state={state} />
+      </div>
+      <div className="platformDataBanner" data-tone={data.tone} role="status">
+        {data.tone === "verified" ? <CheckCircle2 /> :
+          data.tone === "error" ? <WifiOff /> :
+          data.tone === "loading" ? <RefreshCw /> : <AlertTriangle />}
+        <div>
+          <small>{data.label}</small>
+          <b>{data.title}</b>
+          <p>{data.note}</p>
+        </div>
+      </div>
+      {state === "loading" ? (
+        <div className="platformLoading" aria-label="Загрузка решения">
+          <i /><i /><i /><span>Проверяем полноту и свежесть источников…</span>
+        </div>
+      ) : (
+        <div className="platformDirectorGrid">
+          <article className="platformFinding">
+            <div className="platformFindingHead">
+              <span>01 / ПОДТВЕРЖДЁННАЯ ПРОБЛЕМА</span>
+              <b><CheckCircle2 /> Факт</b>
+            </div>
+            <h2>Расход без подтверждённой выручки.</h2>
+            <p>
+              Две рекламные кампании расходуют бюджет. Director предлагает
+              проверку, а не автоматическое отключение.
+            </p>
+            <div className="platformMoney">
+              <div>
+                <small>НАБЛЮДАЕМЫЙ РАСХОД</small>
+                <strong>18 420,00 ₽</strong>
+                <span>условные демо-данные</span>
+              </div>
+              <div>
+                <small>ПРИБЫЛЬ ЗА ПЕРИОД</small>
+                <strong>126 780,00 ₽</strong>
+                <span>рассчитана отдельно</span>
+              </div>
+              <div>
+                <small>ЭФФЕКТ ДЕЙСТВИЯ</small>
+                <strong>Не измерен</strong>
+                <span>не приписан AI</span>
+              </div>
+            </div>
+            <section className="platformEvidence">
+              <div>
+                <span>ДОКАЗАТЕЛЬСТВА / 3</span>
+                <b>Почему показана эта задача</b>
+              </div>
+              <ol>
+                <li><CheckCircle2 /><span><b>Расход зафиксирован</b><small>Источник: реклама WB · 18 420 ₽</small></span></li>
+                <li><CheckCircle2 /><span><b>Выручка не подтверждена</b><small>В доступном окне атрибуции — неизвестно</small></span></li>
+                <li><AlertTriangle /><span><b>Импорт рекламы неполный</b><small>Полнота 87% · вывод ограничен</small></span></li>
+              </ol>
+            </section>
+            <div className="platformNextStep">
+              <span>РЕКОМЕНДОВАННОЕ ДЕЙСТВИЕ</span>
+              <h3>Открыть кампании и проверить поисковые фразы</h3>
+              <p>Исполнитель: владелец · внешняя запись не выполняется</p>
+              <div>
+                <button type="button" onClick={() => setAction("rejected")}>
+                  Отклонить
+                </button>
+                <button
+                  type="button"
+                  className="platformPrimary"
+                  onClick={() => setAction("approved")}
+                >
+                  Подтвердить задачу <ArrowRight />
+                </button>
+              </div>
+              {action !== "idle" && (
+                <p className="platformLocalReaction" role="status">
+                  {action === "approved"
+                    ? "Демо-задача добавлена в контроль. Записи в WB нет."
+                    : "Рекомендация отклонена локально."}
+                </p>
+              )}
+            </div>
+          </article>
+          <aside className="platformExecution">
+            <div>
+              <ShieldCheck />
+              <span><small>КОНТРОЛЬ ИСПОЛНЕНИЯ</small><b>STOP доступен</b></span>
+              <button type="button"><Pause /> STOP</button>
+            </div>
+            <dl>
+              <div><dt>Статус</dt><dd>Ожидает владельца</dd></div>
+              <div><dt>Исполнитель</dt><dd>Владелец магазина</dd></div>
+              <div><dt>Внешняя запись</dt><dd>Не выполнялась</dd></div>
+              <div><dt>Измерение</dt><dd>После свежих данных</dd></div>
+            </dl>
+            <p>
+              Уже начатое внешнее действие нельзя объявлять отменённым. При
+              неизвестном результате сначала выполняется сверка.
+            </p>
+          </aside>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PlatformPrototype({ screen, state }) {
+  return (
+    <main className="platformRoute">
+      <PlatformHeader screen={screen} />
+      {screen === "connect" ? (
+        <PlatformConnect state={state} />
+      ) : screen === "director" ? (
+        <PlatformDirector state={state} />
+      ) : (
+        <PlatformHome />
+      )}
+      <footer className="platformFooter">
+        <span>НАПРАВЛЕНИЕ B · ВЫБРАНО · ОЖИДАЕТ ПРИЁМКИ</span>
+        <p>Только синтетические данные · внешние действия не выполняются</p>
+        <Link href={platformHref()}>В начало маршрута <ArrowRight /></Link>
+      </footer>
+    </main>
+  );
+}
+
 function ArtDirection({ variant }) {
   const isA = variant === "a";
   return (
@@ -1274,14 +1705,15 @@ export default function D01DesignReference() {
   const params = useSearchParams();
   const variant = ["a", "b", "control"].includes(params.get("variant"))
     ? params.get("variant")
-    : "a";
+    : "b";
   const screen = ["home", "connect", "director"].includes(params.get("screen"))
     ? params.get("screen")
     : "home";
   const state = directorStates.some(([key]) => key === params.get("state"))
     ? params.get("state")
     : "complete";
-  if (variant !== "control") return <ArtDirection variant={variant} />;
+  if (variant === "b") return <PlatformPrototype screen={screen} state={state} />;
+  if (variant === "a") return <ArtDirection variant="a" />;
   return (
     <main className="d01 d01-final has-prototype">
       <Prototype screen={screen} state={state} />

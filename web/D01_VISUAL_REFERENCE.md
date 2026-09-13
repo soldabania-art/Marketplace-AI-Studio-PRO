@@ -80,18 +80,18 @@ B не превращён в A. Из A перенесены только при�
 
 ## Контрольные артефакты
 
-Предыдущие изображения A/B и синей версии сохранены для сравнения. Итоговая итерация должна предоставить новые browser-снимки B:
+Предыдущие изображения A/B и синей версии сохранены для сравнения. Новые артефакты выбранного B получены из production build в headless Chrome:
 
-- главная — desktop 1440;
-- подключение — laptop 1280;
-- Director — desktop 1440;
-- Director — mobile 390;
-- короткая запись маршрута и локальных реакций.
+- `selected-b/09-b-home-desktop-1440.png` — главная, 1440 px;
+- `selected-b/10-b-connect-laptop-1280.png` — подключение, 1280 px;
+- `selected-b/11-b-director-desktop-1440.png` — Director, 1440 px;
+- `selected-b/12-b-director-mobile-390.png` — Director, 390 px;
+- `selected-b/d01-b-connected-route.webm` — короткая запись маршрута.
 
-Фактические browser-артефакты и точный head фиксируются в PR #47 после проверки.
+Ширина каждого PNG проверена автоматически по заголовку файла. Capture run #34736402089 собрал Next.js, открыл четыре маршрута в реальном Chrome и сформировал артефакты без реальных API. Вспомогательный workflow после получения файлов удалён из итогового diff.
 
 ## Проверка и границы
 
-Обязательная проверка: frontend contract tests, Next.js production build, backend и PostgreSQL CI точного SHA, Vercel deployment отдельно. Browser-проверка должна подтвердить 1440, 1280 и 390 px, отсутствие переполнения и console errors, keyboard focus, reduced motion, длинное название магазина и локальные реакции.
+Обязательная проверка: frontend contract tests, Next.js production build, backend и PostgreSQL CI точного SHA, Vercel deployment отдельно. Browser capture подтверждает отрисовку маршрута на 1440, 1280 и 390 px и фактические размеры PNG. Contract tests проверяют responsive rules, keyboard focus, reduced motion, длинное название магазина, состояния и локальные реакции. Отсутствие runtime console errors дополнительно проверяется при независимой визуальной приёмке.
 
 Зелёный CI не означает визуальную приёмку, production readiness или подтверждение реального WB-сценария. Окончательную приёмку выбранного B выполняет главный архитектор.

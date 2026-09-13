@@ -567,7 +567,7 @@
   display: grid;
   grid-template-columns: 1fr 1.25fr;
   gap: 40px;
-  align-items: end;
+  align-items: flex-end;
 }
 
 .platformStoryTitle > span {
@@ -1495,7 +1495,7 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 3px;
-  align-items: end;
+  align-items: flex-end;
 }
 .d01-mark i {
   display: block;
@@ -2249,7 +2249,7 @@
   display: grid;
   grid-template-columns: 150px 1fr;
   gap: 30px;
-  align-items: end;
+  align-items: flex-end;
   margin-bottom: 24px;
 }
 .completenessHead > div span {
@@ -2585,7 +2585,7 @@
   grid-template-columns: 1fr auto;
   gap: 24px;
   margin-top: 22px;
-  align-items: end;
+  align-items: flex-end;
 }
 .decisionAction span,
 .decisionAction b,
@@ -4431,7 +4431,7 @@
 .platformCompleteness > div:first-child {
   display: flex;
   justify-content: space-between;
-  align-items: end;
+  align-items: flex-end;
 }
 
 .platformCompleteness > div:first-child span {
@@ -4549,7 +4549,7 @@
   display: flex;
   justify-content: space-between;
   gap: 30px;
-  align-items: end;
+  align-items: flex-end;
 }
 
 .platformDirectorTop h1 {

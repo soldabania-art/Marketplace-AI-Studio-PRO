@@ -44,7 +44,8 @@ jobs:
           target = None
           for _ in range(40):
               try:
-                  target = json.load(urllib.request.urlopen('http://127.0.0.1:9222/json'))[0]
+                  targets = json.load(urllib.request.urlopen('http://127.0.0.1:9222/json'))
+                  target = next(item for item in targets if item.get('type') == 'page' and not item.get('url', '').startswith('chrome-extension://'))
                   break
               except Exception:
                   time.sleep(.25)

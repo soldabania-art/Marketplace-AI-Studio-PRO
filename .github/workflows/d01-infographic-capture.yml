@@ -36,7 +36,7 @@ jobs:
             curl -fsS 'http://127.0.0.1:3010/design-reference?variant=b' >/dev/null && break
             sleep 1
           done
-          google-chrome --headless --no-sandbox --disable-dev-shm-usage \
+          google-chrome --headless --no-sandbox --disable-dev-shm-usage --remote-allow-origins=* \
             --remote-debugging-port=9222 --user-data-dir=/tmp/d01-chrome about:blank >/tmp/d01-chrome.log 2>&1 &
           for attempt in $(seq 1 30); do
             curl -fsS http://127.0.0.1:9222/json/version >/dev/null && break

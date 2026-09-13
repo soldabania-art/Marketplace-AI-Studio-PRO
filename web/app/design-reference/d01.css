@@ -678,6 +678,7 @@
   transform: translateY(38px);
 }
 .step3 {
+  z-index: 2;
   grid-column: 5 / 7;
   grid-row: 1;
   transform: translateY(76px);

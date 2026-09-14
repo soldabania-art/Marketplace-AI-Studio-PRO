@@ -8,11 +8,13 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from .config import get_settings
+from .account_mail import queue_account_email
 from .billing_service import entitlement_snapshot, latest_subscription, public_plans
 from .db import get_db
 from .models import (
     AccountActionToken,
     AccountTokenPurpose,
+    EmailDelivery,
     Membership,
     MembershipRole,
     MarketplaceConnection,
@@ -60,6 +62,7 @@ from .security import (
     step_up_valid_until,
     verify_password,
 )
+from .platform_access import get_effective_platform_role, platform_capabilities
 
 router = APIRouter()
 
@@ -204,33 +207,37 @@ def _create_account_token(db: Session, user: User, purpose: AccountTokenPurpose,
     )
     raw_token = secrets.token_urlsafe(48)
     db.add(AccountActionToken(user_id=user.id, purpose=purpose, token_hash=_token_hash(raw_token), expires_at=now + lifetime))
-    db.commit()
+    db.flush()
     return raw_token
 
 
 def _consume_account_token(db: Session, raw_token: str, purpose: AccountTokenPurpose) -> tuple[AccountActionToken, User]:
-    token = db.scalar(select(AccountActionToken).where(
-        AccountActionToken.token_hash == _token_hash(raw_token),
-        AccountActionToken.purpose == purpose,
-        AccountActionToken.used_at.is_(None),
-    ))
+    now = datetime.now(timezone.utc)
+    token = db.scalar(
+        update(AccountActionToken)
+        .where(
+            AccountActionToken.token_hash == _token_hash(raw_token),
+            AccountActionToken.purpose == purpose,
+            AccountActionToken.used_at.is_(None),
+            AccountActionToken.expires_at > now,
+        )
+        .values(used_at=now)
+        .returning(AccountActionToken)
+    )
     if token is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or already used token")
-    expires_at = token.expires_at if token.expires_at.tzinfo else token.expires_at.replace(tzinfo=timezone.utc)
-    if expires_at <= datetime.now(timezone.utc):
-        token.used_at = datetime.now(timezone.utc)
-        db.commit()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Token has expired")
     user = db.get(User, token.user_id)
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Account is unavailable")
     return token, user
 
 
-def _delivery_response(raw_token: str, purpose: str) -> dict:
+def _delivery_response(raw_token: str | None, purpose: str, *, delivery: str, delivery_id: str | None = None) -> dict:
     settings = get_settings()
-    result = {"ok": True, "message": "If the account exists, instructions will be sent to its email address.", "delivery": "email_provider_not_configured"}
-    if settings.environment.lower() in {"development", "test", "testing"}:
+    result = {"ok": True, "message": "If the account exists, instructions will be sent to its email address.", "delivery": delivery}
+    if delivery_id:
+        result["delivery_id"] = delivery_id
+    if raw_token and settings.environment.lower() in {"development", "test", "testing"}:
         result["development_token"] = raw_token
         result["purpose"] = purpose
     return result
@@ -593,14 +600,39 @@ def request_email_verification(request: Request, current_user: User = Depends(ge
     _record_security_event(db, request, "email_verification_request", True, user=current_user, subject=current_user.email)
     settings = get_settings()
     raw_token = _create_account_token(db, current_user, AccountTokenPurpose.verify_email, timedelta(hours=settings.email_verification_hours))
-    return _delivery_response(raw_token, AccountTokenPurpose.verify_email.value)
+    token = db.scalar(select(AccountActionToken).where(AccountActionToken.token_hash == _token_hash(raw_token)))
+    delivery = queue_account_email(db, user=current_user, token=token, raw_token=raw_token) if settings.email_is_configured else None
+    db.commit()
+    return _delivery_response(
+        raw_token,
+        AccountTokenPurpose.verify_email.value,
+        delivery="queued" if delivery else "email_provider_not_configured",
+        delivery_id=delivery.id if delivery else None,
+    )
+
+
+@router.get("/auth/email-deliveries/{delivery_id}")
+def email_delivery_status(delivery_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    delivery = db.scalar(select(EmailDelivery).where(
+        EmailDelivery.id == delivery_id,
+        EmailDelivery.user_id == current_user.id,
+    ))
+    if delivery is None:
+        raise HTTPException(status_code=404, detail="Email delivery not found")
+    return {
+        "id": delivery.id,
+        "purpose": delivery.purpose.value,
+        "status": delivery.status.value,
+        "attempts": delivery.submit_attempts,
+        "provider_accepted_at": delivery.provider_accepted_at,
+        "failed_at": delivery.failed_at,
+    }
 
 
 @router.post("/auth/email-verification/confirm")
 def confirm_email_verification(payload: TokenActionRequest, db: Session = Depends(get_db)):
-    token, user = _consume_account_token(db, payload.token, AccountTokenPurpose.verify_email)
+    _, user = _consume_account_token(db, payload.token, AccountTokenPurpose.verify_email)
     user.email_verified = True
-    token.used_at = datetime.now(timezone.utc)
     db.commit()
     return {"ok": True, "email_verified": True}
 
@@ -614,18 +646,22 @@ def request_password_reset(payload: EmailRequest, request: Request, db: Session 
     _record_security_event(db, request, "password_reset_request", True, user=user, subject=email)
     if user is None:
         db.commit()
-        return {"ok": True, "message": "If the account exists, instructions will be sent to its email address.", "delivery": "not_disclosed"}
+        return _delivery_response(None, AccountTokenPurpose.reset_password.value, delivery="request_accepted")
     settings = get_settings()
     raw_token = _create_account_token(db, user, AccountTokenPurpose.reset_password, timedelta(minutes=settings.password_reset_minutes))
-    return _delivery_response(raw_token, AccountTokenPurpose.reset_password.value)
+    token = db.scalar(select(AccountActionToken).where(AccountActionToken.token_hash == _token_hash(raw_token)))
+    if settings.email_is_configured:
+        queue_account_email(db, user=user, token=token, raw_token=raw_token)
+    db.commit()
+    # Public reset responses remain identical for known and unknown accounts.
+    return _delivery_response(raw_token, AccountTokenPurpose.reset_password.value, delivery="request_accepted")
 
 
 @router.post("/auth/password-reset/confirm")
 def confirm_password_reset(payload: PasswordResetConfirmRequest, db: Session = Depends(get_db)):
-    token, user = _consume_account_token(db, payload.token, AccountTokenPurpose.reset_password)
+    _, user = _consume_account_token(db, payload.token, AccountTokenPurpose.reset_password)
     now = datetime.now(timezone.utc)
     user.password_hash = hash_password(payload.new_password)
-    token.used_at = now
     db.execute(update(AccountActionToken).where(AccountActionToken.user_id == user.id, AccountActionToken.used_at.is_(None)).values(used_at=now))
     db.execute(update(UserSession).where(UserSession.user_id == user.id, UserSession.revoked_at.is_(None)).values(revoked_at=now))
     db.commit()
@@ -639,6 +675,7 @@ def me(current_user: User = Depends(get_current_user), db: Session = Depends(get
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Workspace membership is missing")
     workspace = db.get(Workspace, membership.workspace_id)
     subscription = db.scalar(select(Subscription).where(Subscription.workspace_id == membership.workspace_id).order_by(Subscription.created_at.desc()))
+    platform_role = get_effective_platform_role(db, current_user.id)
     return AccountResponse(
         id=current_user.id,
         email=current_user.email,
@@ -649,5 +686,7 @@ def me(current_user: User = Depends(get_current_user), db: Session = Depends(get
         role=membership.role.value,
         plan_code=subscription.plan_code if subscription else "none",
         subscription_status=subscription.status.value if subscription else "none",
-        is_platform_admin=is_platform_admin(current_user),
+        is_platform_admin=is_platform_admin(db, current_user),
+        platform_role=platform_role.value if platform_role else None,
+        platform_capabilities=platform_capabilities(platform_role),
     )

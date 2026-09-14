@@ -133,14 +133,18 @@ jobs:
         run: |
           alembic upgrade head
           alembic current
+          python -m app.verify_ctrl01_migration
       - name: Reset ephemeral migration schema
         run: |
           psql -h localhost -U postgres -d trovendi_ci -v ON_ERROR_STOP=1 -c 'DROP SCHEMA public CASCADE'
           psql -h localhost -U postgres -d trovendi_ci -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA public'
-      - name: Upgrade PostgreSQL from previous revision to head
+      - name: Upgrade PostgreSQL from CTRL01 predecessor to combined head
         run: |
-          alembic upgrade head-1
+          alembic upgrade 20260912_0028
+          python -m app.verify_ctrl01_previous_upgrade seed
           alembic upgrade head
           alembic current
+          python -m app.verify_ctrl01_migration
+          python -m app.verify_ctrl01_previous_upgrade verify
       - name: Run integration tests on PostgreSQL
         run: python -m pytest -q

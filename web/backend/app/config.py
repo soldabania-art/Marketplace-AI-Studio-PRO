@@ -3,6 +3,7 @@ import secrets
 from cryptography.fernet import Fernet
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from urllib.parse import urlsplit
 
 class Settings(BaseSettings):
     app_name: str = "TROVENDI API"
@@ -31,6 +32,13 @@ class Settings(BaseSettings):
     mfa_setup_minutes: int = 10
     step_up_minutes: int = 10
     frontend_url: str = "http://localhost:3000"
+    email_provider: str = "not_configured"
+    email_from: str = ""
+    email_secret_key: str = ""
+    resend_api_key: str = ""
+    email_provider_timeout_seconds: float = 10.0
+    email_max_attempts: int = 4
+    email_unknown_retry_limit: int = 2
     admin_emails: str = ""
     billing_provider: str = "not_configured"
     vapid_public_key: str = ""
@@ -116,6 +124,31 @@ class Settings(BaseSettings):
                 raise ValueError("MARKETPLACE_JWT_ALGORITHM must be HS256 in production")
             if not self.frontend_url.lower().startswith("https://"):
                 raise ValueError("MARKETPLACE_FRONTEND_URL must use HTTPS in production")
+        provider = self.email_provider.strip().lower()
+        if provider not in {"", "none", "not_configured", "resend"}:
+            raise ValueError("Unsupported email provider")
+        origin = urlsplit(self.frontend_url.strip())
+        if (
+            origin.scheme not in ({"https"} if self.is_production else {"http", "https"})
+            or not origin.netloc
+            or origin.username is not None
+            or origin.password is not None
+            or origin.path not in {"", "/"}
+            or origin.query
+            or origin.fragment
+        ):
+            raise ValueError("MARKETPLACE_FRONTEND_URL must be a trusted origin without credentials, path, query, or fragment")
+        if provider == "resend":
+            if not self.resend_api_key.strip():
+                raise ValueError("MARKETPLACE_RESEND_API_KEY is required when Resend email is enabled")
+            if not self.email_from.strip() or any(char in self.email_from for char in "\r\n"):
+                raise ValueError("MARKETPLACE_EMAIL_FROM is required and must be a single header value")
+            if not self.email_secret_key:
+                raise ValueError("MARKETPLACE_EMAIL_SECRET_KEY is required when email is enabled")
+            try:
+                Fernet(self.email_secret_key.encode())
+            except Exception as exc:
+                raise ValueError("MARKETPLACE_EMAIL_SECRET_KEY must be a valid Fernet key") from exc
         return self
 
     @property
@@ -137,6 +170,14 @@ class Settings(BaseSettings):
     @property
     def billing_is_configured(self) -> bool:
         return self.billing_provider.strip().lower() not in {"", "none", "not_configured"}
+
+    @property
+    def email_is_configured(self) -> bool:
+        return self.email_provider.strip().lower() == "resend"
+
+    @property
+    def frontend_origin(self) -> str:
+        return self.frontend_url.strip().rstrip("/")
 
 @lru_cache
 def get_settings() -> Settings:

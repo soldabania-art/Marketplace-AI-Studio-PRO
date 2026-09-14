@@ -4,7 +4,8 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from .models import BillingEvent, PurchaseIntent, Subscription, SubscriptionStatus
@@ -78,6 +79,13 @@ READ_ONLY_ENTITLEMENTS = {
     "review_ai": False,
     "autopilot_level": "disabled",
 }
+
+
+BILLING_EVENT_SNAPSHOT_SCHEMA = "trovendi.billing-event.v1"
+
+
+class BillingEventReplayConflict(ValueError):
+    """A provider event id was reused without the same immutable identity."""
 
 
 def utc(value):
@@ -164,6 +172,90 @@ def public_plans() -> list[dict]:
     return [PLAN_CATALOG[code] for code in ("trial", "pro", "business")]
 
 
+def _canonical_json(value: dict) -> bytes:
+    return json.dumps(
+        value,
+        allow_nan=False,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def _canonical_hash(value: dict) -> str:
+    return hashlib.sha256(_canonical_json(value)).hexdigest()
+
+
+def _canonical_datetime(value: datetime | None) -> str | None:
+    normalized = utc(value)
+    if normalized is None:
+        return None
+    return normalized.astimezone(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+
+def _event_identity(
+    *,
+    provider: str,
+    external_event_id: str,
+    event_type: str,
+    workspace_id: str,
+    subscription_id: str,
+    plan_code: str,
+    subscription_status: SubscriptionStatus,
+    provider_customer_id: str,
+    provider_subscription_id: str,
+    period_started_at: datetime | None,
+    period_expires_at: datetime | None,
+    cancel_at_period_end: bool,
+    provider_payload: dict,
+) -> dict:
+    return {
+        "provider": provider,
+        "external_event_id": external_event_id,
+        "event_type": event_type,
+        "workspace_id": workspace_id,
+        "subscription_id": subscription_id,
+        "plan_code": plan_code,
+        "subscription_status": subscription_status.value,
+        "provider_customer_id": provider_customer_id,
+        "provider_subscription_id": provider_subscription_id,
+        "period_started_at": _canonical_datetime(period_started_at),
+        "period_expires_at": _canonical_datetime(period_expires_at),
+        "cancel_at_period_end": bool(cancel_at_period_end),
+        "provider_payload_sha256": _canonical_hash(provider_payload),
+    }
+
+
+def _verified_replay_subscription(
+    db: Session,
+    event: BillingEvent,
+    *,
+    identity: dict,
+) -> Subscription:
+    stored = event.payload
+    if not isinstance(stored, dict) or stored.get("schema") != BILLING_EVENT_SNAPSHOT_SCHEMA:
+        raise BillingEventReplayConflict("Billing event replay identity is unavailable for a legacy event")
+    stored_identity = stored.get("identity")
+    provider_payload = stored.get("provider_payload")
+    if (
+        not isinstance(stored_identity, dict)
+        or not isinstance(provider_payload, dict)
+        or stored_identity != identity
+        or event.payload_sha256 != _canonical_hash(identity)
+        or stored_identity.get("provider_payload_sha256") != _canonical_hash(provider_payload)
+        or event.workspace_id != identity["workspace_id"]
+        or event.subscription_id != identity["subscription_id"]
+        or event.provider != identity["provider"]
+        or event.external_event_id != identity["external_event_id"]
+        or event.event_type != identity["event_type"]
+    ):
+        raise BillingEventReplayConflict("Billing event replay identity conflicts with the stored event")
+    subscription = db.get(Subscription, event.subscription_id)
+    if subscription is None or subscription.workspace_id != event.workspace_id:
+        raise BillingEventReplayConflict("Billing event replay identity has no matching subscription")
+    return subscription
+
+
 def apply_subscription_event(
     db: Session,
     *,
@@ -180,43 +272,114 @@ def apply_subscription_event(
     cancel_at_period_end: bool = False,
     payload: dict | None = None,
 ) -> tuple[Subscription, bool]:
-    """Apply one already verified provider event exactly once.
+    """Stage a verified provider event idempotently in the caller-owned transaction.
 
     Provider adapters must verify their native webhook signature before calling
     this function. No browser redirect or checkout query can activate access.
     """
     provider = provider.strip().lower()
     external_event_id = external_event_id.strip()
+    event_type = event_type.strip()
     if not provider or provider == "not_configured" or not external_event_id:
         raise ValueError("Verified billing provider and event id are required")
+    if len(provider) > 40 or len(external_event_id) > 200:
+        raise ValueError("Billing provider or event id is too long")
+    if not event_type or len(event_type) > 80:
+        raise ValueError("Billing event type is required and must fit the event record")
     if plan_code not in {"pro", "business"}:
         raise ValueError("Only paid plans can be activated by a provider event")
     if subscription_status == SubscriptionStatus.active and period_expires_at is None:
         raise ValueError("Active paid access requires a verified billing period end")
+    if len(provider_customer_id) > 160 or len(provider_subscription_id) > 160:
+        raise ValueError("Billing provider customer or subscription id is too long")
+    period_started_at = utc(period_started_at)
+    period_expires_at = utc(period_expires_at)
+    source_payload = {} if payload is None else payload
+    if not isinstance(source_payload, dict):
+        raise ValueError("Billing provider payload must be an object")
+    # Validate and freeze a normalized copy before any database mutation. The
+    # caller may retain and mutate its original object after this function.
+    source_payload = json.loads(_canonical_json(source_payload).decode("utf-8"))
+
     existing = db.scalar(select(BillingEvent).where(BillingEvent.provider == provider, BillingEvent.external_event_id == external_event_id))
     if existing:
-        return latest_subscription(db, existing.workspace_id), False
-    source_payload = payload or {}
-    encoded = json.dumps(source_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    event = BillingEvent(
-        workspace_id=workspace_id,
-        subscription_id=latest_subscription(db, workspace_id).id,
+        identity = _event_identity(
+            provider=provider,
+            external_event_id=external_event_id,
+            event_type=event_type,
+            workspace_id=workspace_id,
+            subscription_id=existing.subscription_id,
+            plan_code=plan_code,
+            subscription_status=subscription_status,
+            provider_customer_id=provider_customer_id,
+            provider_subscription_id=provider_subscription_id,
+            period_started_at=period_started_at,
+            period_expires_at=period_expires_at,
+            cancel_at_period_end=cancel_at_period_end,
+            provider_payload=source_payload,
+        )
+        return _verified_replay_subscription(db, existing, identity=identity), False
+
+    # Pending caller writes and the event share one outer transaction. Lock one
+    # subscription and use that same row for both the immutable target and update.
+    db.flush()
+    subscription = latest_subscription(db, workspace_id, lock=True)
+    identity = _event_identity(
         provider=provider,
         external_event_id=external_event_id,
-        event_type=event_type[:80],
-        payload_sha256=hashlib.sha256(encoded).hexdigest(),
-        payload=source_payload,
+        event_type=event_type,
+        workspace_id=workspace_id,
+        subscription_id=subscription.id,
+        plan_code=plan_code,
+        subscription_status=subscription_status,
+        provider_customer_id=provider_customer_id,
+        provider_subscription_id=provider_subscription_id,
+        period_started_at=period_started_at,
+        period_expires_at=period_expires_at,
+        cancel_at_period_end=cancel_at_period_end,
+        provider_payload=source_payload,
     )
-    db.add(event)
-    try:
-        db.flush()
-    except IntegrityError:
-        db.rollback()
+    stored_payload = {
+        "schema": BILLING_EVENT_SNAPSHOT_SCHEMA,
+        "identity": identity,
+        "provider_payload": source_payload,
+    }
+    dialect = db.get_bind().dialect.name
+    insert = {"postgresql": pg_insert, "sqlite": sqlite_insert}.get(dialect)
+    if insert is None:
+        raise RuntimeError(f"Transactional billing events are unsupported on {dialect}")
+    inserted_id = db.scalar(
+        insert(BillingEvent).values(
+            workspace_id=workspace_id,
+            subscription_id=subscription.id,
+            provider=provider,
+            external_event_id=external_event_id,
+            event_type=event_type,
+            payload_sha256=_canonical_hash(identity),
+            payload=stored_payload,
+        ).on_conflict_do_nothing(index_elements=["provider", "external_event_id"]).returning(BillingEvent.id)
+    )
+    if inserted_id is None:
         existing = db.scalar(select(BillingEvent).where(BillingEvent.provider == provider, BillingEvent.external_event_id == external_event_id))
         if existing is None:
-            raise
-        return latest_subscription(db, existing.workspace_id), False
-    subscription = latest_subscription(db, workspace_id, lock=True)
+            raise RuntimeError("Billing event conflict could not be resolved")
+        replay_identity = _event_identity(
+            provider=provider,
+            external_event_id=external_event_id,
+            event_type=event_type,
+            workspace_id=workspace_id,
+            subscription_id=existing.subscription_id,
+            plan_code=plan_code,
+            subscription_status=subscription_status,
+            provider_customer_id=provider_customer_id,
+            provider_subscription_id=provider_subscription_id,
+            period_started_at=period_started_at,
+            period_expires_at=period_expires_at,
+            cancel_at_period_end=cancel_at_period_end,
+            provider_payload=source_payload,
+        )
+        return _verified_replay_subscription(db, existing, identity=replay_identity), False
+
     subscription.plan_code = plan_code
     subscription.status = subscription_status
     subscription.provider = provider
@@ -231,6 +394,5 @@ def apply_subscription_event(
         if intent is not None and intent.requested_plan == plan_code:
             intent.status = "fulfilled"
             intent.fulfilled_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(subscription)
+    db.flush()
     return subscription, True

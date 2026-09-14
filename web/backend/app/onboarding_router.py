@@ -1,3 +1,4 @@
+import hashlib
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -94,6 +95,26 @@ def _latest_job(db: Session, store_id: str, job_type: str) -> BackgroundJob | No
         BackgroundJob.store_id == store_id,
         BackgroundJob.job_type == job_type,
     ).order_by(BackgroundJob.created_at.desc()).first()
+
+
+def _manual_group_generation(db: Session, store_id: str, job_type: str, namespace: str) -> str:
+    """Return a stable fresh namespace only when this onboarding group is dead."""
+    root_key_prefix = f'wb-sync:{job_type.removeprefix("marketplace.wb.").removesuffix(".sync")}:{store_id}:{namespace}'
+    dead_jobs = db.query(BackgroundJob).filter(
+        BackgroundJob.store_id == store_id,
+        BackgroundJob.job_type == job_type,
+        BackgroundJob.status == JobStatus.dead,
+        (
+            (BackgroundJob.idempotency_key == root_key_prefix)
+            | BackgroundJob.idempotency_key.like(f'{root_key_prefix}:recovery:%')
+            | (BackgroundJob.payload['run_id'].as_string() == namespace)
+            | BackgroundJob.payload['run_id'].as_string().like(f'{namespace}:recovery:%')
+        ),
+    ).all()
+    if not dead_jobs:
+        return namespace
+    fingerprint = hashlib.sha256(':'.join(sorted(job.id for job in dead_jobs)).encode()).hexdigest()[:16]
+    return f'{namespace}:recovery:{fingerprint}'
 
 
 def _import_progress(db: Session, store_id: str, health: dict) -> dict:
@@ -221,17 +242,27 @@ def start_import(store_id: str, user: User = Depends(get_current_user), db: Sess
     now = datetime.now(timezone.utc)
     coverage = expected_coverage('finance', now=now, period_days=30)
     begin, today = coverage['date_from'], coverage['date_to']
-    run_id = f'onboarding:{begin}:{today}:{int(now.timestamp() // 3600)}'
     recovery_slot = int(now.timestamp() // 3600)
-    common = {'store_id': store.id, 'date_from': begin, 'date_to': today, 'run_id': run_id, 'origin': 'onboarding'}
+    base_run_id = f'onboarding:{begin}:{today}:{recovery_slot}'
+    core_generation = _manual_group_generation(
+        db, store.id, 'marketplace.wb.analytics.sync', f'onboarding:{recovery_slot}',
+    )
+    finance_run_id = _manual_group_generation(
+        db, store.id, 'marketplace.wb.finance.sync', base_run_id,
+    )
+    advertising_run_id = _manual_group_generation(
+        db, store.id, 'marketplace.wb.advertising.sync', base_run_id,
+    )
+    common = {'store_id': store.id, 'date_from': begin, 'date_to': today, 'origin': 'onboarding'}
     jobs = {
-        'core': enqueue_sync_job(db, store=store, group='analytics', now=now, suffix=f'onboarding:{recovery_slot}', payload={'store_id': store.id, 'origin': 'onboarding'}, priority=50)[0],
-        'finance': enqueue_sync_job(db, store=store, group='finance', now=now, suffix=f'{run_id}:start', payload=common | {'rrd_id': 0, 'page_number': 1}, priority=51)[0],
-        'advertising': enqueue_sync_job(db, store=store, group='advertising', now=now, suffix=f'{run_id}:start', payload=common | {'campaign_ids': [], 'date_index': 0, 'batch_index': 0}, priority=52)[0],
+        'core': enqueue_sync_job(db, store=store, group='analytics', now=now, suffix=core_generation, payload={'store_id': store.id, 'origin': 'onboarding'}, priority=50)[0],
+        'finance': enqueue_sync_job(db, store=store, group='finance', now=now, suffix=f'{finance_run_id}:start', payload=common | {'run_id': finance_run_id, 'rrd_id': 0, 'page_number': 1}, priority=51)[0],
+        'advertising': enqueue_sync_job(db, store=store, group='advertising', now=now, suffix=f'{advertising_run_id}:start', payload=common | {'run_id': advertising_run_id, 'campaign_ids': [], 'date_index': 0, 'batch_index': 0}, priority=52)[0],
     }
     db.add(OperationalAuditEvent(workspace_id=store.workspace_id, store_id=store.id, user_id=user.id,
         event_type='onboarding.import.requested', entity_type='store', entity_id=store.id,
-        payload={'read_only': True, 'jobs': {key: job.id for key, job in jobs.items()}}))
+        payload={'read_only': True, 'recovery': any(':recovery:' in value for value in (core_generation, finance_run_id, advertising_run_id)),
+                 'jobs': {key: job.id for key, job in jobs.items()}}))
     db.commit()
     return {'store_id': store.id, 'read_only': True,
         'jobs': {key: {'id': job.id, 'status': job.status.value} for key, job in jobs.items()},

@@ -91,3 +91,5 @@ class AccountResponse(BaseModel):
     plan_code: str
     subscription_status: str
     is_platform_admin: bool = False
+    platform_role: str | None = None
+    platform_capabilities: list[str] = Field(default_factory=list)

@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .db import get_db
-from .models import User, UserMfa, UserSession
+from .models import PlatformStaffRoleName, User, UserMfa, UserSession
+from .platform_access import get_effective_platform_role
 
 password_hash = PasswordHash.recommended()
 bearer = HTTPBearer(auto_error=False)
@@ -37,8 +38,8 @@ def create_access_token(user_id: str, session_id: str) -> str:
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def is_platform_admin(user: User) -> bool:
-    return user.email.lower().strip() in get_settings().admin_email_set
+def is_platform_admin(db: Session, user: User) -> bool:
+    return get_effective_platform_role(db, user.id) == PlatformStaffRoleName.owner
 
 
 def step_up_valid_until(session: UserSession) -> datetime | None:
@@ -131,16 +132,34 @@ def get_current_user(
     return user
 
 
-def require_platform_admin(current_session: UserSession = Depends(get_current_session), db: Session = Depends(get_db)) -> User:
-    current_user = db.scalar(select(User).where(User.id == current_session.user_id, User.is_active.is_(True)))
+def _require_platform_roles(
+    current_session: UserSession,
+    db: Session,
+    allowed: set[PlatformStaffRoleName],
+) -> User:
+    current_user = db.scalar(select(User).where(
+        User.id == current_session.user_id, User.is_active.is_(True)
+    ).execution_options(populate_existing=True))
     if current_user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-    if not is_platform_admin(current_user):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform administrator access required")
+    if get_effective_platform_role(db, current_user.id) not in allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform staff access required")
     mfa = db.get(UserMfa, current_user.id)
     if mfa is None or not mfa.enabled or current_session.mfa_verified_at is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform administrator MFA is required")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform staff MFA is required")
     return current_user
+
+
+def require_platform_admin(current_session: UserSession = Depends(get_current_session), db: Session = Depends(get_db)) -> User:
+    return _require_platform_roles(current_session, db, {PlatformStaffRoleName.owner})
+
+
+def require_platform_summary(current_session: UserSession = Depends(get_current_session), db: Session = Depends(get_db)) -> User:
+    return _require_platform_roles(
+        current_session,
+        db,
+        {PlatformStaffRoleName.owner, PlatformStaffRoleName.project_manager},
+    )
 
 
 def require_platform_admin_step_up(

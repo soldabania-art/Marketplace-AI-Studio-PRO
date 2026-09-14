@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import math
 import random
 import re
 import socket
@@ -45,6 +46,28 @@ def current_job_attempt() -> JobAttempt:
     attempt = _CURRENT_ATTEMPT.get()
     if attempt is None:
         raise RuntimeError("No background job attempt is active")
+    return attempt
+
+
+def assert_current_job_attempt_owned(db: Session) -> JobAttempt:
+    """Fence an external call against a stale queue attempt.
+
+    Callers persist their submitting marker first, then use this immediately
+    before the provider call. Provider idempotency remains the final protection
+    for the unavoidable instant between this check and the network request.
+    """
+    attempt = current_job_attempt()
+    if attempt.ownership_lost.is_set():
+        raise JobOwnershipLost(f"Job attempt {attempt.attempt_id} lost ownership")
+    owned = db.scalar(select(BackgroundJob.id).where(
+        BackgroundJob.id == attempt.job_id,
+        BackgroundJob.status == JobStatus.running,
+        BackgroundJob.locked_by == attempt.worker_id,
+        BackgroundJob.attempt_id == attempt.attempt_id,
+    ).with_for_update())
+    if owned is None:
+        attempt.ownership_lost.set()
+        raise JobOwnershipLost(f"Job attempt {attempt.attempt_id} is stale")
     return attempt
 
 
@@ -257,11 +280,16 @@ def _fail(
         base = max(1, settings.job_retry_base_seconds)
         cap = max(base, settings.job_retry_max_seconds)
         delay = min(cap, base * (2 ** max(0, job.attempts - 1))) + random.uniform(0, min(base, 10))
-        if isinstance(error, MarketplaceQuotaExceeded):
+        retry_after_seconds = getattr(error, "retry_after_seconds", None)
+        try:
+            retry_after_value = float(retry_after_seconds)
+        except (TypeError, ValueError, OverflowError):
+            retry_after_value = 0.0
+        if math.isfinite(retry_after_value) and 0 < retry_after_value <= 86400:
             # A definite provider 429 is safe to retry, but never before the
             # shared Redis cooldown. This avoids burning attempts in a loop
             # that cannot reach the provider.
-            delay = max(delay, error.retry_after_seconds + 1)
+            delay = max(delay, retry_after_value + 1)
         job.status = JobStatus.retry
         job.available_at = utcnow() + timedelta(seconds=delay)
     db.commit()

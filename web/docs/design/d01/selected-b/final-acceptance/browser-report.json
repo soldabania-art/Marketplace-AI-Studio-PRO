@@ -1,0 +1,33 @@
+{
+  "consent": {
+    "version": 1,
+    "at": "2026-09-13T05:12:59.104Z",
+    "analytics": false,
+    "marketing": false
+  },
+  "order": {
+    "title": 147,
+    "limit": 256,
+    "amount": 550,
+    "next": 693,
+    "evidence": 1028,
+    "execution": 1604,
+    "states": 1975
+  },
+  "fonts": {
+    "body": 15,
+    "limitation": 12,
+    "evidence": 12,
+    "evidenceTitle": 14,
+    "action": 17,
+    "execution": 15
+  },
+  "overflow": 0,
+  "focus": {
+    "tag": "A",
+    "style": "solid",
+    "width": "3px"
+  },
+  "reducedMotion": "none",
+  "pageErrors": []
+}

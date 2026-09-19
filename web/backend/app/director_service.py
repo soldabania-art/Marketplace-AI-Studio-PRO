@@ -91,6 +91,26 @@ def build_director(*, store_id: str, store_name: str, sources: list[dict],
                 source_refs=[name], can_execute=True, execution_type='read_sync',
                 measurement={'metric': 'source_state', 'baseline': source['state'], 'better_when': 'live'},
             ))
+    # Operational findings require factual catalog, stock and demand data.
+    # Connection diagnosis above remains visible when any of them is absent.
+    if any((source_by_name.get(name) or {'state': 'missing'})['state'] != 'live'
+           for name in ('catalog', 'stocks', 'sales_velocity_7d')):
+        actions.sort(key=lambda item: (-item['priority_score'], item['id']))
+        return {
+            'store_id': store_id, 'store_name': store_name, 'marketplace': 'wildberries',
+            'generated_at': datetime.now(timezone.utc), 'mode': 'waiting', 'sources': sources,
+            'summary': {
+                'what_happened': 'Недостаточно подтверждённых данных для задачи Director.',
+                'money_losses': {'observed_kopecks': None, 'scope': 'Денежные результаты не рассчитываются без достаточных источников.'},
+                'today_actions': len(actions), 'safe_actions': sum(not item['requires_approval'] for item in actions),
+                'approval_required': sum(item['requires_approval'] for item in actions),
+                'measured_changes': 'Сначала загрузите отмеченные источники выбранного магазина.',
+            },
+            'actions': actions[:10],
+            'ranking': {'formula': 'срочность + уверенность + подтверждённый денежный масштаб − риск', 'max_actions': 10},
+            'automation': {'mode': 'proposal_only', 'writes_enabled': False, 'note': 'Director ничего не меняет в WB без отдельного подтверждения.'},
+        }
+    finance_live = (source_by_name.get('finance_realization_sync') or {'state': 'missing'})['state'] == 'live'
     completeness = profit.get('completeness') or {}
     if not completeness.get('cogs'):
         actions.append(action(
@@ -106,7 +126,7 @@ def build_director(*, store_id: str, store_name: str, sources: list[dict],
             evidence='Profit Center: налоговый профиль магазина не заполнен.',
             href='/profit', source_refs=['store_tax_profile'],
         ))
-    for item in profit.get('products') or []:
+    for item in (profit.get('products') or []) if finance_live else []:
         value = _money_to_kopecks(item.get('final_profit')); complete = value is not None
         if value is None: value = _money_to_kopecks(item.get('contribution_before_tax_ads'))
         if value is not None and value < 0:

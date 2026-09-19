@@ -2,6 +2,14 @@
 
 Дата: 13.09.2026. Проверенный `main`: `3d5e59a17469bf622f858889adf75e585d3a5253`.
 
+## Текущее интеграционное состояние — 19.09.2026
+
+Авторитетное состояние для следующего шага: `main` — `c20fa75cfee90cca136e9a019d4cf552f19bb9bb`; D01/#46 уже интегрирован и закрыт. Общая backend-ветка `codex/backend-integration-reviewed` подготовлена для отдельного [PR #61](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/61), exact head до этого документационного обновления — `c49cc5f8c4f08e3d470a190721f1841206d8911a`.
+
+PR #61 объединяет только подготовленные совместимые блоки: WB01/WB02, T09A/T09B, T10A, CTRL01/CTRL02 и #58. Его exact-head [CI #35435657915](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/actions/runs/35435657915) зелёный: frontend, backend, реальный PostgreSQL fresh migration, upgrade от CTRL01 predecessor к объединённой голове и PostgreSQL integration/concurrency suite. [Vercel](https://vercel.com/soldabania-5646/marketplace-ai-studio-pro/FmszcXGYYLdgGKVTRBuupDwRQr8V) exact head success. Это не разрешение на merge: PR остаётся draft для независимой приёмки.
+
+D02 остаётся отдельным draft [PR #59](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/59), D03 — отдельным draft [PR #60](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/60); их изменения не включены в #61. Не создавать реальных WB-операций, платных AI-вызовов, писем или платежей. Browser проверил только публичную загрузку Preview #61; account/admin требуют авторизованного контекста, а изолированных fixture-аккаунтов нет, поэтому role/MFA/browser acceptance не заявляются выполненными и protection не обходилась.
+
 ## Решение и клиентский фокус
 
 Концепция одобрена для продолжения разработки; широкий коммерческий запуск не одобрен. Первый платящий клиент — действующий продавец Wildberries с регулярными продажами, командой и операционными расходами.

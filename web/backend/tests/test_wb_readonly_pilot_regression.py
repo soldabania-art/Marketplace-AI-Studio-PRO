@@ -120,10 +120,10 @@ def test_readonly_wb_pilot_preflight_enqueue_worker_snapshot_and_director(monkey
     assert body["skipped_groups"]["finance"]["state"] == "blocked"
     assert body["skipped_groups"]["advertising"]["state"] == "blocked"
     # This suite intentionally shares a database with unrelated queue tests.
-    # Give only this synthetic job a test-only priority so run_one claims it
+    # Give only this synthetic job the first test-only priority so run_one claims it
     # without consuming another test's pending work.
     with SessionLocal() as db:
-        db.get(BackgroundJob, body["jobs"]["core"]["id"]).priority = 10_000
+        db.get(BackgroundJob, body["jobs"]["core"]["id"]).priority = 0
         db.commit()
 
     async def cards(token):

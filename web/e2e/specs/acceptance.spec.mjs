@@ -191,8 +191,8 @@ test('D03 ignores a delayed A decision response after A → B → A', async ({ p
   const payload = (id, marker) => ({
     store_id: id, store_name: `Store ${id === storeA ? 'A' : 'B'} — ${marker}`, mode: 'live', generated_at: new Date().toISOString(),
     sources: [{ name: 'catalog', state: 'live' }],
-    actions: id === storeA ? [{ id: 'acceptance-action-a', kind: 'check', provider: { label: 'E2E' }, title: `Action ${marker}`, reason: marker, evidence: marker, observed_effect_kopecks: null, priority_reason: marker, priority_score: 1, urgency: 'low', href: '/account', status: 'proposed', requires_approval: true, can_execute: false, execution_type: null }] : [],
-    tracked_actions: [], audit: [], control: { stopped: false }, automation: { note: marker }, ranking: { formula: marker }, summary: { what_happened: marker, money_losses: { observed_kopecks: null }, today_actions: 0, safe_actions: 0, approval_required: 0, measured_changes: marker },
+    actions: id === storeA ? [{ id: 'acceptance-action-a', kind: 'check', provider: { label: 'E2E' }, title: 'E2E action', reason: 'E2E reason', evidence: 'E2E evidence', observed_effect_kopecks: null, priority_reason: 'E2E priority', priority_score: 1, urgency: 'low', href: '/account', status: 'proposed', requires_approval: true, can_execute: false, execution_type: null }] : [],
+    tracked_actions: [], audit: [], control: { stopped: false }, automation: { note: 'E2E automation' }, ranking: { formula: 'E2E ranking' }, summary: { what_happened: `${marker} summary`, money_losses: { observed_kopecks: null }, today_actions: 0, safe_actions: 0, approval_required: 0, measured_changes: 'E2E unchanged' },
   })
   await page.route('**/api/stores', route => route.fulfill({ json: { stores: [{ id: storeA, name: 'Store A', workspace_id: 'w' }, { id: storeB, name: 'Store B', workspace_id: 'w' }], workspaces: [{ id: 'w', role: 'owner', can_manage_stores: true }] } }))
   await page.route('**/api/director?*', route => {
@@ -205,12 +205,14 @@ test('D03 ignores a delayed A decision response after A → B → A', async ({ p
   })
   await page.addInitScript(id => localStorage.setItem('mai_store_id', id), storeA)
   await page.goto('/director'); await onlyEssential(page)
+  const oldDecisionResponse = page.waitForResponse(response => response.url().includes('/api/director/actions/acceptance-action-a') && response.request().method() === 'PATCH')
   await page.getByRole('button', { name: 'Принять в работу' }).click(); await oldDecisionStarted
   await page.evaluate(({ event, id }) => window.dispatchEvent(new CustomEvent(event, { detail: { store_id: id } })), { event: 'mai:store-changed', id: storeB })
-  await expect(page.getByText('CURRENT B', { exact: true })).toBeVisible()
+  await expect(page.getByText('CURRENT B summary', { exact: true })).toBeVisible()
   await page.evaluate(({ event, id }) => window.dispatchEvent(new CustomEvent(event, { detail: { store_id: id } })), { event: 'mai:store-changed', id: storeA })
-  await expect(page.getByText('CURRENT A', { exact: true })).toBeVisible()
-  await releaseOldDecision()
+  await expect(page.getByText('CURRENT A summary', { exact: true })).toBeVisible()
+  await releaseOldDecision(); await oldDecisionResponse
+  await page.evaluate(() => new Promise(requestAnimationFrame))
   await expect(page.getByText('OLD A decision', { exact: true })).toHaveCount(0)
   await expect(page.getByText('CURRENT A', { exact: true })).toBeVisible()
 })

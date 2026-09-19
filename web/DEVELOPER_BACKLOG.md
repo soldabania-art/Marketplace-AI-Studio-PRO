@@ -407,6 +407,10 @@ Exact-head [CI #35435657915](https://github.com/soldabania-art/Marketplace-AI-St
 
 ## Последняя интеграция
 
+### Browser acceptance stand / PR #62 · BLOCKED_EXTERNAL
+
+Exact head `48ddac79de142099d82fc133841d9144417516b6` ожидает разрешённый GitHub Actions запуск. Workflow `Web Cloud` содержит `pull_request` для `web/**` и `.github/workflows/web-cloud.yml`, frontend/backend/PostgreSQL и browser-e2e с изолированными PostgreSQL/Redis/FastAPI/Next/Chromium; job не является пройденным, пока нет фактического run. Локально: 30 targeted frontend contracts passed, 0 skipped; production build passed. Не выполнены: PostgreSQL/Redis E2E, реальные screenshots/video/JSON/HTML artifacts и визуальный просмотр. Сначала восстановить разрешённый запуск exact head без empty commits, без изменения shared `web-cloud`/`main` и без Vercel retry; после этого загрузить и проверить artifacts. Пароли/MFA test fixtures генерируются на runtime и не должны публиковаться в logs/artifacts.
+
 D01 принят и интегрирован последним: [PR #47](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/47), итоговый `main` `c20fa75cfee90cca136e9a019d4cf552f19bb9bb`, [push CI](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/actions/runs/34814628013) и Vercel success; [#46](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/46) закрыта с доказательствами.
 
 [D02/#48](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/issues/48) опубликован отдельным draft [PR #59](https://github.com/soldabania-art/Marketplace-AI-Studio-PRO/pull/59) на итоговом D01 main. Initial exact-head CI/Vercel зелёные, но browser evidence заблокирован Vercel login protection Preview; PR не переводить в ready и не сливать до настоящей проверки. T09–T22 и #44 сохраняются в очереди; новые задачи пока не начинать. `MARKETPLACE_ASSET_BLOB_HOSTS` остаётся BLOCKED_EXTERNAL до получения точного hostname выделенного public Blob store; значение не угадывать. GitHub Ruleset также остаётся BLOCKED_EXTERNAL до подтверждённого включения; CLOSED T01 не заменяет эту инфраструктурную проверку.

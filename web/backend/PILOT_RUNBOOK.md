@@ -6,18 +6,19 @@ This local/non-production API + worker smoke stack is not a production readiness
 
 ```sh
 cp .env.pilot.example .env.pilot
-# Replace CHANGE_ME values; generate Fernet values with:
-python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
-./pilot-bootstrap.sh .env.pilot
+# Generate local secrets without printing them into shell history:
+python -c 'import secrets; print(secrets.token_hex(32))' # use as POSTGRES_PASSWORD
+# Generate Fernet keys locally; place two different values in .env.pilot.
+sh pilot-bootstrap.sh
 curl -fsS http://127.0.0.1:8000/health
 curl -fsS http://127.0.0.1:8000/ready
 ```
 
-The `migrate` service runs `alembic upgrade head` once and API/worker wait for its successful completion. The worker runs `python -m app.worker`; API runs with the embedded FBO monitor disabled.
+The bootstrap refuses placeholders, non-development environments, short JWTs, invalid or reused Fernet keys, and non-hex PostgreSQL passwords. It runs the existing one-shot `alembic upgrade head` service before API/worker.
 
 This compose file is local-only: it binds the API to localhost and uses development guards. Do not expose it directly to the internet or use it as a hosted production deployment. A hosted pilot needs the existing production guards (PostgreSQL TLS, HTTPS frontend/API behind a reverse proxy, real secret injection, MFA/STOP policy) and is outside this compose file.
 
-Before applying migrations to an existing pilot, stop API and worker first, then run the migration explicitly:
+Before applying migrations to an existing pilot, stop API and worker first:
 
 ```sh
 docker compose --env-file .env.pilot -f docker-compose.pilot.yml stop api worker

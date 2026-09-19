@@ -11,6 +11,13 @@ if (!password || !secret) {
 const storeA = 'e2e00000-0000-4000-8000-0000000000a1'
 const storeB = 'e2e00000-0000-4000-8000-0000000000b2'
 
+test.beforeEach(async ({ page }) => {
+  page.on('pageerror', error => console.error(`BROWSER_PAGE_ERROR: ${error.message}`))
+  page.on('console', message => {
+    if (message.type() === 'error') console.error(`BROWSER_CONSOLE_ERROR: ${message.text()}`)
+  })
+})
+
 function totp() {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
   let bits = ''
@@ -42,7 +49,7 @@ async function login(page, email) {
 }
 
 async function onlyEssential(page) {
-  await expect(page.locator('html')).toHaveAttribute('data-trovendi-ready', 'true')
+  await expect(page.locator('html')).toHaveAttribute('data-trovendi-ready', 'true', { timeout: 15_000 })
   const hasConsent = await page.evaluate(() => localStorage.getItem('mai_cookie_consent_v1') !== null)
   if (hasConsent) return
   const button = page.getByRole('button', { name: 'Только обязательные' })

@@ -46,13 +46,22 @@ async function login(page, email) {
   await page.getByRole('button', { name: /Войти/ }).click()
   expect((await loginResponse).status()).toBe(200)
   await expect(page.getByLabel('Код подтверждения')).toBeVisible()
-  await page.getByLabel('Код подтверждения').fill(totp())
+  const code = totp()
+  await page.getByLabel('Код подтверждения').fill(code)
   const mfaResponse = page.waitForResponse(response =>
     response.request().method() === 'POST' && response.url().endsWith('/api/auth/mfa'),
   )
   await page.getByRole('button', { name: /Подтвердить/ }).click()
   expect((await mfaResponse).status()).toBe(200)
   await expect(page).toHaveURL(/\/account/)
+  return code
+}
+
+async function consumeExpectedHttpError(page, status) {
+  const marker = `status of ${status}`
+  await expect.poll(() => (browserErrors.get(page) || []).some(message => message.includes(marker))).toBe(true)
+  const errors = browserErrors.get(page) || []
+  errors.splice(errors.findIndex(message => message.includes(marker)), 1)
 }
 
 async function onlyEssential(page) {
@@ -122,20 +131,24 @@ test('D03 renders mock-controlled states without impersonating server authorizat
 })
 
 test('actual backend: platform roles, MFA/step-up and store scope remain server-enforced', async ({ page }, testInfo) => {
+  test.setTimeout(90_000)
   const suffix = testInfo.project.name.replaceAll('-', '.')
   const viewerId = `e2e-viewer-${testInfo.project.name}`
-  await login(page, `owner.${suffix}.e2e@example.com`)
+  const loginCode = await login(page, `owner.${suffix}.e2e@example.com`)
+  await consumeExpectedHttpError(page, 402)
   const missingStepUp = await browserApi(page, '/api/admin', { method: 'PATCH', data: { action: 'set_user_status', user_id: viewerId, active: false } })
   expect(missingStepUp.status).toBe(428)
+  await consumeExpectedHttpError(page, 428)
+  await expect.poll(() => totp(), { timeout: 35_000 }).not.toBe(loginCode)
   const stepUp = await browserApi(page, '/api/auth/step-up', { method: 'POST', data: { password, code: totp() } })
   expect(stepUp.status).toBe(200)
   await page.goto('/admin'); await expect(page.getByText(/Обзор для владельца и команды/)).toBeVisible()
   const stores = await browserApi(page, '/api/stores')
   expect(stores.payload.stores.map(item => item.id)).toEqual(expect.arrayContaining([storeA, storeB]))
-  await page.context().clearCookies(); await login(page, `viewer.${suffix}.e2e@example.com`)
-  const viewerAdmin = await browserApi(page, '/api/admin'); expect(viewerAdmin.status).toBe(403)
-  const viewerMutation = await browserApi(page, '/api/director/control', { method: 'PATCH', data: { store_id: storeA, stopped: true, reason: 'E2E' } }); expect(viewerMutation.status).toBe(403)
-  await page.context().clearCookies(); await login(page, `manager.${suffix}.e2e@example.com`)
+  await page.context().clearCookies(); await login(page, `viewer.${suffix}.e2e@example.com`); await consumeExpectedHttpError(page, 402)
+  const viewerAdmin = await browserApi(page, '/api/admin'); expect(viewerAdmin.status).toBe(403); await consumeExpectedHttpError(page, 403)
+  const viewerMutation = await browserApi(page, '/api/director/control', { method: 'PATCH', data: { store_id: storeA, stopped: true, reason: 'E2E' } }); expect(viewerMutation.status).toBe(403); await consumeExpectedHttpError(page, 403)
+  await page.context().clearCookies(); await login(page, `manager.${suffix}.e2e@example.com`); await consumeExpectedHttpError(page, 402)
   const managerOverview = await browserApi(page, '/api/admin'); expect(managerOverview.status).toBe(200)
-  const managerMutation = await browserApi(page, '/api/admin', { method: 'PATCH', data: { action: 'set_user_status', user_id: viewerId, active: false } }); expect(managerMutation.status).toBe(403)
+  const managerMutation = await browserApi(page, '/api/admin', { method: 'PATCH', data: { action: 'set_user_status', user_id: viewerId, active: false } }); expect(managerMutation.status).toBe(403); await consumeExpectedHttpError(page, 403)
 })

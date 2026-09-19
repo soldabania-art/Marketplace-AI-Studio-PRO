@@ -38,6 +38,27 @@ SOURCE_DEFINITIONS = (
     ("feedbacks", "Отзывы", ("feedbacks.list",)),
 )
 
+IMPORT_GROUPS = (
+    ("core", "Каталог, остатки и продажи", ("catalog", "analytics")),
+    ("finance", "Финансовый отчёт", ("finance",)),
+    ("advertising", "Рекламная статистика", ("advertising",)),
+    ("feedbacks", "Отзывы", ("feedbacks",)),
+)
+
+
+def import_group_availability(result: dict | None) -> dict[str, dict[str, object]]:
+    """Map the persisted safe preflight result to read-only import groups."""
+    matrix = result or unchecked_capabilities()
+    statuses = {row.get("key"): row.get("status", "unchecked") for row in matrix.get("sources", [])}
+    groups: dict[str, dict[str, object]] = {}
+    for key, label, source_keys in IMPORT_GROUPS:
+        sources = {source: statuses.get(source, "unchecked") for source in source_keys}
+        state = ("available" if all(status == "available" for status in sources.values())
+                 else "deferred" if any(status == "transient_error" for status in sources.values())
+                 else "blocked")
+        groups[key] = {"key": key, "label": label, "state": state, "sources": sources}
+    return groups
+
 
 def unchecked_capabilities() -> dict[str, Any]:
     endpoints = {

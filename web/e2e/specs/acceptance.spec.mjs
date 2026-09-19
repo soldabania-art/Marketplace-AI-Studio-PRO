@@ -10,6 +10,7 @@ if (!password || !secret) {
 }
 const storeA = 'e2e00000-0000-4000-8000-0000000000a1'
 const storeB = 'e2e00000-0000-4000-8000-0000000000b2'
+const foreignStore = 'e2e00000-0000-4000-8000-0000000000f0'
 const browserErrors = new WeakMap()
 
 test.beforeEach(async ({ page }) => {
@@ -130,6 +131,70 @@ test('D03 renders mock-controlled states without impersonating server authorizat
   await page.screenshot({ path: await evidencePath(`d03-mock-${testInfo.project.name}.png`), fullPage: true })
 })
 
+test('D03 exposes loading, backend error and no-store as separate visible states', async ({ page }) => {
+  let release
+  await page.route('**/api/stores', route => route.fulfill({ json: { stores: [{ id: storeA, name: 'Store A', workspace_id: 'w' }], workspaces: [{ id: 'w', role: 'analyst', can_manage_stores: false }] } }))
+  await page.route('**/api/director?*', route => new Promise(resolve => { release = () => route.fulfill({ status: 503, json: { error: 'E2E source failure' } }).then(resolve) }))
+  await page.addInitScript(id => localStorage.setItem('mai_store_id', id), storeA)
+  await page.goto('/director'); await onlyEssential(page)
+  await expect(page.getByText('Проверяем факты выбранного магазина')).toBeVisible()
+  await release(); await expect(page.getByRole('alert')).toContainText('Director не загрузил очередь')
+  await page.unroute('**/api/stores')
+  await page.route('**/api/stores', route => route.fulfill({ json: { stores: [], workspaces: [] } }))
+  await page.reload(); await expect(page.getByText('Магазин не выбран')).toBeVisible()
+})
+
+test('D03 visibly fences a delayed A response across A → B → A and honors reduced motion', async ({ page }, testInfo) => {
+  let aRequests = 0
+  let releaseOldA
+  let oldAStarted
+  const oldAStartedPromise = new Promise(resolve => { oldAStarted = resolve })
+  const payload = (id, marker) => ({ store_id: id, store_name: `Store ${id === storeA ? 'A' : 'B'} — ${marker}`, mode: 'partial', generated_at: new Date().toISOString(), sources: [{ name: 'catalog', state: 'live' }, { name: 'stocks', state: 'live' }, { name: 'sales_velocity_7d', state: 'live' }], actions: [], tracked_actions: [], audit: [], control: { stopped: false }, automation: { note: marker }, ranking: { formula: marker }, summary: { what_happened: marker, money_losses: { observed_kopecks: null }, today_actions: 0, safe_actions: 0, approval_required: 0, measured_changes: marker } })
+  await page.route('**/api/stores', route => route.fulfill({ json: { stores: [{ id: storeA, name: 'Store A', workspace_id: 'w' }, { id: storeB, name: 'Store B', workspace_id: 'w' }], workspaces: [{ id: 'w', role: 'owner', can_manage_stores: true }] } }))
+  await page.route('**/api/director?*', route => {
+    const id = new URL(route.request().url()).searchParams.get('store_id')
+    if (id === storeA && ++aRequests === 2) {
+      oldAStarted()
+      return new Promise(resolve => { releaseOldA = () => route.fulfill({ json: payload(storeA, 'OLD A') }).then(resolve) })
+    }
+    return route.fulfill({ json: payload(id, id === storeA ? 'CURRENT A' : 'CURRENT B') })
+  })
+  await page.addInitScript(id => localStorage.setItem('mai_store_id', id), storeA)
+  await page.goto('/director'); await onlyEssential(page)
+  await expect(page.getByText('CURRENT A')).toBeVisible()
+  await page.getByRole('button', { name: 'Обновить факты' }).click(); await oldAStartedPromise
+  await page.evaluate(({ event, id }) => window.dispatchEvent(new CustomEvent(event, { detail: { store_id: id } })), { event: 'mai:store-changed', id: storeB })
+  await expect(page.getByText('CURRENT B')).toBeVisible()
+  await page.evaluate(({ event, id }) => window.dispatchEvent(new CustomEvent(event, { detail: { store_id: id } })), { event: 'mai:store-changed', id: storeA })
+  await expect(page.getByText('CURRENT A')).toBeVisible()
+  await releaseOldA()
+  await expect(page.getByText('OLD A')).toHaveCount(0)
+  await page.keyboard.press('Tab')
+  await expect(page.locator(':focus-visible')).toHaveCount(1)
+  if (testInfo.project.name === 'mobile-390') {
+    expect(await page.evaluate(() => getComputedStyle(document.querySelector('.directorB')).scrollBehavior)).toBe('auto')
+  }
+})
+
+test('account ignores a delayed WB check after the selected store changes', async ({ page }, testInfo) => {
+  let releaseCheck
+  let checkStarted
+  const started = new Promise(resolve => { checkStarted = resolve })
+  await login(page, `owner.${testInfo.project.name.replaceAll('-', '.')}.e2e@example.com`)
+  await page.route('**/api/marketplace/wildberries?store_id=*', route => route.fulfill({ json: { connected: true, token_saved: true, sources_verified: false, verification: { summary: 'unchecked', sources: [] }, store_id: new URL(route.request().url()).searchParams.get('store_id') } }))
+  await page.route(`**/api/marketplace/wildberries/check?store_id=${storeA}`, route => {
+    checkStarted()
+    return new Promise(resolve => { releaseCheck = () => route.fulfill({ json: { connected: true, token_saved: true, sources_verified: true, verification: { summary: 'complete', sources: [] }, store_id: storeA } }).then(resolve) })
+  })
+  await page.goto('/account'); await onlyEssential(page)
+  const storeSelect = page.locator('select').first()
+  await storeSelect.selectOption(storeA)
+  await page.getByRole('button', { name: 'Проверить источники' }).click(); await started
+  await storeSelect.selectOption(storeB); await expect(page.getByText(/Рабочий магазин:.*Store B/)).toBeVisible()
+  await storeSelect.selectOption(storeA); await releaseCheck()
+  await expect(page.getByText('Источники ещё не проверены')).toBeVisible()
+})
+
 test('actual backend: platform roles, MFA/step-up and store scope remain server-enforced', async ({ page }, testInfo) => {
   test.setTimeout(90_000)
   const suffix = testInfo.project.name.replaceAll('-', '.')
@@ -145,6 +210,8 @@ test('actual backend: platform roles, MFA/step-up and store scope remain server-
   await page.goto('/admin'); await expect(page.getByText(/Обзор для владельца и команды/)).toBeVisible()
   const stores = await browserApi(page, '/api/stores')
   expect(stores.payload.stores.map(item => item.id)).toEqual(expect.arrayContaining([storeA, storeB]))
+  const foreignWb = await browserApi(page, `/api/marketplace/wildberries?store_id=${foreignStore}`)
+  expect(foreignWb.status).toBe(404); await consumeExpectedHttpError(page, 404)
   await page.context().clearCookies(); await login(page, `viewer.${suffix}.e2e@example.com`); await consumeExpectedHttpError(page, 402)
   const viewerAdmin = await browserApi(page, '/api/admin'); expect(viewerAdmin.status).toBe(403); await consumeExpectedHttpError(page, 403)
   const viewerMutation = await browserApi(page, '/api/director/control', { method: 'PATCH', data: { store_id: storeA, stopped: true, reason: 'E2E' } }); expect(viewerMutation.status).toBe(403); await consumeExpectedHttpError(page, 403)

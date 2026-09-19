@@ -11,6 +11,7 @@ TOTP_SECRET = os.environ["E2E_TOTP_SECRET"]
 WORKSPACE_ID = "e2e00000-0000-4000-8000-000000000001"
 STORE_A = "e2e00000-0000-4000-8000-0000000000a1"
 STORE_B = "e2e00000-0000-4000-8000-0000000000b2"
+FOREIGN_STORE = "e2e00000-0000-4000-8000-0000000000f0"
 
 def user(key, email, name):
     return User(id=key, email=email, full_name=name, password_hash=hash_password(PASSWORD), email_verified=True, is_active=True)
@@ -25,6 +26,8 @@ with SessionLocal() as db:
         viewer = user(f"e2e-viewer-{viewport}", f"viewer.{suffix}.e2e@example.com", f"E2E workspace viewer {viewport}")
         accounts.append((viewport, owner, manager, viewer))
     db.add(workspace)
+    foreign_workspace = Workspace(id="e2e00000-0000-4000-8000-0000000000f1", name="E2E foreign workspace")
+    db.add(foreign_workspace)
     db.add_all([account for _, *roles in accounts for account in roles])
     # Models use scalar foreign keys rather than ORM relationships. Flush the
     # referenced rows first so PostgreSQL enforces the same fixture ordering.
@@ -32,6 +35,7 @@ with SessionLocal() as db:
     db.add_all([
         Store(id=STORE_A, workspace_id=WORKSPACE_ID, name="Store A — deliberately long visible acceptance name"),
         Store(id=STORE_B, workspace_id=WORKSPACE_ID, name="Store B — deliberately long visible acceptance name"),
+        Store(id=FOREIGN_STORE, workspace_id=foreign_workspace.id, name="E2E foreign store"),
         *[
             row
             for _, owner, manager, viewer in accounts

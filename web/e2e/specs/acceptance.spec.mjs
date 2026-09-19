@@ -139,7 +139,7 @@ test('D03 exposes loading, backend error and no-store as separate visible states
   await page.goto('/director'); await onlyEssential(page)
   await expect(page.getByText('Проверяем факты выбранного магазина')).toBeVisible()
   const directorFailure = page.waitForResponse(response => response.url().includes('/api/director?') && response.status() === 503)
-  await release(); await directorFailure; await expect(page.getByRole('alert')).toContainText('Director не загрузил очередь')
+  await release(); await directorFailure; await expect(page.locator('.directorBError')).toContainText('Director не загрузил очередь')
   await consumeExpectedHttpError(page, 503)
   await page.unroute('**/api/stores')
   await page.route('**/api/stores', route => route.fulfill({ json: { stores: [], workspaces: [] } }))
@@ -152,7 +152,7 @@ test('D03 visibly fences a delayed A response across A → B → A and honors re
   let releaseReducedMotionRefresh
   let oldAStarted
   const oldAStartedPromise = new Promise(resolve => { oldAStarted = resolve })
-  const payload = (id, marker) => ({ store_id: id, store_name: `Store ${id === storeA ? 'A' : 'B'} — ${marker}`, mode: 'partial', generated_at: new Date().toISOString(), sources: [{ name: 'catalog', state: 'live' }, { name: 'stocks', state: 'live' }, { name: 'sales_velocity_7d', state: 'live' }], actions: [], tracked_actions: [], audit: [], control: { stopped: false }, automation: { note: marker }, ranking: { formula: marker }, summary: { what_happened: marker, money_losses: { observed_kopecks: null }, today_actions: 0, safe_actions: 0, approval_required: 0, measured_changes: marker } })
+  const payload = (id, marker) => ({ store_id: id, store_name: `Store ${id === storeA ? 'A' : 'B'}`, mode: 'partial', generated_at: new Date().toISOString(), sources: [{ name: 'catalog', state: 'live' }, { name: 'stocks', state: 'live' }, { name: 'sales_velocity_7d', state: 'live' }], actions: [], tracked_actions: [], audit: [], control: { stopped: false }, automation: { note: 'E2E automation' }, ranking: { formula: 'E2E ranking' }, summary: { what_happened: `${marker} summary`, money_losses: { observed_kopecks: null }, today_actions: 0, safe_actions: 0, approval_required: 0, measured_changes: 'E2E unchanged' } })
   await page.route('**/api/stores', route => route.fulfill({ json: { stores: [{ id: storeA, name: 'Store A', workspace_id: 'w' }, { id: storeB, name: 'Store B', workspace_id: 'w' }], workspaces: [{ id: 'w', role: 'owner', can_manage_stores: true }] } }))
   await page.route('**/api/director?*', route => {
     const id = new URL(route.request().url()).searchParams.get('store_id')
@@ -165,10 +165,10 @@ test('D03 visibly fences a delayed A response across A → B → A and honors re
   })
   await page.addInitScript(id => localStorage.setItem('mai_store_id', id), storeA)
   await page.goto('/director'); await onlyEssential(page)
-  await expect(page.getByText('CURRENT A', { exact: true })).toBeVisible()
+  await expect(page.getByText('CURRENT A summary', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Обновить факты' }).click(); await oldAStartedPromise
   await page.evaluate(({ event, id }) => window.dispatchEvent(new CustomEvent(event, { detail: { store_id: id } })), { event: 'mai:store-changed', id: storeB })
-  await expect(page.getByText('CURRENT B', { exact: true })).toBeVisible()
+  await expect(page.getByText('CURRENT B summary', { exact: true })).toBeVisible()
   await page.evaluate(({ event, id }) => window.dispatchEvent(new CustomEvent(event, { detail: { store_id: id } })), { event: 'mai:store-changed', id: storeA })
   await expect(page.getByText('CURRENT A')).toBeVisible()
   await releaseOldA()
@@ -221,13 +221,12 @@ test('account ignores a delayed WB check after the selected store changes', asyn
   let checkStarted
   const started = new Promise(resolve => { checkStarted = resolve })
   await login(page, `owner.wb.${testInfo.project.name.replaceAll('-', '.')}.e2e@example.com`)
-  await consumeExpectedHttpError(page, 402)
   await page.route('**/api/marketplace/wildberries?store_id=*', route => route.fulfill({ json: { connected: true, token_saved: true, sources_verified: false, verification: { summary: 'unchecked', sources: [] }, store_id: new URL(route.request().url()).searchParams.get('store_id') } }))
   await page.route(`**/api/marketplace/wildberries/check?store_id=${storeA}`, route => {
     checkStarted()
     return new Promise(resolve => { releaseCheck = () => route.fulfill({ json: { connected: true, token_saved: true, sources_verified: true, verification: { summary: 'complete', sources: [] }, store_id: storeA } }).then(resolve) })
   })
-  await page.goto('/account'); await onlyEssential(page)
+  await page.goto('/account'); await onlyEssential(page); await consumeExpectedHttpError(page, 402)
   const storeSelect = page.locator('select').first()
   await storeSelect.selectOption(storeA)
   await page.getByRole('button', { name: 'Проверить источники' }).click(); await started

@@ -228,7 +228,6 @@ jobs:
           name: browser-e2e-${{ env.EXPECTED_HEAD_SHA }}
           path: |
             web/e2e-artifacts
-            web/test-results
             backend-e2e.log
             frontend-e2e.log
           if-no-files-found: warn

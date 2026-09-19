@@ -20,8 +20,15 @@ function totp() {
   return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, '0')
 }
 
+async function waitForHydration(page) {
+  await page.waitForFunction(() => Array.from(document.querySelectorAll('button, form, a')).some(node =>
+    Object.keys(node).some(key => key.startsWith('__reactProps$')),
+  ))
+}
+
 async function login(page, email) {
   await page.goto('/login')
+  await waitForHydration(page)
   await page.getByLabel('Email').fill(email)
   await page.getByLabel('Пароль').fill(password)
   await page.getByRole('button', { name: /Войти/ }).click()
@@ -36,7 +43,7 @@ async function onlyEssential(page) {
 }
 
 test('D02 preserves a selected planned integration and essential-only consent', async ({ page }, testInfo) => {
-  await page.goto('/#bundle'); await onlyEssential(page)
+  await page.goto('/#bundle'); await waitForHydration(page); await onlyEssential(page)
   await page.getByRole('button', { name: /Ozon.*Запланировано/ }).click()
   await page.getByRole('button', { name: '1 магазин' }).click()
   await page.getByRole('button', { name: /AI Director/ }).click()
@@ -64,7 +71,7 @@ test('D03 renders mock-controlled states without impersonating server authorizat
   await page.route('**/api/stores', route => route.fulfill({ json: { stores: [{ id: storeA, name: 'Store A — deliberately long visible acceptance name', workspace_id: 'w' }, { id: storeB, name: 'Store B — deliberately long visible acceptance name', workspace_id: 'w' }], workspaces: [{ id: 'w', role: 'analyst', can_manage_stores: false }] } }))
   await page.route('**/api/director?*', route => route.fulfill({ json: payload() }))
   await page.addInitScript(id => localStorage.setItem('mai_store_id', id), storeA)
-  await page.goto('/director'); await onlyEssential(page)
+  await page.goto('/director'); await waitForHydration(page); await onlyEssential(page)
   for (const item of states) { state = item; await page.reload(); await expect(page.getByText(/Очередь ограничена состоянием источников/)).toBeVisible() }
   await expect(page.getByText('Доступен только просмотр')).toBeVisible()
   await expect(page.getByRole('alert')).toContainText('STOP активен')

@@ -35,7 +35,7 @@ services:
       MARKETPLACE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-trovendi_pilot}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.pilot}@postgres:5432/${POSTGRES_DB:-trovendi_pilot}
       MARKETPLACE_REDIS_URL: redis://redis:6379/0
       PORT: "8000"
-    ports: ["${API_BIND:-127.0.0.1}:8000:8000"]
+    ports: ["127.0.0.1:8000:8000"]
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     depends_on:
       migrate: {condition: service_completed_successfully}

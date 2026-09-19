@@ -21,6 +21,9 @@ with SessionLocal() as db:
     manager = user("e2e-manager", "manager.e2e@example.test", "E2E project manager")
     viewer = user("e2e-viewer", "viewer.e2e@example.test", "E2E workspace viewer")
     db.add_all([workspace, owner, manager, viewer])
+    # Models use scalar foreign keys rather than ORM relationships. Flush the
+    # referenced rows first so PostgreSQL enforces the same fixture ordering.
+    db.flush()
     db.add_all([
         Store(id=STORE_A, workspace_id=WORKSPACE_ID, name="Store A — deliberately long visible acceptance name"),
         Store(id=STORE_B, workspace_id=WORKSPACE_ID, name="Store B — deliberately long visible acceptance name"),

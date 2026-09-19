@@ -138,7 +138,9 @@ test('D03 exposes loading, backend error and no-store as separate visible states
   await page.addInitScript(id => localStorage.setItem('mai_store_id', id), storeA)
   await page.goto('/director'); await onlyEssential(page)
   await expect(page.getByText('Проверяем факты выбранного магазина')).toBeVisible()
-  await release(); await expect(page.getByRole('alert')).toContainText('Director не загрузил очередь')
+  const directorFailure = page.waitForResponse(response => response.url().includes('/api/director?') && response.status() === 503)
+  await release(); await directorFailure; await expect(page.getByRole('alert')).toContainText('Director не загрузил очередь')
+  await consumeExpectedHttpError(page, 503)
   await page.unroute('**/api/stores')
   await page.route('**/api/stores', route => route.fulfill({ json: { stores: [], workspaces: [] } }))
   await page.reload(); await expect(page.getByText('Магазин не выбран')).toBeVisible()
@@ -147,6 +149,7 @@ test('D03 exposes loading, backend error and no-store as separate visible states
 test('D03 visibly fences a delayed A response across A → B → A and honors reduced motion', async ({ page }, testInfo) => {
   let aRequests = 0
   let releaseOldA
+  let releaseReducedMotionRefresh
   let oldAStarted
   const oldAStartedPromise = new Promise(resolve => { oldAStarted = resolve })
   const payload = (id, marker) => ({ store_id: id, store_name: `Store ${id === storeA ? 'A' : 'B'} — ${marker}`, mode: 'partial', generated_at: new Date().toISOString(), sources: [{ name: 'catalog', state: 'live' }, { name: 'stocks', state: 'live' }, { name: 'sales_velocity_7d', state: 'live' }], actions: [], tracked_actions: [], audit: [], control: { stopped: false }, automation: { note: marker }, ranking: { formula: marker }, summary: { what_happened: marker, money_losses: { observed_kopecks: null }, today_actions: 0, safe_actions: 0, approval_required: 0, measured_changes: marker } })
@@ -157,14 +160,15 @@ test('D03 visibly fences a delayed A response across A → B → A and honors re
       oldAStarted()
       return new Promise(resolve => { releaseOldA = () => route.fulfill({ json: payload(storeA, 'OLD A') }).then(resolve) })
     }
+    if (id === storeA && aRequests === 4) return new Promise(resolve => { releaseReducedMotionRefresh = () => route.fulfill({ json: payload(storeA, 'CURRENT A') }).then(resolve) })
     return route.fulfill({ json: payload(id, id === storeA ? 'CURRENT A' : 'CURRENT B') })
   })
   await page.addInitScript(id => localStorage.setItem('mai_store_id', id), storeA)
   await page.goto('/director'); await onlyEssential(page)
-  await expect(page.getByText('CURRENT A')).toBeVisible()
+  await expect(page.getByText('CURRENT A', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Обновить факты' }).click(); await oldAStartedPromise
   await page.evaluate(({ event, id }) => window.dispatchEvent(new CustomEvent(event, { detail: { store_id: id } })), { event: 'mai:store-changed', id: storeB })
-  await expect(page.getByText('CURRENT B')).toBeVisible()
+  await expect(page.getByText('CURRENT B', { exact: true })).toBeVisible()
   await page.evaluate(({ event, id }) => window.dispatchEvent(new CustomEvent(event, { detail: { store_id: id } })), { event: 'mai:store-changed', id: storeA })
   await expect(page.getByText('CURRENT A')).toBeVisible()
   await releaseOldA()
@@ -172,15 +176,50 @@ test('D03 visibly fences a delayed A response across A → B → A and honors re
   await page.keyboard.press('Tab')
   await expect(page.locator(':focus-visible')).toHaveCount(1)
   if (testInfo.project.name === 'mobile-390') {
-    expect(await page.evaluate(() => getComputedStyle(document.querySelector('.directorB')).scrollBehavior)).toBe('auto')
+    await page.getByRole('button', { name: 'Обновить факты' }).click()
+    const spin = page.locator('.directorBSpin')
+    await expect(spin).toBeVisible()
+    expect(await spin.evaluate(element => getComputedStyle(element).animationName)).toBe('none')
+    await releaseReducedMotionRefresh()
   }
 })
 
+test('D03 ignores a delayed A decision response after A → B → A', async ({ page }) => {
+  let releaseOldDecision
+  let decisionStarted
+  const oldDecisionStarted = new Promise(resolve => { decisionStarted = resolve })
+  const payload = (id, marker) => ({
+    store_id: id, store_name: `Store ${id === storeA ? 'A' : 'B'} — ${marker}`, mode: 'live', generated_at: new Date().toISOString(),
+    sources: [{ name: 'catalog', state: 'live' }],
+    actions: id === storeA ? [{ id: 'acceptance-action-a', kind: 'check', provider: { label: 'E2E' }, title: `Action ${marker}`, reason: marker, evidence: marker, observed_effect_kopecks: null, priority_reason: marker, priority_score: 1, urgency: 'low', href: '/account', status: 'proposed', requires_approval: true, can_execute: false, execution_type: null }] : [],
+    tracked_actions: [], audit: [], control: { stopped: false }, automation: { note: marker }, ranking: { formula: marker }, summary: { what_happened: marker, money_losses: { observed_kopecks: null }, today_actions: 0, safe_actions: 0, approval_required: 0, measured_changes: marker },
+  })
+  await page.route('**/api/stores', route => route.fulfill({ json: { stores: [{ id: storeA, name: 'Store A', workspace_id: 'w' }, { id: storeB, name: 'Store B', workspace_id: 'w' }], workspaces: [{ id: 'w', role: 'owner', can_manage_stores: true }] } }))
+  await page.route('**/api/director?*', route => {
+    const id = new URL(route.request().url()).searchParams.get('store_id')
+    return route.fulfill({ json: payload(id, id === storeA ? 'CURRENT A' : 'CURRENT B') })
+  })
+  await page.route('**/api/director/actions/acceptance-action-a', route => {
+    decisionStarted()
+    return new Promise(resolve => { releaseOldDecision = () => route.fulfill({ json: { message: 'OLD A decision' } }).then(resolve) })
+  })
+  await page.addInitScript(id => localStorage.setItem('mai_store_id', id), storeA)
+  await page.goto('/director'); await onlyEssential(page)
+  await page.getByRole('button', { name: 'Принять в работу' }).click(); await oldDecisionStarted
+  await page.evaluate(({ event, id }) => window.dispatchEvent(new CustomEvent(event, { detail: { store_id: id } })), { event: 'mai:store-changed', id: storeB })
+  await expect(page.getByText('CURRENT B', { exact: true })).toBeVisible()
+  await page.evaluate(({ event, id }) => window.dispatchEvent(new CustomEvent(event, { detail: { store_id: id } })), { event: 'mai:store-changed', id: storeA })
+  await expect(page.getByText('CURRENT A', { exact: true })).toBeVisible()
+  await releaseOldDecision()
+  await expect(page.getByText('OLD A decision', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('CURRENT A', { exact: true })).toBeVisible()
+})
 test('account ignores a delayed WB check after the selected store changes', async ({ page }, testInfo) => {
   let releaseCheck
   let checkStarted
   const started = new Promise(resolve => { checkStarted = resolve })
-  await login(page, `owner.${testInfo.project.name.replaceAll('-', '.')}.e2e@example.com`)
+  await login(page, `owner.wb.${testInfo.project.name.replaceAll('-', '.')}.e2e@example.com`)
+  await consumeExpectedHttpError(page, 402)
   await page.route('**/api/marketplace/wildberries?store_id=*', route => route.fulfill({ json: { connected: true, token_saved: true, sources_verified: false, verification: { summary: 'unchecked', sources: [] }, store_id: new URL(route.request().url()).searchParams.get('store_id') } }))
   await page.route(`**/api/marketplace/wildberries/check?store_id=${storeA}`, route => {
     checkStarted()
@@ -192,7 +231,7 @@ test('account ignores a delayed WB check after the selected store changes', asyn
   await page.getByRole('button', { name: 'Проверить источники' }).click(); await started
   await storeSelect.selectOption(storeB); await expect(page.getByText(/Рабочий магазин:.*Store B/)).toBeVisible()
   await storeSelect.selectOption(storeA); await releaseCheck()
-  await expect(page.getByText('Источники ещё не проверены')).toBeVisible()
+  await expect(page.getByText('Источники ещё не проверены', { exact: true })).toBeVisible()
 })
 
 test('actual backend: platform roles, MFA/step-up and store scope remain server-enforced', async ({ page }, testInfo) => {

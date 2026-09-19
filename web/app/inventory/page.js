@@ -1,6 +1,3 @@
-import Link from 'next/link'
 import StudioSection from '../../components/StudioSection'
 
-export default function Page(){
-  return <><StudioSection eyebrow="СКЛАД" title="Остатки" description="Контроль дефицита, излишков и прогноз пополнения по товарам." primary="Проверить остатки" cards={[{title:'Дефицит',text:'Товары с риском закончиться раньше срока.',action:'Найти дефицит'},{title:'Излишки',text:'Замороженные деньги и медленно продающиеся остатки.',action:'Найти излишки'},{title:'Пополнение',text:'Расчёт приоритетов поставки по продажам и запасу.',action:'Рассчитать поставку'}]}/><div style={{position:'fixed',right:24,bottom:24,zIndex:20}}><Link href="/fbo-slots" className="primaryBtn">Найти склады FBO / FBW</Link></div></>
-}
+export default function Page(){return <StudioSection eyebrow="СКЛАД" title="Остатки" description="Экран анализа дефицита, излишков и прогноза пополнения ещё планируется." stage="Частично доступно" limitation="На этом экране расчёт остатков пока не доступен. Отдельно доступен поиск складов FBO / FBW; физические остатки и поставки не подтверждаются AI." availableLink={{href:'/fbo-slots',label:'Найти склады FBO / FBW'}} cards={[{title:'Дефицит',text:'Товары с риском закончиться раньше срока.'},{title:'Излишки',text:'Замороженные деньги и медленно продающиеся остатки.'},{title:'Пополнение',text:'Расчёт приоритетов поставки по продажам и запасу.'}]}/>}

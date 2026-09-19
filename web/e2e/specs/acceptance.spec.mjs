@@ -117,6 +117,25 @@ test('D02 preserves a selected planned integration and essential-only consent', 
   await page.screenshot({ path: await evidencePath(`d02-${testInfo.project.name}.png`), fullPage: true })
 })
 
+test('T16 labels planned module screens before users can invoke unavailable actions', async ({ page }) => {
+  await page.route('**/api/stores', route => route.fulfill({ json: { stores: [{ id: storeA, name: 'Store A', workspace_id: 'w' }], workspaces: [{ id: 'w', role: 'owner', can_manage_stores: true }] } }))
+  await page.addInitScript(id => localStorage.setItem('mai_store_id', id), storeA)
+  const screens = [
+    ['/seo', 'Экран планируется', 'Открыть AI Card Factory', '/card-factory', 'Запустить SEO-аудит'],
+    ['/ads', 'Экран планируется', 'Открыть Profit Center', '/profit', 'Проверить рекламу'],
+    ['/inventory', 'Частично доступно', 'Найти склады FBO / FBW', '/fbo-slots', 'Проверить остатки'],
+    ['/reports', 'Экран планируется', 'Открыть Profit Center', '/profit', 'Сформировать отчёт'],
+    ['/autopilot', 'Экран планируется', 'Открыть AI Director', '/director', 'Настроить автопилот'],
+  ]
+  for (const [href, stage, linkName, linkHref, unavailableAction] of screens) {
+    await page.goto(href); await onlyEssential(page)
+    await expect(page.getByText('СТАТУС ЭКРАНА')).toBeVisible()
+    await expect(page.getByText(stage, { exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: linkName })).toHaveAttribute('href', linkHref)
+    await expect(page.getByRole('button', { name: unavailableAction })).toHaveCount(0)
+  }
+})
+
 test('D03 renders mock-controlled states without impersonating server authorization', async ({ page }, testInfo) => {
   const states = ['missing', 'stale', 'incomplete', 'error']
   let state = 'missing'
@@ -220,13 +239,13 @@ test('account ignores a delayed WB check after the selected store changes', asyn
   let releaseCheck
   let checkStarted
   const started = new Promise(resolve => { checkStarted = resolve })
-  await login(page, `owner.wb.${testInfo.project.name.replaceAll('-', '.')}.e2e@example.com`)
   await page.route('**/api/marketplace/wildberries?store_id=*', route => route.fulfill({ json: { connected: true, token_saved: true, sources_verified: false, verification: { summary: 'unchecked', sources: [] }, store_id: new URL(route.request().url()).searchParams.get('store_id') } }))
   await page.route(`**/api/marketplace/wildberries/check?store_id=${storeA}`, route => {
     checkStarted()
     return new Promise(resolve => { releaseCheck = () => route.fulfill({ json: { connected: true, token_saved: true, sources_verified: true, verification: { summary: 'complete', sources: [] }, store_id: storeA } }).then(resolve) })
   })
-  await page.goto('/account'); await onlyEssential(page); await consumeExpectedHttpError(page, 402)
+  await login(page, `owner.wb.${testInfo.project.name.replaceAll('-', '.')}.e2e@example.com`)
+  await consumeExpectedHttpError(page, 402)
   const storeSelect = page.locator('select').first()
   await storeSelect.selectOption(storeA)
   await page.getByRole('button', { name: 'Проверить источники' }).click(); await started

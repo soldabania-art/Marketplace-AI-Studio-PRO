@@ -1,0 +1,15 @@
+# Local runtime configuration and secrets never enter the Docker build context.
+.env
+.env.*
+!.env.pilot.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local interpreter/test artifacts are not runtime inputs.
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.db
+*.sqlite*

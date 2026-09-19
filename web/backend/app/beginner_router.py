@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .ai_card_factory import analyze_product_photo, generate_grounded_copy
-from .ai_generation_service import begin_generation, complete_generation, fail_generation
+from .ai_generation_service import GenerationAdmissionConflict, begin_generation, complete_generation, fail_generation
 from .config import get_settings
 from .db import get_db
 from .models import BeginnerProject, User
@@ -206,6 +206,8 @@ def analyze_photo(payload: PhotoAnalysisRequest, user: User = Depends(get_curren
         complete_generation(db, generation, analysis, metadata)
         completed = True
         return {"generation_id": generation.id, "analysis": analysis, "analysis_signature": sign_analysis(analysis, store.id), "source": "single_photo", "facts_require_confirmation": True, "trial": trial}
+    except GenerationAdmissionConflict as exc:
+        raise HTTPException(409, "Такая AI-генерация уже выполняется. Дождитесь результата.") from exc
     except RuntimeError as exc:
         if generation:
             fail_generation(db, generation, exc)
@@ -237,6 +239,8 @@ def generate_draft(payload: BeginnerDraftRequest, user: User = Depends(get_curre
         metadata = draft.pop("_generation_metadata", {})
         complete_generation(db, generation, draft, metadata)
         completed = True
+    except GenerationAdmissionConflict as exc:
+        raise HTTPException(409, "Такая AI-генерация уже выполняется. Дождитесь результата.") from exc
     except RuntimeError as exc:
         if generation:
             fail_generation(db, generation, exc)

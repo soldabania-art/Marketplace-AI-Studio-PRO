@@ -220,13 +220,13 @@ test('account ignores a delayed WB check after the selected store changes', asyn
   let releaseCheck
   let checkStarted
   const started = new Promise(resolve => { checkStarted = resolve })
-  await login(page, `owner.wb.${testInfo.project.name.replaceAll('-', '.')}.e2e@example.com`)
   await page.route('**/api/marketplace/wildberries?store_id=*', route => route.fulfill({ json: { connected: true, token_saved: true, sources_verified: false, verification: { summary: 'unchecked', sources: [] }, store_id: new URL(route.request().url()).searchParams.get('store_id') } }))
   await page.route(`**/api/marketplace/wildberries/check?store_id=${storeA}`, route => {
     checkStarted()
     return new Promise(resolve => { releaseCheck = () => route.fulfill({ json: { connected: true, token_saved: true, sources_verified: true, verification: { summary: 'complete', sources: [] }, store_id: storeA } }).then(resolve) })
   })
-  await page.goto('/account'); await onlyEssential(page); await consumeExpectedHttpError(page, 402)
+  await login(page, `owner.wb.${testInfo.project.name.replaceAll('-', '.')}.e2e@example.com`)
+  await consumeExpectedHttpError(page, 402)
   const storeSelect = page.locator('select').first()
   await storeSelect.selectOption(storeA)
   await page.getByRole('button', { name: 'Проверить источники' }).click(); await started

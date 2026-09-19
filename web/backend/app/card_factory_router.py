@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
 
 from .ai_card_factory import assess_grounding, build_fact_set, generate_grounded_copy, generate_product_visual
-from .ai_generation_service import begin_generation, complete_generation, fail_generation, public_generation, stable_hash
+from .ai_generation_service import GenerationAdmissionConflict, begin_generation, complete_generation, fail_generation, public_generation, stable_hash
 from .billing_service import require_entitlement
 from .config import get_settings
 from .db import get_db
@@ -347,6 +347,8 @@ def generate(payload: GenerateCardRequest, user: User = Depends(get_current_user
         metadata = draft.pop("_generation_metadata", {})
         complete_generation(db, generation, draft, metadata)
         completed = True
+    except GenerationAdmissionConflict as exc:
+        raise HTTPException(409, "Такая AI-генерация уже выполняется. Дождитесь результата.") from exc
     except RuntimeError as exc:
         if generation:
             fail_generation(db, generation, exc)
@@ -394,7 +396,10 @@ def generate_visual(payload: GenerateVisualRequest, user: User = Depends(get_cur
     if not plan or payload.visual_index >= len(plan):
         raise HTTPException(409, "Сначала создайте актуальный текстовый черновик и визуальный план.")
     direction = str(plan[payload.visual_index])[:1000]
-    generation = begin_generation(db, store=store, user=user, feature="card_factory_visual", subject_id=str(payload.nm_id), input_payload={"fact_set_sha256": fact_set["sha256"], "visual_direction": direction, "visual_index": payload.visual_index}, fact_set_sha256=fact_set["sha256"], model=get_settings().openai_image_model)
+    try:
+        generation = begin_generation(db, store=store, user=user, feature="card_factory_visual", subject_id=str(payload.nm_id), input_payload={"fact_set_sha256": fact_set["sha256"], "visual_direction": direction, "visual_index": payload.visual_index}, fact_set_sha256=fact_set["sha256"], model=get_settings().openai_image_model)
+    except GenerationAdmissionConflict as exc:
+        raise HTTPException(409, "Такая AI-генерация уже выполняется. Дождитесь результата.") from exc
     try:
         image_base64, metadata, result = generate_product_visual(fact_set, direction)
         generated_bytes = base64.b64decode(image_base64, validate=True)

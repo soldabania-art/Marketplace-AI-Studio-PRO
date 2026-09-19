@@ -235,6 +235,21 @@ test('account ignores a delayed WB check after the selected store changes', asyn
   await expect(page.getByText('Источники ещё не проверены', { exact: true })).toBeVisible()
 })
 
+test('authenticated overview sends data questions to Director without fabricating an AI reply', async ({ page }, testInfo) => {
+  await login(page, `home.manager.${testInfo.project.name.replaceAll('-', '.')}.e2e@example.com`)
+  await consumeExpectedHttpError(page, 402)
+  await page.route('**/api/seller-data/overview?store_id=*', route => route.fulfill({
+    json: { kpis: { orders_7d: 0, avg_orders_per_day: 0, stock_units: 0, low_stock_products: 0, products_with_history: 0, active_products: 0 }, freshness: { age_seconds: null }, sync_required: true },
+  }))
+  await page.goto('/'); await onlyEssential(page)
+  const support = page.getByLabel('Контекстная помощь')
+  await expect(support).toContainText('Решения по данным магазина')
+  await expect(support).toContainText('проверенные факты, ограничения источников и следующие действия')
+  await expect(support.getByRole('link', { name: 'Открыть Director' })).toHaveAttribute('href', '/director')
+  await expect(page.getByRole('textbox', { name: /введите вопрос/i })).toHaveCount(0)
+  await expect(page.getByText(/AI принял вопрос/)).toHaveCount(0)
+})
+
 test('actual backend: platform roles, MFA/step-up and store scope remain server-enforced', async ({ page }, testInfo) => {
   test.setTimeout(90_000)
   const suffix = testInfo.project.name.replaceAll('-', '.')

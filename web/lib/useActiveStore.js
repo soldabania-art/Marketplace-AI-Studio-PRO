@@ -17,7 +17,7 @@ export function getActiveStoreId(){
   return window.localStorage.getItem(STORE_KEY)||''
 }
 
-export function useActiveStore(){
+export function useActiveStore(enabled=true){
   const [storeId,setStoreId]=useState('')
   const [storeName,setStoreName]=useState('')
   const [stores,setStores]=useState([])
@@ -34,6 +34,10 @@ export function useActiveStore(){
   },[])
 
   const refresh=useCallback(async(preferredId='')=>{
+    if(!enabled){
+      setLoading(false)
+      return {storeId:'',stores:[]}
+    }
     setLoading(true); setError('')
     try{
       const response=await fetch('/api/stores',{cache:'no-store'})
@@ -52,9 +56,13 @@ export function useActiveStore(){
       setError(e.message||'Не удалось загрузить магазины')
       throw e
     }finally{setLoading(false)}
-  },[applyStore])
+  },[applyStore,enabled])
 
   useEffect(()=>{
+    if(!enabled){
+      setLoading(false)
+      return
+    }
     let alive=true
     refresh().catch(()=>{})
     function changed(event){
@@ -66,7 +74,7 @@ export function useActiveStore(){
     }
     window.addEventListener(STORE_EVENT,changed)
     return ()=>{alive=false;window.removeEventListener(STORE_EVENT,changed)}
-  },[applyStore,refresh])
+  },[applyStore,enabled,refresh])
 
   function select(nextId){
     const next=applyStore(nextId)

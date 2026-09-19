@@ -2,10 +2,13 @@ import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { backendRequest } from '../../../../lib/backend'
 
-export async function GET() {
+export async function GET(request) {
   const cookieStore = await cookies()
   const token = cookieStore.get('mai_session')?.value
-  if (!token) return NextResponse.json({ error: 'Требуется вход' }, { status: 401 })
+  if (!token) {
+    const optional = new URL(request.url).searchParams.get('optional') === '1'
+    return optional ? NextResponse.json(null) : NextResponse.json({ error: 'Требуется вход' }, { status: 401 })
+  }
 
   try {
     const { response, payload } = await backendRequest('/api/v1/auth/me', {

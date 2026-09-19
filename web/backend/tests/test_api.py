@@ -13,6 +13,13 @@ Base.metadata.create_all(bind=engine)
 client = TestClient(app)
 
 
+def _available_wb_sources():
+    return {"summary": "complete", "sources": [
+        {"key": key, "status": "available", "endpoints": []}
+        for key in ("catalog", "analytics", "finance", "advertising", "feedbacks")
+    ]}
+
+
 def test_health():
     response = client.get("/health")
     assert response.status_code == 200
@@ -185,7 +192,8 @@ def test_onboarding_is_store_scoped_and_business_profile_requires_admin_confirma
     with SessionLocal() as db:
         store = db.get(Store, store_id)
         owner_id = client.get("/api/v1/auth/me", headers=owner_headers).json()["id"]
-        db.add(MarketplaceConnection(user_id=owner_id, store_id=store_id, marketplace="wildberries", encrypted_token="test", enabled=True))
+        db.add(MarketplaceConnection(user_id=owner_id, store_id=store_id, marketplace="wildberries", encrypted_token="test", enabled=True,
+            capability_results=_available_wb_sources()))
         db.add(MarketplaceSnapshot(store_id=store_id, marketplace="wildberries", snapshot_type="catalog",
             payload={"items": [{"nm_id": 123456}, {"nm_id": 654321}]}))
         db.commit()

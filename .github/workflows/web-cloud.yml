@@ -167,8 +167,6 @@ jobs:
           --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 12
     env:
       MARKETPLACE_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/trovendi_e2e
-      MARKETPLACE_JWT_SECRET: e2e-only-jwt-secret-not-for-production-1234567890
-      MARKETPLACE_MFA_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       MARKETPLACE_REDIS_URL: redis://localhost:6379/14
       MARKETPLACE_MARKETPLACE_LIMITER_BACKEND: redis
       MARKETPLACE_API_URL: http://127.0.0.1:8000
@@ -189,16 +187,34 @@ jobs:
           cd web && npm ci && npx playwright install --with-deps chromium
       - name: Generate non-exported test auth material
         run: |
-          echo "E2E_PASSWORD=$(openssl rand -base64 36)" >> "$GITHUB_ENV"
-          python - <<'PY' >> "$GITHUB_ENV"
+          e2e_password="$(openssl rand -base64 36)"
+          e2e_jwt_secret="$(openssl rand -base64 48)"
+          e2e_totp_secret="$(python - <<'PY'
           import base64
           import secrets
-          print('E2E_TOTP_SECRET=' + base64.b32encode(secrets.token_bytes(20)).decode().rstrip('='))
+          print(base64.b32encode(secrets.token_bytes(20)).decode().rstrip('='))
           PY
+          )"
+          e2e_mfa_key="$(python - <<'PY'
+          import base64
+          import secrets
+          print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())
+          PY
+          )"
+          for value in "$e2e_password" "$e2e_jwt_secret" "$e2e_totp_secret" "$e2e_mfa_key"; do
+            echo "::add-mask::$value"
+          done
+          {
+            echo "E2E_PASSWORD=$e2e_password"
+            echo "E2E_TOTP_SECRET=$e2e_totp_secret"
+            echo "MARKETPLACE_JWT_SECRET=$e2e_jwt_secret"
+            echo "MARKETPLACE_MFA_ENCRYPTION_KEY=$e2e_mfa_key"
+          } >> "$GITHUB_ENV"
       - name: Prepare isolated PostgreSQL fixtures
         run: |
-          cd web/backend && alembic upgrade head
-          cd .. && python e2e/seed_acceptance.py
+          cd web/backend
+          alembic upgrade head
+          PYTHONPATH=. python ../e2e/seed_acceptance.py
       - name: Run local backend and frontend browser acceptance
         run: |
           (cd web/backend && uvicorn app.main:app --host 127.0.0.1 --port 8000 > ../../backend-e2e.log 2>&1) &

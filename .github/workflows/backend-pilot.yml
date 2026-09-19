@@ -7,6 +7,7 @@ on:
       - 'web/backend/pilot-bootstrap.sh'
       - 'web/backend/.env.pilot.example'
       - 'web/backend/Dockerfile'
+      - 'web/backend/.dockerignore'
       - 'web/backend/requirements.txt'
       - 'web/backend/migrations/**'
       - '.github/workflows/backend-pilot.yml'

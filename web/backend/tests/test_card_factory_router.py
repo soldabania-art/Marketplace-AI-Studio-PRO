@@ -6,8 +6,8 @@ import pytest
 from fastapi import HTTPException
 
 from app.ai_card_factory import build_fact_set
-from app.ai_generation_service import stable_hash
-from app.card_factory_router import ConfirmPublicationRequest, GenerateCardRequest, PreparePublicationRequest, _find_card, _load_card, _media_verification_result, _photo_urls, _publication_payload, _verification_result, generate, generations, prepare_publication, publish_card, publish_media
+from app.ai_generation_service import GenerationAdmissionConflict, stable_hash
+from app.card_factory_router import ConfirmPublicationRequest, GenerateCardRequest, GenerateVisualRequest, PreparePublicationRequest, _find_card, _load_card, _media_verification_result, _photo_urls, _publication_payload, _verification_result, generate, generate_visual, generations, prepare_publication, publish_card, publish_media
 from app.external_write_guard import require_external_write_allowed
 from app.models import AutomationControl, OperationalAuditEvent, PublicationStatus
 
@@ -71,6 +71,26 @@ def test_verification_result_distinguishes_applied_pending_and_mismatch(live, ex
 def test_photo_urls_use_original_big_images_in_order():
     card = {"photos": [{"big": "https://wb/1.webp", "square": "small"}, {}, {"big": "https://wb/2.webp"}]}
     assert _photo_urls(card) == ["https://wb/1.webp", "https://wb/2.webp"]
+
+
+def test_visual_duplicate_admission_returns_409_before_provider(monkeypatch):
+    store = SimpleNamespace(id="store-1", workspace_id="workspace-1")
+    snapshot = SimpleNamespace(created_at=datetime.now(timezone.utc))
+    copy = SimpleNamespace(result_payload={"visual_plan": ["neutral product photo"]})
+    db = SimpleNamespace(query=lambda *_: SimpleNamespace(filter=lambda *_: SimpleNamespace(order_by=lambda *_: SimpleNamespace(first=lambda: copy))))
+    provider_calls = []
+    monkeypatch.setattr("app.card_factory_router._resolve_connected_store", lambda *_: store)
+    monkeypatch.setattr("app.card_factory_router.require_entitlement", lambda *_: None)
+    monkeypatch.setattr("app.card_factory_router._load_card", lambda *_: ({"nm_id": 42}, snapshot))
+    monkeypatch.setattr("app.card_factory_router.build_fact_set", lambda *_: {"sha256": "f" * 64})
+    monkeypatch.setattr("app.card_factory_router.begin_generation", lambda *_args, **_kwargs: (_ for _ in ()).throw(GenerationAdmissionConflict()))
+    monkeypatch.setattr("app.card_factory_router.generate_product_visual", lambda *_: provider_calls.append("called"))
+
+    with pytest.raises(HTTPException) as exc:
+        generate_visual(GenerateVisualRequest(store_id=store.id, nm_id=42), user=SimpleNamespace(id="user-1"), db=db)
+
+    assert exc.value.status_code == 409
+    assert provider_calls == []
 
 
 @pytest.mark.parametrize(

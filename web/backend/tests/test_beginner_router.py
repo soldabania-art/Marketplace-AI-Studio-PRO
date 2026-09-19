@@ -1,4 +1,7 @@
 import base64
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from types import SimpleNamespace
 
 import pytest
@@ -16,10 +19,62 @@ from app.beginner_router import (
     generate_draft,
     sign_analysis,
 )
+from app.db import Base, SessionLocal
+from app.models import Membership, MembershipRole, Store, User, Workspace
 
 
 def _data_url(raw=b"real-image-bytes"):
     return "data:image/jpeg;base64," + base64.b64encode(raw).decode()
+
+
+def test_overlapping_photo_requests_admit_one_provider_call_and_reject_duplicate(monkeypatch):
+    """A reload must not start another paid photo-analysis request while one is pending."""
+    Base.metadata.create_all(bind=SessionLocal.kw["bind"])
+    with SessionLocal() as db:
+        suffix = uuid.uuid4().hex
+        user = User(email=f"generation-admission-{suffix}@example.com", password_hash="test")
+        workspace = Workspace(name=f"Generation admission {suffix}")
+        db.add_all([user, workspace]); db.flush()
+        db.add(Membership(user_id=user.id, workspace_id=workspace.id, role=MembershipRole.owner))
+        store = Store(workspace_id=workspace.id, name=f"Store {suffix}")
+        db.add(store); db.commit()
+        user_id, store_id = user.id, store.id
+
+    monkeypatch.setattr("app.beginner_router.reserve_trial_card", lambda *_: ({"cards_remaining": 4}, False))
+    monkeypatch.setattr("app.beginner_router.refund_trial_card", lambda *_: None)
+    entered_provider = Event()
+    release_provider = Event()
+    provider_calls = []
+
+    def provider(_image):
+        provider_calls.append("called")
+        if len(provider_calls) == 1:
+            entered_provider.set()
+            assert release_provider.wait(timeout=5)
+        return {"visible_facts": []}
+
+    monkeypatch.setattr("app.beginner_router.analyze_product_photo", provider)
+    payload = PhotoAnalysisRequest(store_id=store_id, image_data_url=_data_url(b"x" * 80))
+
+    def request():
+        with SessionLocal() as db:
+            user = db.get(User, user_id)
+            try:
+                return analyze_photo(payload, user=user, db=db)
+            except HTTPException as exc:
+                return exc.status_code, exc.detail
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(request)
+        assert entered_provider.wait(timeout=5)
+        second = pool.submit(request)
+        duplicate = second.result(timeout=5)
+        release_provider.set()
+        winner = first.result(timeout=5)
+
+    assert duplicate == (409, "Такая AI-генерация уже выполняется. Дождитесь результата.")
+    assert winner["generation_id"]
+    assert provider_calls == ["called"]
 
 
 def test_beginner_photo_analysis_marks_facts_for_confirmation(monkeypatch):

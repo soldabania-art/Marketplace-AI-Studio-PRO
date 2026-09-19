@@ -2,10 +2,30 @@ import hashlib
 import json
 from datetime import datetime, timezone
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .models import AIGeneration, GenerationStatus, Store, User
+
+
+class GenerationAdmissionConflict(Exception):
+    """An identical paid generation is already pending for this store."""
+
+
+_ADMISSION_INDEX = "uq_ai_generation_pending_admission"
+_SQLITE_ADMISSION_CONSTRAINT = (
+    "UNIQUE constraint failed: ai_generations.store_id, ai_generations.feature, "
+    "ai_generations.subject_type, ai_generations.subject_id, ai_generations.input_hash, "
+    "ai_generations.fact_set_sha256, ai_generations.model"
+)
+
+
+def _is_pending_admission_conflict(error: IntegrityError) -> bool:
+    diagnostic = getattr(error.orig, "diag", None)
+    if getattr(diagnostic, "constraint_name", None) == _ADMISSION_INDEX:
+        return True
+    return str(error.orig).strip() == _SQLITE_ADMISSION_CONSTRAINT
 
 
 def stable_hash(payload: dict) -> str:
@@ -14,20 +34,40 @@ def stable_hash(payload: dict) -> str:
 
 
 def begin_generation(db: Session, *, store: Store, user: User, feature: str, subject_id: str, input_payload: dict, fact_set_sha256: str = "", model: str | None = None) -> AIGeneration:
+    resolved_model = model or get_settings().openai_model
+    input_hash = stable_hash(input_payload)
+    pending = db.query(AIGeneration).filter(
+        AIGeneration.store_id == store.id,
+        AIGeneration.feature == feature,
+        AIGeneration.subject_type == "product",
+        AIGeneration.subject_id == str(subject_id),
+        AIGeneration.input_hash == input_hash,
+        AIGeneration.fact_set_sha256 == fact_set_sha256,
+        AIGeneration.model == resolved_model,
+        AIGeneration.status == GenerationStatus.pending,
+    ).first()
+    if pending:
+        raise GenerationAdmissionConflict()
     generation = AIGeneration(
         workspace_id=store.workspace_id,
         store_id=store.id,
         user_id=user.id,
         feature=feature,
         subject_id=str(subject_id),
-        input_hash=stable_hash(input_payload),
+        input_hash=input_hash,
         fact_set_sha256=fact_set_sha256,
-        model=model or get_settings().openai_model,
+        model=resolved_model,
         input_payload=input_payload,
         status=GenerationStatus.pending,
     )
     db.add(generation)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if _is_pending_admission_conflict(exc):
+            raise GenerationAdmissionConflict() from exc
+        raise
     db.refresh(generation)
     return generation
 

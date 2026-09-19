@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from .db import get_db
-from .ai_generation_service import begin_generation, complete_generation, fail_generation, public_generation, stable_hash
+from .ai_generation_service import GenerationAdmissionConflict, begin_generation, complete_generation, fail_generation, public_generation, stable_hash
 from .billing_service import require_entitlement
 from .config import get_settings
 from .data_health import evaluate_source_snapshot, refresh_due
@@ -70,7 +70,10 @@ def create_review_analysis(store_id: str, user: User = Depends(get_current_user)
     previous = db.query(AIGeneration).filter(AIGeneration.store_id == store.id, AIGeneration.feature == "review_analysis", AIGeneration.input_hash == input_hash, AIGeneration.status == GenerationStatus.completed).order_by(AIGeneration.created_at.desc()).first()
     if previous:
         return {"generation": public_generation(previous), "cached": True, "automatic_reply_enabled": False}
-    generation = begin_generation(db, store=store, user=user, feature="review_analysis", subject_id=snapshot.id, input_payload=input_payload, fact_set_sha256=fact_set["sha256"])
+    try:
+        generation = begin_generation(db, store=store, user=user, feature="review_analysis", subject_id=snapshot.id, input_payload=input_payload, fact_set_sha256=fact_set["sha256"])
+    except GenerationAdmissionConflict as exc:
+        raise HTTPException(409, "Такая AI-генерация уже выполняется. Дождитесь результата.") from exc
     try:
         result = generate_review_analysis(fact_set)
         metadata = result.pop("_generation_metadata", {})
@@ -82,4 +85,3 @@ def create_review_analysis(store_id: str, user: User = Depends(get_current_user)
     except httpx.HTTPError as exc:
         fail_generation(db, generation, exc); raise HTTPException(502, "AI-сервис временно не ответил.") from exc
     return {"generation": public_generation(generation), "cached": False, "automatic_reply_enabled": False}
-

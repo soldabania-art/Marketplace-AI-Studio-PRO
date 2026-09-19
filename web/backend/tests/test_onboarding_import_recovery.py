@@ -32,6 +32,10 @@ def _connected_owner():
             marketplace='wildberries',
             encrypted_token='test',
             enabled=True,
+            capability_results={'summary': 'complete', 'sources': [
+                {'key': key, 'status': 'available', 'endpoints': []}
+                for key in ('catalog', 'analytics', 'finance', 'advertising', 'feedbacks')
+            ]},
         ))
         db.commit()
     return headers, store_id

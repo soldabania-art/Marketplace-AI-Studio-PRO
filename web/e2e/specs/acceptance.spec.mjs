@@ -71,6 +71,20 @@ async function evidencePath(name) {
   return `e2e-artifacts/screenshots/${name}`
 }
 
+async function browserApi(page, url, { method = 'GET', data } = {}) {
+  return page.evaluate(async ({ url, method, data }) => {
+    const response = await fetch(url, {
+      method,
+      credentials: 'same-origin',
+      headers: data === undefined ? undefined : { 'Content-Type': 'application/json' },
+      body: data === undefined ? undefined : JSON.stringify(data),
+    })
+    let payload = null
+    try { payload = await response.json() } catch {}
+    return { status: response.status, payload }
+  }, { url, method, data })
+}
+
 test('D02 preserves a selected planned integration and essential-only consent', async ({ page }, testInfo) => {
   await page.goto('/#bundle'); await onlyEssential(page)
   await page.getByRole('button', { name: /Ozon.*Запланировано/ }).click()
@@ -110,19 +124,18 @@ test('D03 renders mock-controlled states without impersonating server authorizat
 test('actual backend: platform roles, MFA/step-up and store scope remain server-enforced', async ({ page }, testInfo) => {
   const suffix = testInfo.project.name.replaceAll('-', '.')
   const viewerId = `e2e-viewer-${testInfo.project.name}`
-  const request = page.context().request
   await login(page, `owner.${suffix}.e2e@example.com`)
-  const missingStepUp = await request.patch('/api/admin', { data: { action: 'set_user_status', user_id: viewerId, active: false } })
-  expect(missingStepUp.status()).toBe(428)
-  const stepUp = await request.post('/api/auth/step-up', { data: { password, code: totp() } })
-  expect(stepUp.status()).toBe(200)
+  const missingStepUp = await browserApi(page, '/api/admin', { method: 'PATCH', data: { action: 'set_user_status', user_id: viewerId, active: false } })
+  expect(missingStepUp.status).toBe(428)
+  const stepUp = await browserApi(page, '/api/auth/step-up', { method: 'POST', data: { password, code: totp() } })
+  expect(stepUp.status).toBe(200)
   await page.goto('/admin'); await expect(page.getByText(/Обзор для владельца и команды/)).toBeVisible()
-  const stores = await request.get('/api/stores'); const list = await stores.json()
-  expect(list.stores.map(item => item.id)).toEqual(expect.arrayContaining([storeA, storeB]))
+  const stores = await browserApi(page, '/api/stores')
+  expect(stores.payload.stores.map(item => item.id)).toEqual(expect.arrayContaining([storeA, storeB]))
   await page.context().clearCookies(); await login(page, `viewer.${suffix}.e2e@example.com`)
-  const viewerAdmin = await request.get('/api/admin'); expect(viewerAdmin.status()).toBe(403)
-  const viewerMutation = await request.patch('/api/director/control', { data: { store_id: storeA, stopped: true, reason: 'E2E' } }); expect(viewerMutation.status()).toBe(403)
+  const viewerAdmin = await browserApi(page, '/api/admin'); expect(viewerAdmin.status).toBe(403)
+  const viewerMutation = await browserApi(page, '/api/director/control', { method: 'PATCH', data: { store_id: storeA, stopped: true, reason: 'E2E' } }); expect(viewerMutation.status).toBe(403)
   await page.context().clearCookies(); await login(page, `manager.${suffix}.e2e@example.com`)
-  const managerOverview = await request.get('/api/admin'); expect(managerOverview.status()).toBe(200)
-  const managerMutation = await request.patch('/api/admin', { data: { action: 'set_user_status', user_id: viewerId, active: false } }); expect(managerMutation.status()).toBe(403)
+  const managerOverview = await browserApi(page, '/api/admin'); expect(managerOverview.status).toBe(200)
+  const managerMutation = await browserApi(page, '/api/admin', { method: 'PATCH', data: { action: 'set_user_status', user_id: viewerId, active: false } }); expect(managerMutation.status).toBe(403)
 })

@@ -25,7 +25,8 @@ with SessionLocal() as db:
         wb_owner = user(f"e2e-wb-owner-{viewport}", f"owner.wb.{suffix}.e2e@example.com", f"E2E WB owner {viewport}")
         manager = user(f"e2e-manager-{viewport}", f"manager.{suffix}.e2e@example.com", f"E2E project manager {viewport}")
         viewer = user(f"e2e-viewer-{viewport}", f"viewer.{suffix}.e2e@example.com", f"E2E workspace viewer {viewport}")
-        accounts.append((viewport, owner, wb_owner, manager, viewer))
+        home_manager = user(f"e2e-home-manager-{viewport}", f"home.manager.{suffix}.e2e@example.com", f"E2E home manager {viewport}")
+        accounts.append((viewport, owner, wb_owner, manager, viewer, home_manager))
     db.add(workspace)
     foreign_workspace = Workspace(id="e2e00000-0000-4000-8000-0000000000f1", name="E2E foreign workspace")
     db.add(foreign_workspace)
@@ -39,12 +40,13 @@ with SessionLocal() as db:
         Store(id=FOREIGN_STORE, workspace_id=foreign_workspace.id, name="E2E foreign store"),
         *[
             row
-            for _, owner, wb_owner, manager, viewer in accounts
+            for _, owner, wb_owner, manager, viewer, home_manager in accounts
             for row in (
                 Membership(user_id=owner.id, workspace_id=WORKSPACE_ID, role=MembershipRole.owner),
                 Membership(user_id=wb_owner.id, workspace_id=WORKSPACE_ID, role=MembershipRole.owner),
                 Membership(user_id=manager.id, workspace_id=WORKSPACE_ID, role=MembershipRole.admin),
                 Membership(user_id=viewer.id, workspace_id=WORKSPACE_ID, role=MembershipRole.analyst),
+                Membership(user_id=home_manager.id, workspace_id=WORKSPACE_ID, role=MembershipRole.admin),
                 PlatformStaffRole(user_id=owner.id, role=PlatformStaffRoleName.owner),
                 PlatformStaffRole(user_id=manager.id, role=PlatformStaffRoleName.project_manager),
             )

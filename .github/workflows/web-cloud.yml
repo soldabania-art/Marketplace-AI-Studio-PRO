@@ -218,8 +218,9 @@ jobs:
       - name: Run local backend and frontend browser acceptance
         id: browser_tests
         run: |
+          cd web && npm run build && cd ..
           (cd web/backend && uvicorn app.main:app --host 127.0.0.1 --port 8000 > ../../backend-e2e.log 2>&1) &
-          (cd web && npm run dev -- --hostname 127.0.0.1 --port 3000 > ../frontend-e2e.log 2>&1) &
+          (cd web && npm run start -- --hostname 127.0.0.1 --port 3000 > ../frontend-e2e.log 2>&1) &
           for n in $(seq 1 60); do curl -fsS http://127.0.0.1:3000 >/dev/null && break; sleep 1; done
           cd web && npm run test:e2e
       - name: Reject unsafe browser evidence

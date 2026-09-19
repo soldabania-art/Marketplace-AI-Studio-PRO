@@ -7,7 +7,7 @@ on:
       - 'web/**'
       - '.github/workflows/web-cloud.yml'
   pull_request:
-    branches: [main]
+    branches: [main, codex/backend-integration-reviewed]
     paths:
       - 'web/**'
       - '.github/workflows/web-cloud.yml'

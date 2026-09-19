@@ -216,6 +216,7 @@ jobs:
           alembic upgrade head
           PYTHONPATH=. python ../e2e/seed_acceptance.py
       - name: Run local backend and frontend browser acceptance
+        id: browser_tests
         run: |
           (cd web/backend && uvicorn app.main:app --host 127.0.0.1 --port 8000 > ../../backend-e2e.log 2>&1) &
           (cd web && npm run dev -- --hostname 127.0.0.1 --port 3000 > ../frontend-e2e.log 2>&1) &
@@ -261,11 +262,27 @@ jobs:
                   continue
               if path.suffix == '.log' and risky_log_value.search(content):
                   unsafe.append(path)
+          if os.environ['E2E_SUCCEEDED'] == 'true':
+              required = [
+                  Path('web/e2e-artifacts/browser-report.json'),
+                  Path('web/e2e-artifacts/html/index.html'),
+                  *[
+                      Path(f'web/e2e-artifacts/screenshots/{suite}-{viewport}.png')
+                      for suite in ('d02', 'd03-mock')
+                      for viewport in ('desktop-1440', 'desktop-1280', 'mobile-390')
+                  ],
+              ]
+              missing = [path for path in required if not path.is_file()]
+              if missing:
+                  print(f'Required browser evidence is incomplete: {len(missing)} file(s) missing.')
+                  raise SystemExit(1)
           if unsafe:
               print(f'Unsafe evidence detected in {len(unsafe)} file(s); artifact upload blocked.')
               raise SystemExit(1)
           print(f'Artifact safety scan passed for {len(files)} allowlisted file(s).')
           PY
+        env:
+          E2E_SUCCEEDED: ${{ steps.browser_tests.outcome == 'success' }}
       - name: Upload browser evidence
         if: always() && steps.evidence_scan.outcome == 'success'
         uses: actions/upload-artifact@v4

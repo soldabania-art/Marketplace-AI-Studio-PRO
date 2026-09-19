@@ -4,7 +4,7 @@ export default defineConfig({
   testDir: './specs',
   timeout: 45_000,
   fullyParallel: false,
-  reporter: [['line'], ['json', { outputFile: 'e2e-artifacts/browser-report.json' }], ['html', { outputFolder: 'e2e-artifacts/html', open: 'never' }]],
+  reporter: [['line'], ['json', { outputFile: '../e2e-artifacts/browser-report.json' }], ['html', { outputFolder: '../e2e-artifacts/html', open: 'never' }]],
   // Explicit screenshots below are safe evidence. Do not archive interaction
   // recordings because a failed auth flow can contain typed test credentials.
   use: { baseURL: 'http://127.0.0.1:3000', screenshot: 'off', video: 'off', trace: 'off' },

@@ -42,6 +42,7 @@ async function login(page, email) {
 }
 
 async function onlyEssential(page) {
+  await expect(page.locator('html')).toHaveAttribute('data-trovendi-ready', 'true')
   const hasConsent = await page.evaluate(() => localStorage.getItem('mai_cookie_consent_v1') !== null)
   if (hasConsent) return
   const button = page.getByRole('button', { name: 'Только обязательные' })

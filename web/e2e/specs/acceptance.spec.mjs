@@ -107,19 +107,22 @@ test('D03 renders mock-controlled states without impersonating server authorizat
   await page.screenshot({ path: await evidencePath(`d03-mock-${testInfo.project.name}.png`), fullPage: true })
 })
 
-test('actual backend: platform roles, MFA/step-up and store scope remain server-enforced', async ({ page }) => {
-  await login(page, 'owner.e2e@example.com')
-  const missingStepUp = await page.request.patch('/api/admin', { data: { action: 'set_user_status', user_id: 'e2e-viewer', active: false } })
+test('actual backend: platform roles, MFA/step-up and store scope remain server-enforced', async ({ page }, testInfo) => {
+  const suffix = testInfo.project.name.replaceAll('-', '.')
+  const viewerId = `e2e-viewer-${testInfo.project.name}`
+  const request = page.context().request
+  await login(page, `owner.${suffix}.e2e@example.com`)
+  const missingStepUp = await request.patch('/api/admin', { data: { action: 'set_user_status', user_id: viewerId, active: false } })
   expect(missingStepUp.status()).toBe(428)
-  const stepUp = await page.request.post('/api/auth/step-up', { data: { password, code: totp() } })
+  const stepUp = await request.post('/api/auth/step-up', { data: { password, code: totp() } })
   expect(stepUp.status()).toBe(200)
   await page.goto('/admin'); await expect(page.getByText(/Обзор для владельца и команды/)).toBeVisible()
-  const stores = await page.request.get('/api/stores'); const list = await stores.json()
+  const stores = await request.get('/api/stores'); const list = await stores.json()
   expect(list.stores.map(item => item.id)).toEqual(expect.arrayContaining([storeA, storeB]))
-  await page.context().clearCookies(); await login(page, 'viewer.e2e@example.com')
-  const viewerAdmin = await page.request.get('/api/admin'); expect(viewerAdmin.status()).toBe(403)
-  const viewerMutation = await page.request.patch('/api/director/control', { data: { store_id: storeA, stopped: true, reason: 'E2E' } }); expect(viewerMutation.status()).toBe(403)
-  await page.context().clearCookies(); await login(page, 'manager.e2e@example.com')
-  const managerOverview = await page.request.get('/api/admin'); expect(managerOverview.status()).toBe(200)
-  const managerMutation = await page.request.patch('/api/admin', { data: { action: 'set_user_status', user_id: 'e2e-viewer', active: false } }); expect(managerMutation.status()).toBe(403)
+  await page.context().clearCookies(); await login(page, `viewer.${suffix}.e2e@example.com`)
+  const viewerAdmin = await request.get('/api/admin'); expect(viewerAdmin.status()).toBe(403)
+  const viewerMutation = await request.patch('/api/director/control', { data: { store_id: storeA, stopped: true, reason: 'E2E' } }); expect(viewerMutation.status()).toBe(403)
+  await page.context().clearCookies(); await login(page, `manager.${suffix}.e2e@example.com`)
+  const managerOverview = await request.get('/api/admin'); expect(managerOverview.status()).toBe(200)
+  const managerMutation = await request.patch('/api/admin', { data: { action: 'set_user_status', user_id: viewerId, active: false } }); expect(managerMutation.status()).toBe(403)
 })

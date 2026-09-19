@@ -17,22 +17,34 @@ def user(key, email, name):
 
 with SessionLocal() as db:
     workspace = Workspace(id=WORKSPACE_ID, name="E2E workspace with a deliberately long acceptance name")
-    owner = user("e2e-owner", "owner.e2e@example.com", "E2E platform owner")
-    manager = user("e2e-manager", "manager.e2e@example.com", "E2E project manager")
-    viewer = user("e2e-viewer", "viewer.e2e@example.com", "E2E workspace viewer")
-    db.add_all([workspace, owner, manager, viewer])
+    accounts = []
+    for viewport in ("desktop-1440", "desktop-1280", "mobile-390"):
+        suffix = viewport.replace("-", ".")
+        owner = user(f"e2e-owner-{viewport}", f"owner.{suffix}.e2e@example.com", f"E2E platform owner {viewport}")
+        manager = user(f"e2e-manager-{viewport}", f"manager.{suffix}.e2e@example.com", f"E2E project manager {viewport}")
+        viewer = user(f"e2e-viewer-{viewport}", f"viewer.{suffix}.e2e@example.com", f"E2E workspace viewer {viewport}")
+        accounts.append((viewport, owner, manager, viewer))
+    db.add(workspace)
+    db.add_all([account for _, *roles in accounts for account in roles])
     # Models use scalar foreign keys rather than ORM relationships. Flush the
     # referenced rows first so PostgreSQL enforces the same fixture ordering.
     db.flush()
     db.add_all([
         Store(id=STORE_A, workspace_id=WORKSPACE_ID, name="Store A — deliberately long visible acceptance name"),
         Store(id=STORE_B, workspace_id=WORKSPACE_ID, name="Store B — deliberately long visible acceptance name"),
-        Membership(user_id=owner.id, workspace_id=WORKSPACE_ID, role=MembershipRole.owner),
-        Membership(user_id=manager.id, workspace_id=WORKSPACE_ID, role=MembershipRole.admin),
-        Membership(user_id=viewer.id, workspace_id=WORKSPACE_ID, role=MembershipRole.analyst),
-        PlatformStaffRole(user_id=owner.id, role=PlatformStaffRoleName.owner),
-        PlatformStaffRole(user_id=manager.id, role=PlatformStaffRoleName.project_manager),
+        *[
+            row
+            for _, owner, manager, viewer in accounts
+            for row in (
+                Membership(user_id=owner.id, workspace_id=WORKSPACE_ID, role=MembershipRole.owner),
+                Membership(user_id=manager.id, workspace_id=WORKSPACE_ID, role=MembershipRole.admin),
+                Membership(user_id=viewer.id, workspace_id=WORKSPACE_ID, role=MembershipRole.analyst),
+                PlatformStaffRole(user_id=owner.id, role=PlatformStaffRoleName.owner),
+                PlatformStaffRole(user_id=manager.id, role=PlatformStaffRoleName.project_manager),
+            )
+        ],
     ])
-    for account in (owner, manager, viewer):
+    for _, *roles in accounts:
+      for account in roles:
         db.add(UserMfa(user_id=account.id, secret_ciphertext=encrypt_secret(TOTP_SECRET), enabled=True, recovery_code_hashes=[]))
     db.commit()

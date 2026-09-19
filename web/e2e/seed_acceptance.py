@@ -17,9 +17,9 @@ def user(key, email, name):
 
 with SessionLocal() as db:
     workspace = Workspace(id=WORKSPACE_ID, name="E2E workspace with a deliberately long acceptance name")
-    owner = user("e2e-owner", "owner.e2e@example.test", "E2E platform owner")
-    manager = user("e2e-manager", "manager.e2e@example.test", "E2E project manager")
-    viewer = user("e2e-viewer", "viewer.e2e@example.test", "E2E workspace viewer")
+    owner = user("e2e-owner", "owner.e2e@example.com", "E2E platform owner")
+    manager = user("e2e-manager", "manager.e2e@example.com", "E2E project manager")
+    viewer = user("e2e-viewer", "viewer.e2e@example.com", "E2E workspace viewer")
     db.add_all([workspace, owner, manager, viewer])
     # Models use scalar foreign keys rather than ORM relationships. Flush the
     # referenced rows first so PostgreSQL enforces the same fixture ordering.

@@ -278,7 +278,8 @@ jobs:
                   print(f'Required browser evidence is incomplete: {len(missing)} file(s) missing.')
                   raise SystemExit(1)
           if unsafe:
-              print(f'Unsafe evidence detected in {len(unsafe)} file(s); artifact upload blocked.')
+              print('Unsafe evidence detected in allowlisted file(s): ' + ', '.join(map(str, unsafe)))
+              print('Artifact upload blocked; matched values are not printed.')
               raise SystemExit(1)
           print(f'Artifact safety scan passed for {len(files)} allowlisted file(s).')
           PY

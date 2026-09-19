@@ -10,12 +10,19 @@ if (!password || !secret) {
 }
 const storeA = 'e2e00000-0000-4000-8000-0000000000a1'
 const storeB = 'e2e00000-0000-4000-8000-0000000000b2'
+const browserErrors = new WeakMap()
 
 test.beforeEach(async ({ page }) => {
-  page.on('pageerror', error => console.error(`BROWSER_PAGE_ERROR: ${error.message}`))
+  const errors = []
+  browserErrors.set(page, errors)
+  page.on('pageerror', error => errors.push(`pageerror: ${error.message}`))
   page.on('console', message => {
-    if (message.type() === 'error') console.error(`BROWSER_CONSOLE_ERROR: ${message.text()}`)
+    if (message.type() === 'error') errors.push(`console: ${message.text()}`)
   })
+})
+
+test.afterEach(async ({ page }) => {
+  expect(browserErrors.get(page) || []).toEqual([])
 })
 
 function totp() {
@@ -96,12 +103,12 @@ test('D03 renders mock-controlled states without impersonating server authorizat
   await page.goto('/director'); await onlyEssential(page)
   for (const item of states) { state = item; await page.reload(); await expect(page.getByText(/Очередь ограничена состоянием источников/)).toBeVisible() }
   await expect(page.getByText('Доступен только просмотр')).toBeVisible()
-  await expect(page.getByRole('alert')).toContainText('STOP активен')
+  await expect(page.getByRole('alert').filter({ hasText: 'STOP активен' })).toContainText('STOP активен')
   await page.screenshot({ path: await evidencePath(`d03-mock-${testInfo.project.name}.png`), fullPage: true })
 })
 
 test('actual backend: platform roles, MFA/step-up and store scope remain server-enforced', async ({ page }) => {
-  await login(page, 'owner.e2e@example.test')
+  await login(page, 'owner.e2e@example.com')
   const missingStepUp = await page.request.patch('/api/admin', { data: { action: 'set_user_status', user_id: 'e2e-viewer', active: false } })
   expect(missingStepUp.status()).toBe(428)
   const stepUp = await page.request.post('/api/auth/step-up', { data: { password, code: totp() } })
@@ -109,10 +116,10 @@ test('actual backend: platform roles, MFA/step-up and store scope remain server-
   await page.goto('/admin'); await expect(page.getByText(/Обзор для владельца и команды/)).toBeVisible()
   const stores = await page.request.get('/api/stores'); const list = await stores.json()
   expect(list.stores.map(item => item.id)).toEqual(expect.arrayContaining([storeA, storeB]))
-  await page.context().clearCookies(); await login(page, 'viewer.e2e@example.test')
+  await page.context().clearCookies(); await login(page, 'viewer.e2e@example.com')
   const viewerAdmin = await page.request.get('/api/admin'); expect(viewerAdmin.status()).toBe(403)
   const viewerMutation = await page.request.patch('/api/director/control', { data: { store_id: storeA, stopped: true, reason: 'E2E' } }); expect(viewerMutation.status()).toBe(403)
-  await page.context().clearCookies(); await login(page, 'manager.e2e@example.test')
+  await page.context().clearCookies(); await login(page, 'manager.e2e@example.com')
   const managerOverview = await page.request.get('/api/admin'); expect(managerOverview.status()).toBe(200)
   const managerMutation = await page.request.patch('/api/admin', { data: { action: 'set_user_status', user_id: 'e2e-viewer', active: false } }); expect(managerMutation.status()).toBe(403)
 })

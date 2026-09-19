@@ -236,7 +236,7 @@ test('account ignores a delayed WB check after the selected store changes', asyn
 })
 
 test('authenticated overview sends data questions to Director without fabricating an AI reply', async ({ page }, testInfo) => {
-  await login(page, `manager.${testInfo.project.name.replaceAll('-', '.')}.e2e@example.com`)
+  await login(page, `home.manager.${testInfo.project.name.replaceAll('-', '.')}.e2e@example.com`)
   await consumeExpectedHttpError(page, 402)
   await page.route('**/api/seller-data/overview?store_id=*', route => route.fulfill({
     json: { kpis: { orders_7d: 0, avg_orders_per_day: 0, stock_units: 0, low_stock_products: 0, products_with_history: 0, active_products: 0 }, freshness: { age_seconds: null }, sync_required: true },

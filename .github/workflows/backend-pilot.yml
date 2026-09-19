@@ -53,8 +53,11 @@ jobs:
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8000/health && curl -fsS http://127.0.0.1:8000/ready && exit 0; sleep 2; done
           docker compose --env-file .env.pilot -f docker-compose.pilot.yml logs
           exit 1
-      - name: Check worker heartbeat
-        run: docker compose --env-file .env.pilot -f docker-compose.pilot.yml ps worker
+      - name: Check worker process
+        run: |
+          worker_id="$(docker compose --env-file .env.pilot -f docker-compose.pilot.yml ps -q worker)"
+          test -n "$worker_id"
+          docker inspect --format '{{if and .State.Running (eq .State.ExitCode 0) (eq .RestartCount 0)}}running{{end}}' "$worker_id" | grep -qx running
       - name: Cleanup
         if: always()
         run: docker compose --env-file .env.pilot -f docker-compose.pilot.yml down -v

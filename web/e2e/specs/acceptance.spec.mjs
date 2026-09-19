@@ -1,8 +1,12 @@
 import { createHmac } from 'node:crypto'
 import { test, expect } from '@playwright/test'
 
-const password = 'E2E-only-StrongPass-123!'
-const secret = 'JBSWY3DPEHPK3PXP'
+const password = process.env.E2E_PASSWORD
+const secret = process.env.E2E_TOTP_SECRET
+
+if (!password || !secret) {
+  throw new Error('E2E_PASSWORD and E2E_TOTP_SECRET are required for isolated browser fixtures')
+}
 const storeA = 'e2e00000-0000-4000-8000-0000000000a1'
 const storeB = 'e2e00000-0000-4000-8000-0000000000b2'
 

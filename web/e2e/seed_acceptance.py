@@ -1,11 +1,13 @@
 """Deterministic CI-only browser fixtures. Never run against non-ephemeral DBs."""
+import os
+
 from app.db import SessionLocal
 from app.mfa_service import encrypt_secret
 from app.models import Membership, MembershipRole, PlatformStaffRole, PlatformStaffRoleName, Store, User, UserMfa, Workspace
 from app.security import hash_password
 
-PASSWORD = "E2E-only-StrongPass-123!"
-TOTP_SECRET = "JBSWY3DPEHPK3PXP"
+PASSWORD = os.environ["E2E_PASSWORD"]
+TOTP_SECRET = os.environ["E2E_TOTP_SECRET"]
 WORKSPACE_ID = "e2e00000-0000-4000-8000-000000000001"
 STORE_A = "e2e00000-0000-4000-8000-0000000000a1"
 STORE_B = "e2e00000-0000-4000-8000-0000000000b2"

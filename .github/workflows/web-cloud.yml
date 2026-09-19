@@ -186,6 +186,14 @@ jobs:
         run: |
           pip install -r web/backend/requirements.txt
           cd web && npm ci && npx playwright install --with-deps chromium
+      - name: Generate non-exported test auth material
+        run: |
+          echo "E2E_PASSWORD=$(openssl rand -base64 36)" >> "$GITHUB_ENV"
+          python - <<'PY' >> "$GITHUB_ENV"
+          import base64
+          import secrets
+          print('E2E_TOTP_SECRET=' + base64.b32encode(secrets.token_bytes(20)).decode().rstrip('='))
+          PY
       - name: Prepare isolated PostgreSQL fixtures
         run: |
           cd web/backend && alembic upgrade head

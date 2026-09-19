@@ -35,7 +35,11 @@ def _connected_store():
     db.add(Membership(user_id=user.id, workspace_id=workspace.id, role=MembershipRole.owner))
     store = Store(workspace_id=workspace.id, name=f'Store {suffix}')
     db.add(store); db.flush()
-    db.add(MarketplaceConnection(user_id=user.id, store_id=store.id, marketplace='wildberries', encrypted_token='encrypted-test', enabled=True))
+    db.add(MarketplaceConnection(user_id=user.id, store_id=store.id, marketplace='wildberries', encrypted_token='encrypted-test', enabled=True,
+        capability_results={'summary': 'complete', 'sources': [
+            {'key': key, 'status': 'available', 'endpoints': []}
+            for key in ('catalog', 'analytics', 'finance', 'advertising', 'feedbacks')
+        ]}))
     db.commit()
     result = (workspace.id, store.id)
     db.close()
@@ -229,4 +233,3 @@ def test_concurrent_root_sync_admission_reuses_one_active_job_postgresql():
             BackgroundJob.status.in_([JobStatus.queued, JobStatus.running, JobStatus.retry]),
         ).all()
         assert len(active) == 1
-

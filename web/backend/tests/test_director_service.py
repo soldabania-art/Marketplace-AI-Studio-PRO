@@ -44,8 +44,10 @@ def test_missing_sources_become_explainable_actions_without_ai_guessing():
     result = build_director(store_id='s1', store_name='Store', sources=sources, catalog_items=[], supply_facts=[],
         profit={'profit_status': 'partial', 'completeness': {'cogs': False, 'tax': False}, 'products': []})
     assert result['mode'] == 'waiting'
-    assert len(result['actions']) == 8
+    assert len(result['actions']) == 5
     assert all(item['provider']['label'] == 'Rules · Free' for item in result['actions'])
+    assert all(item['kind'] == 'data_health' for item in result['actions'])
+    assert result['summary']['money_losses']['observed_kopecks'] is None
     assert result['automation']['writes_enabled'] is False
     source_action = next(item for item in result['actions'] if item['id'] == 'source:stocks')
     assert source_action['can_execute'] is True

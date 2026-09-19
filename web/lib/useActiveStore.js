@@ -17,10 +17,11 @@ export function getActiveStoreId(){
   return window.localStorage.getItem(STORE_KEY)||''
 }
 
-export function useActiveStore(){
+export function useActiveStore(enabled=true){
   const [storeId,setStoreId]=useState('')
   const [storeName,setStoreName]=useState('')
   const [stores,setStores]=useState([])
+  const [workspaces,setWorkspaces]=useState([])
   const [loading,setLoading]=useState(true)
   const [error,setError]=useState('')
   const storesRef=useRef([])
@@ -33,14 +34,20 @@ export function useActiveStore(){
   },[])
 
   const refresh=useCallback(async(preferredId='')=>{
+    if(!enabled){
+      setLoading(false)
+      return {storeId:'',stores:[]}
+    }
     setLoading(true); setError('')
     try{
       const response=await fetch('/api/stores',{cache:'no-store'})
       const payload=await response.json()
       if(!response.ok) throw new Error(payload.error||'Не удалось загрузить магазины')
       const rows=payload.stores||[]
+      const workspaceRows=payload.workspaces||[]
       storesRef.current=rows
       setStores(rows)
+      setWorkspaces(workspaceRows)
       const saved=preferredId||getActiveStoreId()
       const next=applyStore(saved,rows)
       if(next&&next!==getActiveStoreId()) setActiveStoreId(next)
@@ -49,9 +56,13 @@ export function useActiveStore(){
       setError(e.message||'Не удалось загрузить магазины')
       throw e
     }finally{setLoading(false)}
-  },[applyStore])
+  },[applyStore,enabled])
 
   useEffect(()=>{
+    if(!enabled){
+      setLoading(false)
+      return
+    }
     let alive=true
     refresh().catch(()=>{})
     function changed(event){
@@ -63,12 +74,15 @@ export function useActiveStore(){
     }
     window.addEventListener(STORE_EVENT,changed)
     return ()=>{alive=false;window.removeEventListener(STORE_EVENT,changed)}
-  },[applyStore,refresh])
+  },[applyStore,enabled,refresh])
 
   function select(nextId){
     const next=applyStore(nextId)
     setActiveStoreId(next)
   }
 
-  return {storeId,storeName,stores,loading,error,select,refresh}
+  const activeStore=stores.find(item=>item.id===storeId)
+  const activeWorkspace=workspaces.find(item=>item.id===activeStore?.workspace_id)
+  return {storeId,storeName,stores,loading,error,select,refresh,
+    role:activeWorkspace?.role||'',canManageStore:Boolean(activeWorkspace?.can_manage_stores)}
 }

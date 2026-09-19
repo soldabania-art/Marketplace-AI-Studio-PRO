@@ -12,6 +12,7 @@ export default function CookieConsent() {
   const [marketing, setMarketing] = useState(false)
 
   useEffect(() => {
+    document.documentElement.dataset.trovendiReady = 'true'
     try { setVisible(!localStorage.getItem(STORAGE_KEY)) } catch { setVisible(true) }
   }, [])
 

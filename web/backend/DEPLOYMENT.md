@@ -34,6 +34,11 @@ TROVENDI uses one container image with separate process roles.
 - `MARKETPLACE_MARKETPLACE_TOKEN_KEY` — temporary Fernet provider key until managed SecretProvider/KMS rollout
 - `MARKETPLACE_MFA_ENCRYPTION_KEY` — a separate Fernet key for TOTP secrets; never reuse the marketplace-token key
 - `MARKETPLACE_FRONTEND_URL`
+- `MARKETPLACE_EMAIL_PROVIDER` — keep `not_configured` until the mail worker revision is live; set to `resend` only with all settings below
+- `MARKETPLACE_EMAIL_FROM` — sender on a verified Resend domain
+- `MARKETPLACE_RESEND_API_KEY` — server-only Resend key shared by API and workers
+- `MARKETPLACE_EMAIL_SECRET_KEY` — separate Fernet key for expiring account-action mail payloads; never generate independently per replica or reuse another encryption key
+- `MARKETPLACE_EMAIL_PROVIDER_TIMEOUT_SECONDS`, `MARKETPLACE_EMAIL_MAX_ATTEMPTS`, `MARKETPLACE_EMAIL_UNKNOWN_RETRY_LIMIT` — bounded provider timeout and retry controls
 - `MARKETPLACE_MARKETPLACE_LIMITER_BACKEND=redis` — обязателен в production; memory разрешён только для локальной разработки
 - `MARKETPLACE_REDIS_URL` — единый Redis для API и workers, использующих один provider account
 - `MARKETPLACE_MARKETPLACE_LIMITER_MAX_WAIT_SECONDS` — максимальное ожидание общей квоты до контролируемого 429/retry (по умолчанию 65 секунд)
@@ -51,6 +56,8 @@ TROVENDI uses one container image with separate process roles.
 
 The API intentionally refuses production startup when PostgreSQL, TLS, HTTPS, the JWT secret, the marketplace credential-encryption key or the separate MFA-encryption key is missing. Do not weaken these checks to make a deployment pass.
 
+Account email uses Resend's documented `POST /emails` contract through the existing async HTTP client instead of the synchronous SDK global. Every delivery snapshots one encrypted HTML/text provider payload and a stable `Idempotency-Key`; Resend retains that key for 24 hours, so TROVENDI stops automatic retries before that window ends. `provider_accepted` means Resend returned an email ID. It does not mean delivered; only a future verified provider event may assert delivery. Timeout, 5xx, malformed success, a crashed submitting attempt, or an idempotency conflict can end as `outcome_unknown`, never as a confirmed failure. Account verification and recovery are account-scoped transactional requests and do not select a store or use marketplace STOP state.
+
 Frontend must set `MARKETPLACE_API_URL` to the externally reachable API base URL. Connect a public Vercel Blob store to the frontend project; Vercel supplies `BLOB_STORE_ID` + rotating `VERCEL_OIDC_TOKEN`, or `BLOB_READ_WRITE_TOKEN` only for a non-OIDC/manual setup. Generated marketplace visuals use exact immutable paths `ai-assets/{store}/{nm_id}/{generation_id}.webp` and are never written when Blob credentials are absent. The backend downloads the object, computes its digest and accepts it only when its exact hostname is listed in `MARKETPLACE_ASSET_BLOB_HOSTS`.
 
 ## Scaling policy
@@ -64,6 +71,8 @@ Start <=100 clients with one API service and one worker service. Scale worker re
 Deployment order:
 
 `backup/check -> stop old job claims and schedulers -> drain/stop old handlers -> alembic upgrade head -> deploy API -> verify /ready -> deploy worker -> verify heartbeat/recovery and queue/FBO logs -> frontend`
+
+For the account-mail migration, drain old workers before the migration, deploy the new worker with the `account.email.deliver` handler, verify its heartbeat, and only then enable `MARKETPLACE_EMAIL_PROVIDER=resend` on producers. Enabling producers while an old worker can claim jobs may dead-letter them as an unknown job type. The T09B migration branches directly from `20260912_0028`; if another unmerged branch adds a different Alembic head, reconcile the heads during integration rather than renaming or silently skipping either migration.
 
 For the attempt-ownership migration, confirm every old worker has exited before enabling new consumers. Do not mix workers without fencing with the new version. Disable automatic restarts of the old revision during rollout. If a handler cannot drain, stop it and preserve its durable state for recovery; stopping the process does not establish whether a provider accepted an in-flight HTTP write. Reconcile uncertain writes read-only before any retry. A backward-compatible schema alone does not make rollback to unfenced workers safe. This is a deployment requirement, not a claim that production rollout has been verified.
 

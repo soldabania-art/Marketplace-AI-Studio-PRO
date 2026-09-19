@@ -7,7 +7,7 @@ on:
       - 'web/**'
       - '.github/workflows/web-cloud.yml'
   pull_request:
-    branches: [main]
+    branches: [main, codex/backend-integration-reviewed]
     paths:
       - 'web/**'
       - '.github/workflows/web-cloud.yml'
@@ -133,14 +133,165 @@ jobs:
         run: |
           alembic upgrade head
           alembic current
+          python -m app.verify_ctrl01_migration
       - name: Reset ephemeral migration schema
         run: |
           psql -h localhost -U postgres -d trovendi_ci -v ON_ERROR_STOP=1 -c 'DROP SCHEMA public CASCADE'
           psql -h localhost -U postgres -d trovendi_ci -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA public'
-      - name: Upgrade PostgreSQL from previous revision to head
+      - name: Upgrade PostgreSQL from CTRL01 predecessor to combined head
         run: |
-          alembic upgrade head-1
+          alembic upgrade 20260912_0028
+          python -m app.verify_ctrl01_previous_upgrade seed
           alembic upgrade head
           alembic current
+          python -m app.verify_ctrl01_migration
+          python -m app.verify_ctrl01_previous_upgrade verify
       - name: Run integration tests on PostgreSQL
         run: python -m pytest -q
+
+  browser-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [frontend, postgresql]
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_DB: trovendi_e2e, POSTGRES_USER: postgres, POSTGRES_PASSWORD: postgres }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d trovendi_e2e" --health-interval 5s --health-timeout 5s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      MARKETPLACE_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/trovendi_e2e
+      MARKETPLACE_REDIS_URL: redis://localhost:6379/14
+      MARKETPLACE_MARKETPLACE_LIMITER_BACKEND: redis
+      MARKETPLACE_API_URL: http://127.0.0.1:8000
+      PYTHONPATH: web/backend
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.EXPECTED_HEAD_SHA }}
+      - name: Verify exact head
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+      - uses: actions/setup-node@v7
+        with: { node-version: '24', cache: 'npm', cache-dependency-path: web/package-lock.json }
+      - uses: actions/setup-python@v7
+        with: { python-version: '3.12' }
+      - name: Install isolated test dependencies
+        run: |
+          pip install -r web/backend/requirements.txt
+          cd web && npm ci && npx playwright install --with-deps chromium
+      - name: Generate non-exported test auth material
+        run: |
+          e2e_password="$(openssl rand -base64 36)"
+          e2e_jwt_secret="$(openssl rand -base64 48)"
+          e2e_totp_secret="$(python - <<'PY'
+          import base64
+          import secrets
+          print(base64.b32encode(secrets.token_bytes(20)).decode().rstrip('='))
+          PY
+          )"
+          e2e_mfa_key="$(python - <<'PY'
+          import base64
+          import secrets
+          print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())
+          PY
+          )"
+          for value in "$e2e_password" "$e2e_jwt_secret" "$e2e_totp_secret" "$e2e_mfa_key"; do
+            echo "::add-mask::$value"
+          done
+          {
+            echo "E2E_PASSWORD=$e2e_password"
+            echo "E2E_TOTP_SECRET=$e2e_totp_secret"
+            echo "MARKETPLACE_JWT_SECRET=$e2e_jwt_secret"
+            echo "MARKETPLACE_MFA_ENCRYPTION_KEY=$e2e_mfa_key"
+          } >> "$GITHUB_ENV"
+      - name: Prepare isolated PostgreSQL fixtures
+        run: |
+          cd web/backend
+          alembic upgrade head
+          PYTHONPATH=. python ../e2e/seed_acceptance.py
+      - name: Run local backend and frontend browser acceptance
+        id: browser_tests
+        run: |
+          cd web && npm run build && cd ..
+          (cd web/backend && uvicorn app.main:app --host 127.0.0.1 --port 8000 > ../../backend-e2e.log 2>&1) &
+          (cd web && npm run start -- --hostname 127.0.0.1 --port 3000 > ../frontend-e2e.log 2>&1) &
+          for n in $(seq 1 60); do curl -fsS http://127.0.0.1:3000 >/dev/null && break; sleep 1; done
+          cd web && npm run test:e2e
+      - name: Reject unsafe browser evidence
+        id: evidence_scan
+        if: always()
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+          from urllib.parse import quote, quote_plus
+
+          roots = [Path('web/e2e-artifacts'), Path('backend-e2e.log'), Path('frontend-e2e.log')]
+          values = [
+              os.environ['E2E_PASSWORD'],
+              os.environ['E2E_TOTP_SECRET'],
+              os.environ['MARKETPLACE_JWT_SECRET'],
+              os.environ['MARKETPLACE_MFA_ENCRYPTION_KEY'],
+          ]
+          needles = {
+              encoded.encode()
+              for value in values
+              for encoded in (value, quote(value, safe=''), quote_plus(value))
+              if encoded
+          }
+          risky_log_value = re.compile(
+              rb'(?i)(?:password|passwd|authorization|cookie|mfa|token|code)\s*[:=]\s*[^&\s]+',
+          )
+          unsafe = []
+          files = []
+          for root in roots:
+              if root.is_file():
+                  files.append(root)
+              elif root.is_dir():
+                  files.extend(path for path in root.rglob('*') if path.is_file())
+          for path in files:
+              content = path.read_bytes()
+              if any(needle in content for needle in needles):
+                  unsafe.append(path)
+                  continue
+              if path.suffix == '.log' and risky_log_value.search(content):
+                  unsafe.append(path)
+          if os.environ['E2E_SUCCEEDED'] == 'true':
+              required = [
+                  Path('web/e2e-artifacts/browser-report.json'),
+                  Path('web/e2e-artifacts/html/index.html'),
+                  *[
+                      Path(f'web/e2e-artifacts/screenshots/{suite}-{viewport}.png')
+                      for suite in ('d02', 'd03-mock')
+                      for viewport in ('desktop-1440', 'desktop-1280', 'mobile-390')
+                  ],
+              ]
+              missing = [path for path in required if not path.is_file()]
+              if missing:
+                  print(f'Required browser evidence is incomplete: {len(missing)} file(s) missing.')
+                  raise SystemExit(1)
+          if unsafe:
+              print('Unsafe evidence detected in allowlisted file(s): ' + ', '.join(map(str, unsafe)))
+              print('Artifact upload blocked; matched values are not printed.')
+              raise SystemExit(1)
+          print(f'Artifact safety scan passed for {len(files)} allowlisted file(s).')
+          PY
+        env:
+          E2E_SUCCEEDED: ${{ steps.browser_tests.outcome == 'success' }}
+      - name: Upload browser evidence
+        if: always() && steps.evidence_scan.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-e2e-${{ env.EXPECTED_HEAD_SHA }}
+          path: |
+            web/e2e-artifacts
+            backend-e2e.log
+            frontend-e2e.log
+          if-no-files-found: warn

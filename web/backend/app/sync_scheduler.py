@@ -10,6 +10,7 @@ from .data_health_incidents import reconcile_health_incidents
 from .db import SessionLocal
 from .job_queue import enqueue
 from .models import BackgroundJob, JobStatus, MarketplaceConnection, Store
+from .wb_capability_preflight import import_group_availability
 from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
@@ -99,7 +100,7 @@ def schedule_due_syncs_once(now: datetime | None = None) -> dict[str, int]:
             store = db.get(Store, store_id)
             if store is None:
                 continue
-            connection = db.query(MarketplaceConnection.id).filter(
+            connection = db.query(MarketplaceConnection).filter(
                 MarketplaceConnection.store_id == store.id,
                 MarketplaceConnection.marketplace == 'wildberries',
                 MarketplaceConnection.enabled.is_(True),
@@ -112,13 +113,14 @@ def schedule_due_syncs_once(now: datetime | None = None) -> dict[str, int]:
                 incident_stats = reconcile_health_incidents(db, workspace_id=store.workspace_id, store_id=store.id, sources=health['sources'], now=now)
                 totals['incidents_opened'] += incident_stats['opened']; totals['incidents_resolved'] += incident_stats['resolved']
                 sources = {item['key']: item for item in health['sources']}
-                if any(refresh_due(sources[key], settings.sync_analytics_interval_seconds) for key in ('catalog', 'stocks', 'sales')):
+                availability = import_group_availability(connection.capability_results)
+                if availability['core']['state'] == 'available' and any(refresh_due(sources[key], settings.sync_analytics_interval_seconds) for key in ('catalog', 'stocks', 'sales')):
                     _, is_new = enqueue_sync_job(db, store=store, group='analytics', now=now,
                         payload={'store_id': store.id, 'origin': 'scheduler'}, priority=65)
                     totals['analytics'] += int(is_new)
                 coverage = expected_coverage('finance', now=now, period_days=30)
                 period_from, period_to = coverage['date_from'], coverage['date_to']
-                if refresh_due(sources['finance'], settings.sync_finance_interval_seconds):
+                if availability['finance']['state'] == 'available' and refresh_due(sources['finance'], settings.sync_finance_interval_seconds):
                     suffix = f"recovery:{_bucket(now, settings.sync_dead_retry_interval_seconds)}" if sources['finance']['status'] == 'error' else f'period:{period_to}'
                     run_id = f'auto:finance:{period_from}:{period_to}:{suffix}'
                     _, is_new = enqueue_sync_job(db, store=store, group='finance', now=now,
@@ -127,7 +129,7 @@ def schedule_due_syncs_once(now: datetime | None = None) -> dict[str, int]:
                                  'run_id': run_id, 'origin': 'scheduler', 'rrd_id': 0, 'page_number': 1},
                         priority=70)
                     totals['finance'] += int(is_new)
-                if refresh_due(sources['advertising'], settings.sync_advertising_interval_seconds):
+                if availability['advertising']['state'] == 'available' and refresh_due(sources['advertising'], settings.sync_advertising_interval_seconds):
                     suffix = f"recovery:{_bucket(now, settings.sync_dead_retry_interval_seconds)}" if sources['advertising']['status'] == 'error' else f'period:{period_to}'
                     run_id = f'auto:advertising:{period_from}:{period_to}:{suffix}'
                     _, is_new = enqueue_sync_job(db, store=store, group='advertising', now=now,
@@ -136,7 +138,7 @@ def schedule_due_syncs_once(now: datetime | None = None) -> dict[str, int]:
                                  'run_id': run_id, 'origin': 'scheduler', 'campaign_ids': [],
                                  'date_index': 0, 'batch_index': 0}, priority=71)
                     totals['advertising'] += int(is_new)
-                if refresh_due(sources['feedbacks'], settings.sync_feedbacks_interval_seconds):
+                if availability['feedbacks']['state'] == 'available' and refresh_due(sources['feedbacks'], settings.sync_feedbacks_interval_seconds):
                     _, is_new = enqueue_sync_job(db, store=store, group='feedbacks', now=now,
                         payload={'store_id': store.id, 'origin': 'scheduler'}, priority=64)
                     totals['feedbacks'] += int(is_new)

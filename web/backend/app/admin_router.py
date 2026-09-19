@@ -3,15 +3,16 @@ import hashlib
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from .billing_service import PLAN_CATALOG
 from .config import get_settings
 from .db import get_db
 from .fulfillment_adapters import assert_capabilities
-from .models import BackgroundJob, FulfillmentFacility, FulfillmentPartner, JobStatus, KnowledgeDocument, Membership, SecurityEvent, Subscription, SubscriptionStatus, User, Workspace
-from .security import require_platform_admin, require_platform_admin_step_up
+from .models import BackgroundJob, FulfillmentFacility, FulfillmentPartner, JobStatus, KnowledgeDocument, MarketplaceConnection, Membership, PlatformStaffRole, SecurityEvent, Store, Subscription, SubscriptionStatus, User, Workspace
+from .platform_access import grant_project_manager, require_effective_owner_after_lock, revoke_platform_role, serialized_platform_access, set_user_active_serialized
+from .security import require_platform_admin, require_platform_admin_step_up, require_platform_summary
 from .support_service import document_checksum
 
 router = APIRouter()
@@ -42,6 +43,10 @@ class FulfillmentFacilityRequest(BaseModel):
     timezone_name: str = Field(default='UTC',max_length=64)
     service_modes: list[Literal['fbo','fbs','dbs','cross_dock','returns']] = Field(default_factory=list,max_length=5)
     marketplace_codes: list[str] = Field(default_factory=list,max_length=20)
+
+class PlatformGrantRequest(BaseModel):
+    user_id: str = Field(min_length=36,max_length=36)
+    role: Literal['project_manager']
 
 @router.get('/admin/knowledge')
 def knowledge_documents(_: User = Depends(require_platform_admin), db: Session = Depends(get_db)):
@@ -166,13 +171,109 @@ def requeue_background_job(job_id: str, admin: User = Depends(require_platform_a
 
 
 @router.get("/admin/summary")
-def summary(_: User = Depends(require_platform_admin), db: Session = Depends(get_db)):
+def summary(_: User = Depends(require_platform_summary), db: Session = Depends(get_db)):
     users = db.scalar(select(func.count()).select_from(User)) or 0
     active_users = db.scalar(select(func.count()).select_from(User).where(User.is_active.is_(True))) or 0
     workspaces = db.scalar(select(func.count()).select_from(Workspace)) or 0
     active_subscriptions = db.scalar(select(func.count()).select_from(Subscription).where(Subscription.status == SubscriptionStatus.active)) or 0
     trial_subscriptions = db.scalar(select(func.count()).select_from(Subscription).where(Subscription.status == SubscriptionStatus.trial)) or 0
-    return {"users": users,"active_users": active_users,"workspaces": workspaces,"active_subscriptions": active_subscriptions,"trial_subscriptions": trial_subscriptions,"billing_provider": get_settings().billing_provider}
+    return {"users": users,"active_users": active_users,"workspaces": workspaces,"active_subscriptions": active_subscriptions,"trial_subscriptions": trial_subscriptions}
+
+
+def _platform_overview(db: Session, *, as_of: datetime, lease_seconds: int) -> dict:
+    """Build the aggregate-only staff read model with a fixed query count."""
+    new_users_since = as_of - timedelta(days=7)
+    succeeded_jobs_since = as_of - timedelta(hours=24)
+    stale_before = as_of - timedelta(seconds=lease_seconds)
+    lease_timestamp = func.coalesce(BackgroundJob.heartbeat_at, BackgroundJob.locked_at)
+    backlog = BackgroundJob.status.in_([JobStatus.queued, JobStatus.retry])
+
+    user_counts = db.execute(select(
+        func.count(User.id),
+        func.coalesce(func.sum(case((User.is_active.is_(True), 1), else_=0)), 0),
+        func.coalesce(func.sum(case((and_(User.created_at >= new_users_since, User.created_at <= as_of), 1), else_=0)), 0),
+    )).one()
+
+    operation_counts = db.execute(select(
+        select(func.count(Workspace.id)).scalar_subquery(),
+        select(func.count(Store.id)).where(Store.is_active.is_(True)).scalar_subquery(),
+        select(func.count(func.distinct(Store.id))).select_from(Store).join(
+            MarketplaceConnection, MarketplaceConnection.store_id == Store.id,
+        ).where(
+            Store.is_active.is_(True),
+            MarketplaceConnection.enabled.is_(True),
+            MarketplaceConnection.marketplace == "wildberries",
+        ).scalar_subquery(),
+    )).one()
+
+    job_counts = db.execute(select(
+        *[
+            func.coalesce(func.sum(case((BackgroundJob.status == status_value, 1), else_=0)), 0)
+            for status_value in (JobStatus.queued, JobStatus.running, JobStatus.retry, JobStatus.dead)
+        ],
+        func.coalesce(func.sum(case((and_(
+            BackgroundJob.status == JobStatus.succeeded,
+            BackgroundJob.finished_at >= succeeded_jobs_since,
+            BackgroundJob.finished_at <= as_of,
+        ), 1), else_=0)), 0),
+        func.coalesce(func.sum(case((and_(backlog, BackgroundJob.available_at <= as_of), 1), else_=0)), 0),
+        func.coalesce(func.sum(case((and_(backlog, BackgroundJob.available_at > as_of), 1), else_=0)), 0),
+        func.min(case((and_(backlog, BackgroundJob.available_at <= as_of), BackgroundJob.available_at))),
+        func.coalesce(func.sum(case((and_(BackgroundJob.status == JobStatus.running, lease_timestamp >= stale_before), 1), else_=0)), 0),
+        func.coalesce(func.sum(case((and_(BackgroundJob.status == JobStatus.running, lease_timestamp < stale_before), 1), else_=0)), 0),
+        func.coalesce(func.sum(case((and_(
+            BackgroundJob.status == JobStatus.running,
+            BackgroundJob.heartbeat_at.is_(None),
+            BackgroundJob.locked_at.is_(None),
+        ), 1), else_=0)), 0),
+    )).one()
+
+    oldest_ready = job_counts[7]
+    if oldest_ready is not None and oldest_ready.tzinfo is None:
+        oldest_ready = oldest_ready.replace(tzinfo=timezone.utc)
+    oldest_ready_age = max(0, int((as_of - oldest_ready).total_seconds())) if oldest_ready else None
+
+    return {
+        "as_of": as_of,
+        "windows": {
+            "new_users_since": new_users_since,
+            "new_users_until": as_of,
+            "succeeded_jobs_since": succeeded_jobs_since,
+            "succeeded_jobs_until": as_of,
+        },
+        "access": {"scope": "platform_aggregate", "source": "database_aggregates"},
+        "users": {"total": user_counts[0], "enabled": user_counts[1], "new_7d": user_counts[2]},
+        "operations": {"workspaces": operation_counts[0], "active_stores": operation_counts[1], "connections_saved": operation_counts[2]},
+        "jobs": {
+            "queued": job_counts[0], "running": job_counts[1], "retry": job_counts[2], "dead": job_counts[3],
+            "succeeded_24h": job_counts[4],
+            "backlog": {"ready": job_counts[5], "future_cooldown": job_counts[6], "oldest_ready_age_seconds": oldest_ready_age},
+            "running_leases": {"fresh": job_counts[8], "stale": job_counts[9], "missing_timestamp": job_counts[10], "lease_seconds": lease_seconds},
+        },
+        "availability": {
+            "confirmed_revenue": None,
+            "mrr": None,
+            "ai_actual_cost": None,
+            "task_assignments": None,
+            "live_provider_health": "unknown",
+            "redis_health": "unknown",
+            "vercel_health": "unknown",
+            "worker_health": "unknown",
+        },
+        "limitations": [
+            "multi_query_read_model",
+            "saved_wb_connection_is_not_provider_verification",
+            "live_services_not_probed",
+            "business_metrics_not_available",
+        ],
+    }
+
+
+@router.get("/admin/overview")
+def platform_overview(_: User = Depends(require_platform_summary), db: Session = Depends(get_db)):
+    as_of = datetime.now(timezone.utc)
+    lease_seconds = max(30, get_settings().job_lease_seconds)
+    return _platform_overview(db, as_of=as_of, lease_seconds=lease_seconds)
 
 
 @router.get("/admin/users")
@@ -187,24 +288,78 @@ def users(_: User = Depends(require_platform_admin), db: Session = Depends(get_d
     return {"items": result, "limit": 200}
 
 
+@router.get("/admin/team")
+def platform_team(_: User = Depends(require_platform_admin), db: Session = Depends(get_db)):
+    rows = db.execute(
+        select(PlatformStaffRole, User)
+        .join(User, User.id == PlatformStaffRole.user_id)
+        .where(PlatformStaffRole.revoked_at.is_(None))
+        .order_by(PlatformStaffRole.role, User.email)
+    ).all()
+    return {"items": [
+        {
+            "user_id": role.user_id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "role": role.role.value,
+            "is_active": user.is_active,
+            "email_verified": user.email_verified,
+            "granted_at": role.granted_at,
+        }
+        for role, user in rows
+    ]}
+
+
+@router.post("/admin/team/grants", status_code=status.HTTP_201_CREATED)
+def grant_platform_team_member(payload: PlatformGrantRequest, admin: User = Depends(require_platform_admin_step_up), db: Session = Depends(get_db)):
+    role = grant_project_manager(db, actor_id=admin.id, target_user_id=payload.user_id)
+    db.add(SecurityEvent(
+        user_id=admin.id,
+        event_type="platform_staff.granted",
+        success=True,
+        subject_hash=hashlib.sha256(role.user_id.encode()).hexdigest(),
+        user_agent="admin-api",
+    ))
+    db.commit()
+    return {"user_id": role.user_id, "role": role.role.value, "revoked_at": None}
+
+
+@router.delete("/admin/team/grants/{user_id}")
+def revoke_platform_team_member(user_id: str, admin: User = Depends(require_platform_admin_step_up), db: Session = Depends(get_db)):
+    role = revoke_platform_role(db, actor_id=admin.id, target_user_id=user_id)
+    db.add(SecurityEvent(
+        user_id=admin.id,
+        event_type="platform_staff.revoked",
+        success=True,
+        subject_hash=hashlib.sha256(role.user_id.encode()).hexdigest(),
+        user_agent="admin-api",
+    ))
+    db.commit()
+    return {"user_id": role.user_id, "role": role.role.value, "revoked_at": role.revoked_at}
+
+
 @router.patch("/admin/users/{user_id}/status")
 def set_user_status(user_id: str, active: bool, admin: User = Depends(require_platform_admin_step_up), db: Session = Depends(get_db)):
-    user = db.get(User, user_id)
-    if user is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    if user.id == admin.id and not active: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Administrator cannot disable own account")
-    user.is_active = active; db.commit(); return {"id": user.id, "is_active": user.is_active}
+    if user_id == admin.id and not active: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Administrator cannot disable own account")
+    user = set_user_active_serialized(db, actor_id=admin.id, target_user_id=user_id, active=active)
+    db.add(SecurityEvent(user_id=admin.id,event_type='admin_user_status_changed',success=True,subject_hash=hashlib.sha256(user.id.encode()).hexdigest(),user_agent='admin-api'))
+    db.commit(); return {"id": user.id, "is_active": user.is_active}
 
 
 @router.patch("/admin/workspaces/{workspace_id}/plan")
-def set_workspace_plan(workspace_id: str, plan_code: str, _: User = Depends(require_platform_admin_step_up), db: Session = Depends(get_db)):
+def set_workspace_plan(workspace_id: str, plan_code: str, admin: User = Depends(require_platform_admin_step_up), db: Session = Depends(get_db)):
     if plan_code not in VALID_PLANS: raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unknown plan")
-    workspace = db.get(Workspace, workspace_id)
-    if workspace is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
-    subscription = _latest_subscription(db, workspace_id)
-    target_status = SubscriptionStatus.trial if plan_code == "trial" else SubscriptionStatus.active
-    if subscription is None:
-        subscription = Subscription(workspace_id=workspace_id, plan_code=plan_code, status=target_status, provider="admin_override"); db.add(subscription)
-    else:
-        subscription.plan_code = plan_code; subscription.status = target_status; subscription.provider = subscription.provider or "admin_override"
-    subscription.current_period_started_at = None; subscription.current_period_expires_at = None; subscription.cancel_at_period_end = False; subscription.canceled_at = None; db.commit()
+    with serialized_platform_access(db):
+        require_effective_owner_after_lock(db, admin.id)
+        workspace = db.get(Workspace, workspace_id)
+        if workspace is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+        subscription = _latest_subscription(db, workspace_id)
+        target_status = SubscriptionStatus.trial if plan_code == "trial" else SubscriptionStatus.active
+        if subscription is None:
+            subscription = Subscription(workspace_id=workspace_id, plan_code=plan_code, status=target_status, provider="admin_override"); db.add(subscription)
+        else:
+            subscription.plan_code = plan_code; subscription.status = target_status; subscription.provider = subscription.provider or "admin_override"
+        subscription.current_period_started_at = None; subscription.current_period_expires_at = None; subscription.cancel_at_period_end = False; subscription.canceled_at = None
+        db.add(SecurityEvent(user_id=admin.id,event_type='admin_workspace_plan_changed',success=True,subject_hash=hashlib.sha256(workspace_id.encode()).hexdigest(),user_agent='admin-api'))
+        db.commit()
     return {"workspace_id": workspace_id, "plan_code": plan_code, "status": target_status.value}

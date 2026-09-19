@@ -5,7 +5,11 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test:e2e": "playwright test -c e2e/playwright.config.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0"
   },
   "dependencies": {
     "@vercel/blob": "^2.8.0",

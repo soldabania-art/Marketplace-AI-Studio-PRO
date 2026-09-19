@@ -30,6 +30,26 @@
 .connectionOk{margin-top:18px;border:1px solid rgba(78,203,151,.25);background:rgba(78,203,151,.06);border-radius:13px;padding:15px;display:flex;justify-content:space-between;align-items:center;gap:14px}
 .connectionOk strong{display:block;color:#d9f5e8}
 .connectionOk span{display:block;color:#7da08f;font-size:12px;margin-top:5px}
+.connectionActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.connectionActions .action{margin-top:0}
+.capabilityBox{margin-top:14px;border:1px solid #1c2a3f;border-radius:14px;background:#091523;padding:16px}
+.capabilityHead{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.capabilityHead strong,.capabilityHead span{display:block}
+.capabilityHead span{margin-top:4px;color:#8ea0b8;font-size:12px}
+.capabilityHead small{color:#62758c;text-align:right}
+.capabilityGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}
+.capabilitySource{border:1px solid #1a2a40;border-radius:11px;padding:12px;min-width:0}
+.capabilitySource>div,.capabilitySource li{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.capabilitySource>div>strong{font-size:13px;color:#d9e5f4}
+.capabilitySource ul{list-style:none;padding:0;margin:9px 0 0;display:grid;gap:7px}
+.capabilitySource li{font-size:11px;color:#8ea0b8}
+.capabilitySource b{font-size:10px;text-align:right;font-weight:750}
+.cap_available{color:#7ee2b8}
+.cap_forbidden{color:#ff9da6}
+.cap_transient_error{color:#f5c26b}
+.cap_unchecked{color:#8ea0b8}
+.partialConfirm{margin-top:12px;border:1px solid rgba(245,194,107,.28);border-radius:12px;padding:14px;background:rgba(245,194,107,.06);display:flex;align-items:center;justify-content:space-between;gap:14px}
+.partialConfirm p{margin:0;color:#c8b98f;font-size:12px;line-height:1.5}
 .help{display:block;color:#62758c;margin-top:12px;line-height:1.5}
 .list{margin-top:18px;display:grid;gap:10px}
 .row,.event{border:1px solid #1a2a40;border-radius:13px;background:#0b1727;padding:15px;display:flex;align-items:center;justify-content:space-between;gap:16px}
@@ -55,7 +75,10 @@
 .grid{grid-template-columns:1fr}
 .logout{font-size:0}
 .logout svg{width:18px;height:18px}
-.row,.connectionOk,.storeToolbar{align-items:flex-start;flex-direction:column}
+.row,.connectionOk,.storeToolbar,.capabilityHead,.partialConfirm{align-items:flex-start;flex-direction:column}
+.connectionActions{width:100%}
+.connectionActions button{flex:1 1 auto;justify-content:center}
+.capabilityGrid{grid-template-columns:1fr;width:100%}
 .row span{max-width:78vw}
 .danger{width:100%;justify-content:center}
 .storeToolbar select{width:100%;min-width:0}

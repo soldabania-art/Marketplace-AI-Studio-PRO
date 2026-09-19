@@ -1,3 +1,4 @@
+import hashlib
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -12,6 +13,7 @@ from .models import BackgroundJob, BusinessOperatingProfile, JobStatus, Marketpl
 from .security import get_current_user
 from .store_access import require_store_admin, resolve_store
 from .sync_scheduler import enqueue_sync_job
+from .wb_capability_preflight import import_group_availability, unchecked_capabilities
 
 router = APIRouter(prefix='/onboarding', tags=['onboarding'])
 
@@ -96,8 +98,29 @@ def _latest_job(db: Session, store_id: str, job_type: str) -> BackgroundJob | No
     ).order_by(BackgroundJob.created_at.desc()).first()
 
 
-def _import_progress(db: Session, store_id: str, health: dict) -> dict:
+def _manual_group_generation(db: Session, store_id: str, job_type: str, namespace: str) -> str:
+    """Return a stable fresh namespace only when this onboarding group is dead."""
+    root_key_prefix = f'wb-sync:{job_type.removeprefix("marketplace.wb.").removesuffix(".sync")}:{store_id}:{namespace}'
+    dead_jobs = db.query(BackgroundJob).filter(
+        BackgroundJob.store_id == store_id,
+        BackgroundJob.job_type == job_type,
+        BackgroundJob.status == JobStatus.dead,
+        (
+            (BackgroundJob.idempotency_key == root_key_prefix)
+            | BackgroundJob.idempotency_key.like(f'{root_key_prefix}:recovery:%')
+            | (BackgroundJob.payload['run_id'].as_string() == namespace)
+            | BackgroundJob.payload['run_id'].as_string().like(f'{namespace}:recovery:%')
+        ),
+    ).all()
+    if not dead_jobs:
+        return namespace
+    fingerprint = hashlib.sha256(':'.join(sorted(job.id for job in dead_jobs)).encode()).hexdigest()[:16]
+    return f'{namespace}:recovery:{fingerprint}'
+
+
+def _import_progress(db: Session, store_id: str, health: dict, connection: MarketplaceConnection | None) -> dict:
     source_map = {item['key']: item for item in health['sources']}
+    availability = import_group_availability(connection.capability_results if connection else unchecked_capabilities())
     groups = []
     specs = (
         ('core', 'Каталог, остатки и продажи', ('catalog', 'stocks', 'sales'), 'marketplace.wb.analytics.sync', 50),
@@ -109,7 +132,12 @@ def _import_progress(db: Session, store_id: str, health: dict) -> dict:
         sources = [source_map[item] for item in source_keys]
         job = _latest_job(db, store_id, job_type)
         complete = all(item['status'] in {'healthy', 'delayed'} for item in sources)
-        if complete:
+        access_state = availability[key]['state']
+        if access_state == 'blocked':
+            state = 'blocked'
+        elif access_state == 'deferred':
+            state = 'deferred'
+        elif complete:
             state = 'complete'; total += weight
         elif job and job.status == JobStatus.dead:
             state = 'error'
@@ -120,9 +148,15 @@ def _import_progress(db: Session, store_id: str, health: dict) -> dict:
         else:
             state = 'waiting'
         groups.append({'key': key, 'label': label, 'state': state, 'weight': weight,
+            'access_state': access_state, 'sources': availability[key]['sources'],
             'job': {'id': job.id, 'status': job.status.value, 'attempts': job.attempts, 'max_attempts': job.max_attempts} if job else None})
-    return {'progress_percent': total, 'complete': total == 100, 'groups': groups,
-        'resumable': True, 'message': 'Импорт продолжится в фоне после закрытия страницы.'}
+    blocked = any(item['state'] == 'blocked' for item in groups)
+    deferred = any(item['state'] == 'deferred' for item in groups)
+    message = ('Часть источников недоступна: проверьте матрицу доступа в настройках магазина.' if blocked
+               else 'Проверка источника временно не завершена. Повторите проверку доступа позже.' if deferred
+               else 'Импорт продолжится в фоне после закрытия страницы.')
+    return {'progress_percent': total, 'complete': total == 100 and not (blocked or deferred), 'groups': groups,
+        'resumable': not blocked and not deferred, 'message': message}
 
 
 def _actions(*, connected: bool, health: dict, profile: BusinessOperatingProfile | None, metrics: dict) -> list[dict]:
@@ -164,7 +198,7 @@ def _assessment(db: Session, store, profile: BusinessOperatingProfile | None) ->
         'completion_percent': int(sum(item['complete'] for item in steps) / len(steps) * 100),
         'steps': steps,
         'data_health': {'overall_status': health['overall_status'], 'safe_for_ai_decisions': health['safe_for_ai_decisions']},
-        'import': _import_progress(db, store.id, health),
+        'import': _import_progress(db, store.id, health, connection),
         'evidence': metrics,
         'profile': ({'operating_model': profile.operating_model, 'label': MODEL_LABELS[profile.operating_model], 'answers': profile.answers, 'confirmed_at': profile.confirmed_at} if profile else None),
         'profile_decision': {'state': 'confirmation_required' if profile is None else 'confirmed', 'reason': 'Юридическую и операционную модель нельзя надёжно определить только по карточкам WB.'},
@@ -221,18 +255,37 @@ def start_import(store_id: str, user: User = Depends(get_current_user), db: Sess
     now = datetime.now(timezone.utc)
     coverage = expected_coverage('finance', now=now, period_days=30)
     begin, today = coverage['date_from'], coverage['date_to']
-    run_id = f'onboarding:{begin}:{today}:{int(now.timestamp() // 3600)}'
     recovery_slot = int(now.timestamp() // 3600)
-    common = {'store_id': store.id, 'date_from': begin, 'date_to': today, 'run_id': run_id, 'origin': 'onboarding'}
-    jobs = {
-        'core': enqueue_sync_job(db, store=store, group='analytics', now=now, suffix=f'onboarding:{recovery_slot}', payload={'store_id': store.id, 'origin': 'onboarding'}, priority=50)[0],
-        'finance': enqueue_sync_job(db, store=store, group='finance', now=now, suffix=f'{run_id}:start', payload=common | {'rrd_id': 0, 'page_number': 1}, priority=51)[0],
-        'advertising': enqueue_sync_job(db, store=store, group='advertising', now=now, suffix=f'{run_id}:start', payload=common | {'campaign_ids': [], 'date_index': 0, 'batch_index': 0}, priority=52)[0],
+    base_run_id = f'onboarding:{begin}:{today}:{recovery_slot}'
+    core_generation = _manual_group_generation(
+        db, store.id, 'marketplace.wb.analytics.sync', f'onboarding:{recovery_slot}',
+    )
+    finance_run_id = _manual_group_generation(
+        db, store.id, 'marketplace.wb.finance.sync', base_run_id,
+    )
+    advertising_run_id = _manual_group_generation(
+        db, store.id, 'marketplace.wb.advertising.sync', base_run_id,
+    )
+    common = {'store_id': store.id, 'date_from': begin, 'date_to': today, 'origin': 'onboarding'}
+    availability = import_group_availability(connection.capability_results)
+    candidates = {
+        'core': ('analytics', core_generation, {'store_id': store.id, 'origin': 'onboarding'}, 50),
+        'finance': ('finance', f'{finance_run_id}:start', common | {'run_id': finance_run_id, 'rrd_id': 0, 'page_number': 1}, 51),
+        'advertising': ('advertising', f'{advertising_run_id}:start', common | {'run_id': advertising_run_id, 'campaign_ids': [], 'date_index': 0, 'batch_index': 0}, 52),
     }
+    jobs = {}
+    for key, (group, suffix, payload, priority) in candidates.items():
+        if availability[key]['state'] == 'available':
+            jobs[key] = enqueue_sync_job(db, store=store, group=group, now=now, suffix=suffix, payload=payload, priority=priority)[0]
     db.add(OperationalAuditEvent(workspace_id=store.workspace_id, store_id=store.id, user_id=user.id,
         event_type='onboarding.import.requested', entity_type='store', entity_id=store.id,
-        payload={'read_only': True, 'jobs': {key: job.id for key, job in jobs.items()}}))
+        payload={'read_only': True, 'recovery': any(':recovery:' in value for value in (core_generation, finance_run_id, advertising_run_id)),
+                 'jobs': {key: job.id for key, job in jobs.items()},
+                 'skipped_groups': {key: item['state'] for key, item in availability.items() if item['state'] != 'available'}}))
     db.commit()
-    return {'store_id': store.id, 'read_only': True,
+    skipped = {key: item for key, item in availability.items() if item['state'] != 'available'}
+    message = ('Импорт поставлен в защищённую очередь; недоступные источники не будут повторяться автоматически.' if skipped
+               else 'Импорт поставлен в защищённую очередь и продолжится в фоне.')
+    return {'store_id': store.id, 'read_only': True, 'partial': bool(skipped),
         'jobs': {key: {'id': job.id, 'status': job.status.value} for key, job in jobs.items()},
-        'message': 'Импорт поставлен в защищённую очередь и продолжится в фоне.'}
+        'skipped_groups': skipped, 'message': message}

@@ -16,8 +16,8 @@ const marketplaceCatalog=[['wildberries','Wildberries','wbDot'],['ozon','Ozon','
 
 export default function HomePage(){
  const [notice,setNotice]=useState(''); const [question,setQuestion]=useState(''); const [answer,setAnswer]=useState(''); const [fullName,setFullName]=useState(''); const [authStatus,setAuthStatus]=useState('anonymous'); const [overview,setOverview]=useState(null); const [overviewError,setOverviewError]=useState('')
- const {storeId,storeName,stores}=useActiveStore()
- useEffect(()=>{let active=true;fetch('/api/auth/me',{cache:'no-store'}).then(async r=>r.ok?r.json():null).then(p=>{if(!active)return;if(p){setFullName(p.full_name||p.name||'');setAuthStatus('authenticated')}else setAuthStatus('anonymous')}).catch(()=>active&&setAuthStatus('anonymous'));return()=>{active=false}},[])
+ const {storeId,storeName,stores}=useActiveStore(authStatus==='authenticated')
+ useEffect(()=>{let active=true;fetch('/api/auth/me?optional=1',{cache:'no-store'}).then(async r=>r.ok?r.json():null).then(p=>{if(!active)return;if(p){setFullName(p.full_name||p.name||'');setAuthStatus('authenticated')}else setAuthStatus('anonymous')}).catch(()=>active&&setAuthStatus('anonymous'));return()=>{active=false}},[])
  useEffect(()=>{if(authStatus!=='authenticated'||!storeId){setOverview(null);return}let active=true;setOverviewError('');fetch(`/api/seller-data/overview?store_id=${encodeURIComponent(storeId)}`,{cache:'no-store'}).then(async r=>{const p=await r.json();if(!r.ok)throw new Error(p.error||'Не удалось загрузить показатели');if(active)setOverview(p)}).catch(e=>active&&setOverviewError(e.message));return()=>{active=false}},[authStatus,storeId])
  const greeting=useMemo(()=>makeDailyGreeting(fullName),[fullName])
  const activeStore=useMemo(()=>stores.find(item=>item.id===storeId),[stores,storeId])

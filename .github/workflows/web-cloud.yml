@@ -245,7 +245,7 @@ jobs:
               if encoded
           }
           risky_log_value = re.compile(
-              rb'(?i)(?:password|passwd|authorization|cookie|mfa|token|code)\\s*[:=]\\s*[^&\\s]+',
+              rb'(?i)(?:password|passwd|authorization|cookie|mfa|token|code)\s*[:=]\s*[^&\s]+',
           )
           unsafe = []
           files = []

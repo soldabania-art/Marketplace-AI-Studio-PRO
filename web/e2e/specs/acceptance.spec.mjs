@@ -170,7 +170,7 @@ test('D03 visibly fences a delayed A response across A → B → A and honors re
   await page.evaluate(({ event, id }) => window.dispatchEvent(new CustomEvent(event, { detail: { store_id: id } })), { event: 'mai:store-changed', id: storeB })
   await expect(page.getByText('CURRENT B summary', { exact: true })).toBeVisible()
   await page.evaluate(({ event, id }) => window.dispatchEvent(new CustomEvent(event, { detail: { store_id: id } })), { event: 'mai:store-changed', id: storeA })
-  await expect(page.getByText('CURRENT A')).toBeVisible()
+  await expect(page.getByText('CURRENT A summary', { exact: true })).toBeVisible()
   await releaseOldA()
   await expect(page.getByText('OLD A')).toHaveCount(0)
   await page.keyboard.press('Tab')

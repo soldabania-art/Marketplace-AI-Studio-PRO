@@ -148,3 +148,62 @@ jobs:
           python -m app.verify_ctrl01_previous_upgrade verify
       - name: Run integration tests on PostgreSQL
         run: python -m pytest -q
+
+  browser-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [frontend, postgresql]
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_DB: trovendi_e2e, POSTGRES_USER: postgres, POSTGRES_PASSWORD: postgres }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d trovendi_e2e" --health-interval 5s --health-timeout 5s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      MARKETPLACE_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/trovendi_e2e
+      MARKETPLACE_JWT_SECRET: e2e-only-jwt-secret-not-for-production-1234567890
+      MARKETPLACE_MFA_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      MARKETPLACE_REDIS_URL: redis://localhost:6379/14
+      MARKETPLACE_MARKETPLACE_LIMITER_BACKEND: redis
+      MARKETPLACE_API_URL: http://127.0.0.1:8000
+      PYTHONPATH: web/backend
+    steps:
+      - uses: actions/checkout@v7
+        with: { ref: ${{ env.EXPECTED_HEAD_SHA }} }
+      - name: Verify exact head
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+      - uses: actions/setup-node@v7
+        with: { node-version: '24', cache: 'npm', cache-dependency-path: web/package-lock.json }
+      - uses: actions/setup-python@v7
+        with: { python-version: '3.12' }
+      - name: Install isolated test dependencies
+        run: |
+          pip install -r web/backend/requirements.txt
+          cd web && npm ci && npx playwright install --with-deps chromium
+      - name: Prepare isolated PostgreSQL fixtures
+        run: |
+          cd web/backend && alembic upgrade head
+          cd .. && python e2e/seed_acceptance.py
+      - name: Run local backend and frontend browser acceptance
+        run: |
+          (cd web/backend && uvicorn app.main:app --host 127.0.0.1 --port 8000 > ../../backend-e2e.log 2>&1) &
+          (cd web && npm run dev -- --hostname 127.0.0.1 --port 3000 > ../frontend-e2e.log 2>&1) &
+          for n in $(seq 1 60); do curl -fsS http://127.0.0.1:3000 >/dev/null && break; sleep 1; done
+          cd web && npm run test:e2e
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-e2e-${{ env.EXPECTED_HEAD_SHA }}
+          path: |
+            web/e2e-artifacts
+            web/test-results
+            backend-e2e.log
+            frontend-e2e.log
+          if-no-files-found: warn

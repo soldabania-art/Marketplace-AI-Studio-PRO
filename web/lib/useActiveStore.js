@@ -21,6 +21,7 @@ export function useActiveStore(){
   const [storeId,setStoreId]=useState('')
   const [storeName,setStoreName]=useState('')
   const [stores,setStores]=useState([])
+  const [workspaces,setWorkspaces]=useState([])
   const [loading,setLoading]=useState(true)
   const [error,setError]=useState('')
   const storesRef=useRef([])
@@ -39,8 +40,10 @@ export function useActiveStore(){
       const payload=await response.json()
       if(!response.ok) throw new Error(payload.error||'Не удалось загрузить магазины')
       const rows=payload.stores||[]
+      const workspaceRows=payload.workspaces||[]
       storesRef.current=rows
       setStores(rows)
+      setWorkspaces(workspaceRows)
       const saved=preferredId||getActiveStoreId()
       const next=applyStore(saved,rows)
       if(next&&next!==getActiveStoreId()) setActiveStoreId(next)
@@ -70,5 +73,8 @@ export function useActiveStore(){
     setActiveStoreId(next)
   }
 
-  return {storeId,storeName,stores,loading,error,select,refresh}
+  const activeStore=stores.find(item=>item.id===storeId)
+  const activeWorkspace=workspaces.find(item=>item.id===activeStore?.workspace_id)
+  return {storeId,storeName,stores,loading,error,select,refresh,
+    role:activeWorkspace?.role||'',canManageStore:Boolean(activeWorkspace?.can_manage_stores)}
 }

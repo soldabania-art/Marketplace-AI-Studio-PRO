@@ -1,18 +1,25 @@
 'use client'
 
 import Link from 'next/link'
-import {useState} from 'react'
-import {ArrowRight,BarChart3,Boxes,BrainCircuit,Check,ChevronRight,LockKeyhole,MessageCircle,Rocket,ShieldCheck,Sparkles,WandSparkles} from 'lucide-react'
-import BrandLogo from './BrandLogo'
+import {useEffect,useState} from 'react'
+import {ArrowRight,Check,FileCheck2,Gauge,LockKeyhole,Menu,ShieldCheck,Store,Workflow} from 'lucide-react'
+import {PUBLIC_CHANNELS,PUBLIC_MODULES,buildRegistrationIntent,planForScale,restorePublicSelection} from '../lib/publicSelection.mjs'
 
-const channels={
-  wb:{label:'Wildberries',status:'Подключается сейчас',title:'Контент, прибыль и остатки — в одном контуре',text:'TROVENDI получает данные вашего магазина через API, собирает финансовую картину и предлагает действия с доказательствами.',items:['Реальные карточки и остатки','Profit Center без двойного списания рекламы','Публикация только после подтверждения']},
-  ozon:{label:'Ozon',status:'Следующий маркетплейс',title:'Единая модель данных уже предусмотрена',text:'Ozon подключим после завершения проверенной WB-версии. Мы не выдаём будущую интеграцию за работающую.',items:['Общий каталог товаров','Единая себестоимость','Общий AI Director']},
-  yandex:{label:'Яндекс Маркет',status:'В дорожной карте',title:'Один товар — несколько каналов продаж',text:'Яндекс Маркет войдёт в Integration Hub через общий каталог, заказы и безопасный контур управления остатками.',items:['Канонический товар TROVENDI','Раздельная экономика канала','Синхронизация только после проверки API']},
-  kaspi:{label:'Kaspi.kz',status:'Кроссбордер · discovery',title:'Казахстан — первый кандидат для СНГ',text:'До запуска мы проверим юридическую схему, партнёра Merchant of Record, API, налоги и полную экономику поставки.',items:['KZT и валютный риск','Магистральная и локальная логистика','Никаких юридических обещаний без проверки']},
-  uzum:{label:'Uzum Market',status:'Кроссбордер · план',title:'Локализация и экономика Узбекистана',text:'Uzum проектируется с двуязычным контентом, локальной выдачей и отдельным расчётом логистики и возвратов.',items:['Русский и узбекский контент','UZS и стоимость возвратов','Запуск после Казахстанского пилота']},
-  start:{label:'Старт с нуля',status:'Доступен новичкам',title:'От одной фотографии до готового проекта карточки',text:'Пошаговый режим помогает проверить товар, подготовить контент и экономику без сложного кабинета.',items:['3 дня бесплатно','До 5 успешных карточек','Без автопубликации и опасных действий']},
+function PublicMark(){
+  return <svg className="publicMark" viewBox="0 0 48 48" aria-hidden="true"><path d="M5 8h14l5 8 5-8h14L32 24l11 16H29l-5-8-5 8H5l11-16z"/><circle cx="24" cy="24" r="4"/></svg>
 }
+
+function PublicBrand(){
+  return <span className="publicBrand"><PublicMark/><span>TROVENDI<small>DECISION PLATFORM</small></span></span>
+}
+
+const steps=[
+  ['01','Данные магазина','Источники и полнота'],
+  ['02','Проблема','Подтверждённый сигнал'],
+  ['03','Решение','Выбор владельца'],
+  ['04','Выполнение','Только разрешённое действие'],
+  ['05','Измерение','Наблюдаемый результат'],
+]
 
 const plans=[
   {name:'Пробный запуск',price:'0 ₽',note:'3 дня · до 5 карточек',items:['Один проект магазина','Тексты, SEO и экономика','Без публикации и автодействий'],href:'/register',cta:'Начать бесплатно'},
@@ -20,43 +27,86 @@ const plans=[
   {name:'Business',price:'12 990 ₽',note:'в месяц',items:['До 10 магазинов','Командные роли','Расширенный контроль и отчёты'],href:'/pricing',cta:'Посмотреть Business'},
 ]
 
-const modules=[
-  {code:'cards',label:'AI Card Factory',note:'Карточки и визуальный план'},
-  {code:'profit',label:'Profit Center',note:'Прибыль и юнит-экономика'},
-  {code:'director',label:'AI Director',note:'Ежедневные решения'},
-  {code:'fbo',label:'Smart FBO',note:'Остатки и поставки'},
-]
-
-const planForScale={1:'pro',3:'pro',10:'business'}
-
-function buildIntent(channel,selectedModules,scale,plan){
-  const params=new URLSearchParams({plan,channel,stores:String(scale),modules:selectedModules.join(',')})
-  return `/register?${params.toString()}`
-}
-
 export default function PublicLanding(){
-  const [channel,setChannel]=useState('wb');const [selectedModules,setSelectedModules]=useState(modules.map(item=>item.code));const [scale,setScale]=useState(3);const selected=channels[channel];const recommendedPlan=planForScale[scale];const isAvailable=channel==='wb'||channel==='start';const intentHref=buildIntent(channel,selectedModules,scale,recommendedPlan);const roadmapHref=`${buildIntent('wb',selectedModules,scale,recommendedPlan)}&interest=${channel}`
-  function toggleModule(code){setSelectedModules(current=>current.includes(code)?(current.length===1?current:current.filter(item=>item!==code)):[...current,code])}
+  const [channel,setChannel]=useState('wb')
+  const [selectedModules,setSelectedModules]=useState(PUBLIC_MODULES.map(item=>item.code))
+  const [scale,setScale]=useState(3)
+  const selected=PUBLIC_CHANNELS[channel]
+  const recommendedPlan=planForScale[scale]
+  const isImplemented=selected.availability==='implemented'
+  const intentHref=buildRegistrationIntent({channel:isImplemented?channel:'wb',modules:selectedModules,stores:scale,plan:recommendedPlan,interest:isImplemented?'':channel})
+
+  useEffect(()=>{
+    const params=new URLSearchParams(window.location.search)
+    if(!['plan','channel','stores','modules','interest'].some(key=>params.has(key)))return
+    const restored=restorePublicSelection(params)
+    setChannel(restored.channel)
+    setSelectedModules(restored.modules)
+    setScale(restored.stores)
+  },[])
+
+  function toggleModule(code){
+    setSelectedModules(current=>current.includes(code)?(current.length===1?current:current.filter(item=>item!==code)):[...current,code])
+  }
+
   return <main className="publicLanding">
-    <header className="publicNav"><Link href="/" aria-label="TROVENDI"><BrandLogo/></Link><nav><a href="#capabilities">Возможности</a><a href="#channels">Магазины</a><a href="#pricing">Тарифы</a><a href="#security">Безопасность</a></nav><div><Link className="publicLogin" href="/login">Войти</Link><Link className="publicStart" href="/register">Попробовать бесплатно</Link></div></header>
+    <header className="publicNav">
+      <Link href="/" aria-label="TROVENDI — главная"><PublicBrand/></Link>
+      <nav aria-label="Публичная навигация"><a href="#capabilities">Возможности</a><a href="#channels">Площадки</a><a href="#bundle">Выбор</a><a href="#pricing">Тарифы</a></nav>
+      <div className="publicNavActions"><Link className="publicLogin" href="/login">Войти</Link><a className="publicStart" href="#bundle">Выбрать набор</a></div>
+      <details className="publicMenu"><summary aria-label="Открыть меню"><Menu/></summary><div><a href="#capabilities">Возможности</a><a href="#channels">Площадки</a><a href="#bundle">Выбор</a><Link href="/login">Войти</Link></div></details>
+    </header>
 
-    <section className="publicHero"><div className="publicHeroCopy"><span className="publicPill"><Sparkles size={14}/> AI Commerce OS для продавцов</span><h1>Не ещё один сервис аналитики. <em>Центр управления магазином.</em></h1><p>Подключите Wildberries — TROVENDI соберёт реальные данные, рассчитает прибыль, улучшит карточки и подготовит безопасный план действий. Решения остаются под вашим контролем.</p><div className="publicHeroActions"><Link className="publicPrimary" href="/register"><Rocket size={18}/> Начать бесплатно</Link><Link className="publicSecondary" href="/login">Уже есть аккаунт <ArrowRight size={16}/></Link></div><small>Без карты · 3 дня · до 5 карточек · никаких автодействий</small></div><div className="publicCommand"><div className="commandTop"><span><i/> TROVENDI AI Director</span><b>Только подтверждённые данные</b></div><div className="commandMetric"><span>Сегодня важно</span><strong>3 решения</strong><small>в порядке влияния на прибыль</small></div><div className="commandActions"><div><BarChart3/><span><b>Проверить удержания WB</b><small>Обнаружено по финансовому отчёту</small></span><em>−12 480 ₽</em></div><div><Boxes/><span><b>Подготовить поставку</b><small>Остатка хватит примерно на 9 дней</small></span><ChevronRight/></div><div><WandSparkles/><span><b>Улучшить карточку</b><small>Только из подтверждённых фактов товара</small></span><ChevronRight/></div></div><p><ShieldCheck size={15}/> Ни одно изменение не отправляется без разрешения владельца</p></div></section>
+    <section className="publicHero">
+      <div className="publicHeroCopy">
+        <span>ДЛЯ ДЕЙСТВУЮЩИХ ПРОДАВЦОВ WILDBERRIES</span>
+        <h1>Видеть потери.<br/>Выбирать действие.<br/><em>Доводить до результата.</em></h1>
+        <p>TROVENDI собирает подтверждённые данные магазина, показывает ограничения и сохраняет контроль от решения владельца до измерения.</p>
+        <div className="publicHeroActions"><a className="publicPrimary" href="#bundle">Выбрать возможности <ArrowRight/></a><Link className="publicSecondary" href="/login">Уже есть аккаунт</Link><span><ShieldCheck/> Выбор не выдаёт права доступа</span></div>
+      </div>
+      <aside className="publicDecision" aria-label="Как работает контур решения">
+        <div><span>TRACE / WB–01</span><b>КОНТУР РЕШЕНИЯ</b></div>
+        <small>СЛЕДУЮЩИЙ БЕЗОПАСНЫЙ ШАГ</small>
+        <strong>Проверить данные</strong>
+        <p>Сначала полнота источников, затем предложение и отдельное подтверждение владельца.</p>
+        <dl><div><dt>Данные</dt><dd>Проверяются</dd></div><div><dt>Действие</dt><dd>Не отправлено</dd></div><div><dt>Эффект</dt><dd>Ещё не измерен</dd></div></dl>
+        <a href="#capabilities">Посмотреть возможности <ArrowRight/></a>
+      </aside>
+    </section>
 
-    <section className="publicProof"><span>Один вход</span><span>Один каталог</span><span>Одна прибыль</span><span>Один главный AI</span><span>Все действия — с аудитом</span></section>
+    <section className="publicTrace" aria-labelledby="trace-title">
+      <div className="publicSectionTitle"><span>01 / DECISION TRACE</span><h2 id="trace-title">От данных к измерению — без скрытой автономии.</h2><p>Каждый этап остаётся видимым. Результат появляется только после действия и новых фактических данных.</p></div>
+      <ol>{steps.map(([key,label,value],index)=><li key={key}><span>{key}</span><div><small>{label}</small><b>{value}</b></div>{index<steps.length-1&&<i aria-hidden="true"/>}</li>)}</ol>
+    </section>
 
-    <section className="publicSection" id="capabilities"><div className="publicSectionHead"><span>СИСТЕМА, А НЕ НАБОР ОТЧЁТОВ</span><h2>От фотографии товара до ежедневного управления</h2><p>Новичок получает простой маршрут. Действующий продавец — единый операционный контур.</p></div><div className="capabilityGrid"><article><Rocket/><b>Старт с нуля</b><p>Фото товара, факты, экономика и готовый проект карточки.</p></article><article><WandSparkles/><b>AI Card Factory</b><p>Заголовок, описание, SEO и визуальный план без выдуманных характеристик.</p></article><article><BarChart3/><b>Profit Center</b><p>Финансы WB, реклама, себестоимость, налоги, штрафы и удержания.</p></article><article><BrainCircuit/><b>Daily AI Director</b><p>Ранжирует проблемы и предлагает понятные действия с источниками.</p></article></div></section>
+    <section className="publicSection" id="capabilities">
+      <div className="publicSectionTitle"><span>02 / ВОЗМОЖНОСТИ</span><h2>Рабочие контуры отделены от планов.</h2><p>Статус написан текстом. Наличие карточки на странице не означает доступ или production-готовность.</p></div>
+      <div className="publicCapabilityGrid">
+        {PUBLIC_MODULES.map((item,index)=><article key={item.code} className={index===2?'featured':''}><small>{String(index+1).padStart(2,'0')} / МОДУЛЬ</small>{index===2?<Gauge/>:index===3?<Workflow/>:<FileCheck2/>}<h3>{item.label}</h3><p>{item.note}</p><b>{item.status}</b></article>)}
+      </div>
+    </section>
 
-    <section className="publicSection channelSection" id="channels"><div className="publicSectionHead"><span>ВЫБЕРИТЕ СВОЙ СЦЕНАРИЙ</span><h2>Начните с того, что у вас уже есть</h2><p>Сегодня подключаем Wildberries. Остальные каналы показываем честно как последовательную дорожную карту TROVENDI.</p></div><div className="channelPicker">{Object.entries(channels).map(([key,item])=><button type="button" className={channel===key?'active':''} onClick={()=>setChannel(key)} key={key}><b>{item.label}</b><span>{item.status}</span></button>)}</div><div className="channelDetail"><div><span>{selected.status}</span><h3>{selected.title}</h3><p>{selected.text}</p><Link href={channel==='wb'||channel==='start'?'/register':'/pricing'}>{channel==='wb'?'Подключить Wildberries':channel==='start'?'Запустить первый товар':'Посмотреть план развития'} <ArrowRight size={16}/></Link></div><ul>{selected.items.map(item=><li key={item}><Check size={16}/>{item}</li>)}</ul></div></section>
+    <section className="publicSection publicChannels" id="channels">
+      <div className="publicSectionTitle"><span>03 / ПЛОЩАДКИ</span><h2>Выберите площадку по фактическому статусу.</h2><p>Wildberries можно выбрать для дальнейшей настройки после входа. Остальные площадки остаются запланированными и не выглядят подключёнными.</p></div>
+      <div className="publicChannelLayout">
+        <div className="publicChannelPicker" role="list" aria-label="Площадки">{Object.entries(PUBLIC_CHANNELS).map(([key,item],index)=><button type="button" aria-pressed={channel===key} onClick={()=>setChannel(key)} key={key}><span>{String(index+1).padStart(2,'0')}</span><b>{item.label}</b><em data-status={item.availability}>{item.status}</em></button>)}</div>
+        <article className="publicChannelDetail"><span>{selected.status}</span><h3>{selected.title}</h3><p>{selected.text}</p><ul>{selected.items.map(item=><li key={item}><Check/>{item}</li>)}</ul><a href="#bundle">{isImplemented?'Продолжить с Wildberries':'Сохранить интерес к запланированной интеграции'} <ArrowRight/></a></article>
+      </div>
+    </section>
 
-    <section className="publicSection bundleSection" id="bundle"><div className="publicSectionHead"><span>СОБЕРИТЕ СВОЙ КОНТУР</span><h2>Выберите функции и масштаб до регистрации</h2><p>Выбор не открывает доступ сам по себе: сервер включает только оплаченные права. Настройки нужны, чтобы после проверки аккаунта привести вас сразу в нужный рабочий сценарий.</p></div><div className="bundleBuilder"><div className="bundleOptions"><h3>Что должно работать</h3><div className="modulePicker">{modules.map(item=><button type="button" aria-pressed={selectedModules.includes(item.code)} className={selectedModules.includes(item.code)?'active':''} onClick={()=>toggleModule(item.code)} key={item.code}><span>{selectedModules.includes(item.code)&&<Check size={15}/>}</span><b>{item.label}</b><small>{item.note}</small></button>)}</div><h3>Сколько магазинов</h3><div className="scalePicker">{[1,3,10].map(value=><button type="button" className={scale===value?'active':''} onClick={()=>setScale(value)} key={value}><b>{value}</b><span>{value===1?'магазин':value<5?'магазина':'магазинов'}</span></button>)}</div></div><aside className="bundleSummary"><span>ВАШ МАРШРУТ</span><h3>{recommendedPlan==='business'?'Business':'PRO'}</h3><dl><div><dt>Канал</dt><dd>{selected.label}</dd></div><div><dt>Функции</dt><dd>{selectedModules.length} из {modules.length}</dd></div><div><dt>Масштаб</dt><dd>до {scale} магазинов</dd></div><div><dt>Сообщество</dt><dd>после запуска и оплаты</dd></div></dl>{isAvailable?<Link href={intentHref}>Продолжить с этим набором <ArrowRight size={16}/></Link>:<Link className="roadmapCta" href={roadmapHref}>Оставить интерес и начать с WB <ArrowRight size={16}/></Link>}<small>{isAvailable?'Регистрация → оплата → MFA → выбранный раздел':'Этот канал ещё не продаётся как готовая интеграция'}</small></aside></div></section>
+    <section className="publicSection publicBundle" id="bundle">
+      <div className="publicSectionTitle"><span>04 / ВАШ НАБОР</span><h2>Соберите маршрут до регистрации.</h2><p>Это только заявка на набор. URL передаёт выбор в регистрацию; серверные права появляются исключительно после проверки аккаунта, тарифа и entitlement.</p></div>
+      <div className="publicBundleGrid">
+        <div className="publicBundleOptions"><h3>Возможности</h3><div>{PUBLIC_MODULES.map(item=><button type="button" aria-pressed={selectedModules.includes(item.code)} onClick={()=>toggleModule(item.code)} key={item.code}><span>{selectedModules.includes(item.code)&&<Check/>}</span><b>{item.label}</b><small>{item.status}</small></button>)}</div><h3>Количество магазинов</h3><div className="publicScale">{[1,3,10].map(value=><button type="button" aria-pressed={scale===value} onClick={()=>setScale(value)} key={value}><b>{value}</b><span>{value===1?'магазин':value<5?'магазина':'магазинов'}</span></button>)}</div></div>
+        <aside className="publicBundleSummary"><span>ЗАПРОШЕННЫЙ МАРШРУТ</span><h3>{recommendedPlan==='business'?'Business':'PRO'}</h3><dl><div><dt>Площадка</dt><dd>{selected.label}</dd></div><div><dt>Функции</dt><dd>{selectedModules.length} из {PUBLIC_MODULES.length}</dd></div><div><dt>Масштаб</dt><dd>до {scale} магазинов</dd></div><div><dt>Доступ</dt><dd>не выдан</dd></div></dl><Link href={intentHref}>Перейти к регистрации <ArrowRight/></Link><small>{isImplemented?'Выбор сохранится в форме регистрации. PRO — желаемый план, не оплата и не активный тариф.':'Сохранится интерес к запланированной интеграции. PRO — желаемый план, не оплата и не активный тариф.'}</small></aside>
+      </div>
+    </section>
 
-    <section className="publicSection" id="pricing"><div className="publicSectionHead"><span>ПРОЗРАЧНЫЙ СТАРТ</span><h2>Сначала ценность, потом подписка</h2><p>Пробный режим ограничен специально: можно проверить качество, но нельзя случайно изменить магазин.</p></div><div className="publicPlans">{plans.map(plan=><article className={plan.featured?'featured':''} key={plan.name}>{plan.featured&&<span className="planFlag">ОПТИМАЛЬНЫЙ</span>}<h3>{plan.name}</h3><strong>{plan.price}</strong><small>{plan.note}</small><ul>{plan.items.map(item=><li key={item}><Check size={15}/>{item}</li>)}</ul><Link href={plan.href}>{plan.cta}<ArrowRight size={15}/></Link></article>)}</div><Link className="allPlans" href="/pricing">Сравнить тарифы и ограничения <ArrowRight size={15}/></Link></section>
+    <section className="publicSection publicPricing" id="pricing"><div className="publicSectionTitle"><span>05 / ТАРИФЫ</span><h2>Условия сохранены без изменений.</h2><p>Выбор тарифа также не выдаёт доступ: он остаётся запросом до серверной проверки.</p></div><div className="publicPlans">{plans.map(plan=><article className={plan.featured?'featured':''} key={plan.name}>{plan.featured&&<span>ОПТИМАЛЬНЫЙ</span>}<h3>{plan.name}</h3><strong>{plan.price}</strong><small>{plan.note}</small><ul>{plan.items.map(item=><li key={item}><Check/>{item}</li>)}</ul><Link href={plan.href}>{plan.cta}<ArrowRight/></Link></article>)}</div></section>
 
-    <section className="publicSecurity" id="security"><div><span><LockKeyhole size={16}/> БЕЗОПАСНОСТЬ — УСЛОВИЕ ЗАПУСКА</span><h2>AI предлагает. Владелец решает.</h2><p>Доступ разделён по организациям и магазинам. Ключи маркетплейсов не показываются в интерфейсе. Публикации требуют отдельного подтверждения, а критические действия записываются в аудит.</p></div><div><b><ShieldCheck/> Изоляция магазинов</b><b><ShieldCheck/> MFA перед подключением API</b><b><ShieldCheck/> Запрет действий по умолчанию</b><b><ShieldCheck/> STOP для автоматизаций</b></div></section>
+    <section className="publicSecurity"><div><span><LockKeyhole/> БЕЗОПАСНОСТЬ — УСЛОВИЕ ДОСТУПА</span><h2>Публичный выбор — не полномочие.</h2><p>Авторизация, membership, workspace, store и entitlement проверяются сервером. Публичная страница не подключает магазин и не выполняет внешние действия.</p></div><div><b><ShieldCheck/> Вход и восстановление сохранены</b><b><ShieldCheck/> MFA перед ключами магазина</b><b><ShieldCheck/> Права только после server gate</b><b><ShieldCheck/> STOP для автоматизаций</b></div></section>
 
-    <section className="publicCommunity"><MessageCircle size={28}/><div><span>СООБЩЕСТВО TROVENDI · ГОТОВИМ К ЗАПУСКУ</span><h2>Форум будет включён в каждый платный тариф</h2><p>После запуска авторизованные пользователи с активной PRO или Business-подпиской получат доступ к закрытому сообществу, практическим разборам и B2B-нетворкингу. Trial и завершённые подписки доступа не дадут.</p></div><Link href="#pricing">Выбрать тариф <ArrowRight size={15}/></Link></section>
-
-    <section className="publicFinal"><BrainCircuit size={34}/><h2>Один человек управляет бизнесом. TROVENDI помогает держать всё остальное под контролем.</h2><div><Link className="publicPrimary" href="/register">Создать аккаунт</Link><Link className="publicSecondary" href="/login">Войти</Link></div></section>
-    <footer className="publicFooter"><BrandLogo/><span>© 2026 TROVENDI · AI Commerce OS</span><div><Link href="/legal/privacy">Конфиденциальность</Link><Link href="/legal/terms">Условия</Link></div></footer>
+    <section className="publicFinal"><Store/><h2>Начните с понятного набора. Доступ включится только после проверок.</h2><div><a className="publicPrimary" href="#bundle">Выбрать набор</a><Link className="publicSecondary" href="/login">Войти</Link></div></section>
+    <footer className="publicFooter"><PublicBrand/><span>© 2026 TROVENDI · AI Commerce OS</span><div><Link href="/forgot-password">Восстановить доступ</Link><Link href="/legal/privacy">Конфиденциальность</Link><Link href="/legal/terms">Условия</Link></div></footer>
   </main>
 }

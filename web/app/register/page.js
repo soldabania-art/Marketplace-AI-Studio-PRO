@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useState } from 'react'
 import { ArrowRight, Building2, LockKeyhole, Mail, User } from 'lucide-react'
 import BrandLogo from '../../components/BrandLogo'
+import {buildPublicSelectionHref,normalizeRegistrationIntent} from '../../lib/publicSelection.mjs'
 
 const planNames={pro:'PRO',business:'Business'}
 const channelNames={wb:'Wildberries',start:'Старт с нуля'}
@@ -14,11 +15,8 @@ const interestNames={ozon:'Ozon',yandex:'Яндекс Маркет',kaspi:'Kaspi
 function RegisterForm() {
   const router = useRouter()
   const params = useSearchParams()
-  const plan = planNames[params.get('plan')] ? params.get('plan') : 'trial'
-  const channel = channelNames[params.get('channel')] ? params.get('channel') : 'start'
-  const stores = ['1','3','10'].includes(params.get('stores')) ? params.get('stores') : '1'
-  const selectedModules = (params.get('modules')||'').split(',').filter(code=>moduleNames[code])
-  const interest = interestNames[params.get('interest')] ? params.get('interest') : ''
+  const {plan,channel,stores,modules:selectedModules,interest}=normalizeRegistrationIntent(params)
+  const selectionHref=buildPublicSelectionHref({plan,channel,stores,modules:selectedModules,interest})
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -61,7 +59,7 @@ function RegisterForm() {
         <BrandLogo className="authBrand" />
         <div className="authPitch"><span className="eyebrow">СТАРТ ЗА НЕСКОЛЬКО МИНУТ</span><h1>Создайте свой AI-центр управления продажами.</h1><p>Сначала защищённый аккаунт. API-ключи магазина можно добавить только после входа и настройки MFA.</p><div className="trialBadge">{plan==='trial'?'3 дня Trial · до 5 карточек · без привязки карты':`${planNames[plan]} · до ${stores} магазинов · форум включён`}</div></div>
       </section>
-      <section className="authFormPanel"><div className="authCard"><span className="eyebrow">НОВЫЙ АККАУНТ</span><h2>Регистрация</h2><p className="authLead">Создайте владельца и первое рабочее пространство.</p>{plan!=='trial'&&<div className="registrationIntent"><strong>{planNames[plan]} · {channelNames[channel]}</strong><span>{selectedModules.length?selectedModules.map(code=>moduleNames[code]).join(' · '):'Набор функций уточняется'}{interest?` · интерес: ${interestNames[interest]}`:''}</span><small>После регистрации: защищённая оплата → MFA → выбранное пространство.</small></div>}
+      <section className="authFormPanel"><div className="authCard"><span className="eyebrow">НОВЫЙ АККАУНТ</span><h2>Регистрация</h2><p className="authLead">Создайте владельца и первое рабочее пространство.</p>{plan!=='trial'&&<div className="registrationIntent"><strong>{planNames[plan]} · {channelNames[channel]}</strong><span>{selectedModules.length?selectedModules.map(code=>moduleNames[code]).join(' · '):'Набор функций уточняется'}{interest?` · интерес к запланированной интеграции: ${interestNames[interest]}`:''}</span><small>{planNames[plan]} указан как желаемый план, а не оплаченный или активный тариф. Права не выданы: после регистрации требуются серверная проверка, оплата и MFA.</small></div>}
         <form onSubmit={submit}>
           <label>Ваше имя<div className="authInput"><User size={18}/><input name="full_name" placeholder="Имя" autoComplete="name" required/></div></label>
           <label>Название компании / магазина<div className="authInput"><Building2 size={18}/><input name="workspace_name" placeholder="Мой магазин" required/></div></label>
@@ -71,7 +69,7 @@ function RegisterForm() {
           {error && <div className="authError">{error}</div>}
           <button className="authPrimary" type="submit" disabled={loading}>{loading ? 'Создаём аккаунт…' : <>Создать аккаунт <ArrowRight size={18}/></>}</button>
         </form>
-        <p className="authSwitch">Уже есть аккаунт? <Link href="/login">Войти</Link></p><Link className="authBack" href="/">← Вернуться на главную</Link>
+        <p className="authSwitch">Уже есть аккаунт? <Link href="/login">Войти</Link></p><Link className="authBack" href={selectionHref}>← Вернуться к выбранному набору</Link>
       </div></section>
     </main>
   )

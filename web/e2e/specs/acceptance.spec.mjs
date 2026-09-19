@@ -143,7 +143,7 @@ test('D03 exposes loading, backend error and no-store as separate visible states
   await consumeExpectedHttpError(page, 503)
   await page.unroute('**/api/stores')
   await page.route('**/api/stores', route => route.fulfill({ json: { stores: [], workspaces: [] } }))
-  await page.reload(); await expect(page.getByText('Магазин не выбран')).toBeVisible()
+  await page.reload(); await expect(page.locator('.directorBState h2', { hasText: 'Магазин не выбран' })).toBeVisible()
 })
 
 test('D03 visibly fences a delayed A response across A → B → A and honors reduced motion', async ({ page }, testInfo) => {
@@ -214,7 +214,7 @@ test('D03 ignores a delayed A decision response after A → B → A', async ({ p
   await releaseOldDecision(); await oldDecisionResponse
   await page.evaluate(() => new Promise(requestAnimationFrame))
   await expect(page.getByText('OLD A decision', { exact: true })).toHaveCount(0)
-  await expect(page.getByText('CURRENT A', { exact: true })).toBeVisible()
+  await expect(page.getByText('CURRENT A summary', { exact: true })).toBeVisible()
 })
 test('account ignores a delayed WB check after the selected store changes', async ({ page }, testInfo) => {
   let releaseCheck

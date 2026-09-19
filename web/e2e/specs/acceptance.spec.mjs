@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto'
+import { mkdir } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 
 const password = process.env.E2E_PASSWORD
@@ -20,30 +21,43 @@ function totp() {
   return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, '0')
 }
 
-async function waitForHydration(page) {
-  await page.waitForFunction(() => Array.from(document.querySelectorAll('button, form, a')).some(node =>
-    Object.keys(node).some(key => key.startsWith('__reactProps$')),
-  ))
-}
-
 async function login(page, email) {
   await page.goto('/login')
-  await waitForHydration(page)
+  await onlyEssential(page)
   await page.getByLabel('Email').fill(email)
   await page.getByLabel('Пароль').fill(password)
+  const loginResponse = page.waitForResponse(response =>
+    response.request().method() === 'POST' && response.url().endsWith('/api/auth/login'),
+  )
   await page.getByRole('button', { name: /Войти/ }).click()
+  expect((await loginResponse).status()).toBe(200)
+  await expect(page.getByLabel('Код подтверждения')).toBeVisible()
   await page.getByLabel('Код подтверждения').fill(totp())
+  const mfaResponse = page.waitForResponse(response =>
+    response.request().method() === 'POST' && response.url().endsWith('/api/auth/mfa'),
+  )
   await page.getByRole('button', { name: /Подтвердить/ }).click()
+  expect((await mfaResponse).status()).toBe(200)
   await expect(page).toHaveURL(/\/account/)
 }
 
 async function onlyEssential(page) {
+  const hasConsent = await page.evaluate(() => localStorage.getItem('mai_cookie_consent_v1') !== null)
+  if (hasConsent) return
   const button = page.getByRole('button', { name: 'Только обязательные' })
-  if (await button.isVisible()) await button.click()
+  await expect(button).toBeVisible()
+  await expect(button).toBeEnabled()
+  await button.click()
+  await expect(button).toBeHidden()
+}
+
+async function evidencePath(name) {
+  await mkdir('e2e-artifacts/screenshots', { recursive: true })
+  return `e2e-artifacts/screenshots/${name}`
 }
 
 test('D02 preserves a selected planned integration and essential-only consent', async ({ page }, testInfo) => {
-  await page.goto('/#bundle'); await waitForHydration(page); await onlyEssential(page)
+  await page.goto('/#bundle'); await onlyEssential(page)
   await page.getByRole('button', { name: /Ozon.*Запланировано/ }).click()
   await page.getByRole('button', { name: '1 магазин' }).click()
   await page.getByRole('button', { name: /AI Director/ }).click()
@@ -56,12 +70,12 @@ test('D02 preserves a selected planned integration and essential-only consent', 
   await page.getByRole('link', { name: /Вернуться к выбранному набору/ }).click()
   await expect(bundle).toContainText('Ozon')
   await expect(bundle).toContainText('до 1 магазинов')
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('mai_cookie_consent') || '{}'))).toMatchObject({ analytics: false, marketing: false })
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('mai_cookie_consent_v1') || '{}'))).toMatchObject({ analytics: false, marketing: false })
   await expect(page.locator('html')).toHaveJSProperty('scrollWidth', await page.evaluate(() => document.documentElement.clientWidth))
   await page.keyboard.press('Tab')
   expect(await page.evaluate(() => document.activeElement?.tagName)).toMatch(/A|BUTTON/)
   if (testInfo.project.name === 'mobile-390') expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true)
-  await page.screenshot({ path: testInfo.outputPath(`d02-${testInfo.project.name}.png`), fullPage: true })
+  await page.screenshot({ path: await evidencePath(`d02-${testInfo.project.name}.png`), fullPage: true })
 })
 
 test('D03 renders mock-controlled states without impersonating server authorization', async ({ page }, testInfo) => {
@@ -71,11 +85,11 @@ test('D03 renders mock-controlled states without impersonating server authorizat
   await page.route('**/api/stores', route => route.fulfill({ json: { stores: [{ id: storeA, name: 'Store A — deliberately long visible acceptance name', workspace_id: 'w' }, { id: storeB, name: 'Store B — deliberately long visible acceptance name', workspace_id: 'w' }], workspaces: [{ id: 'w', role: 'analyst', can_manage_stores: false }] } }))
   await page.route('**/api/director?*', route => route.fulfill({ json: payload() }))
   await page.addInitScript(id => localStorage.setItem('mai_store_id', id), storeA)
-  await page.goto('/director'); await waitForHydration(page); await onlyEssential(page)
+  await page.goto('/director'); await onlyEssential(page)
   for (const item of states) { state = item; await page.reload(); await expect(page.getByText(/Очередь ограничена состоянием источников/)).toBeVisible() }
   await expect(page.getByText('Доступен только просмотр')).toBeVisible()
   await expect(page.getByRole('alert')).toContainText('STOP активен')
-  await page.screenshot({ path: testInfo.outputPath(`d03-mock-${testInfo.project.name}.png`), fullPage: true })
+  await page.screenshot({ path: await evidencePath(`d03-mock-${testInfo.project.name}.png`), fullPage: true })
 })
 
 test('actual backend: platform roles, MFA/step-up and store scope remain server-enforced', async ({ page }) => {

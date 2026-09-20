@@ -8,11 +8,11 @@ import { ArrowLeft, CreditCard, LockKeyhole } from 'lucide-react'
 const plans={pro:{name:'PRO',price:'4 990 ₽',period:'месяц'},business:{name:'Business',price:'12 990 ₽',period:'месяц'}}
 
 function CheckoutForm(){
- const params=useSearchParams(); const requested=params.get('plan')||'pro'; const code=plans[requested]?requested:'pro'; const plan=plans[code]; const [accepted,setAccepted]=useState(false); const [message,setMessage]=useState(''); const [busy,setBusy]=useState(false)
+ const params=useSearchParams(); const requested=params.get('plan')||'pro'; const workspaceId=params.get('workspace_id')||''; const code=plans[requested]?requested:'pro'; const plan=plans[code]; const [accepted,setAccepted]=useState(false); const [message,setMessage]=useState(''); const [busy,setBusy]=useState(false)
  async function pay(){
    setBusy(true);setMessage('')
    try{
-     const response=await fetch('/api/billing/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan_code:code,accepted_terms:accepted})})
+     const response=await fetch('/api/billing/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({workspace_id:workspaceId||null,plan_code:code,accepted_terms:accepted})})
      const payload=await response.json()
      if(!response.ok) throw new Error(payload.error||'Не удалось начать оплату')
      if(!payload.checkout_url) throw new Error('Платёжный провайдер не вернул защищённую страницу оплаты.')

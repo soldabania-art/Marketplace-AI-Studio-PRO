@@ -2,12 +2,13 @@ import base64
 import uuid
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.db import Base, SessionLocal, engine
 from app.main import app
 from app.config import get_settings
 from app.mfa_service import totp_code
-from app.models import BackgroundJob, BusinessOperatingProfile, JobStatus, MarketplaceConnection, MarketplaceSnapshot, Membership, MembershipRole, OperationalAuditEvent, ProductCostProfile, Store
+from app.models import BackgroundJob, BusinessOperatingProfile, JobStatus, MarketplaceConnection, MarketplaceSnapshot, Membership, MembershipRole, OperationalAuditEvent, ProductCostProfile, PurchaseIntent, Store, Subscription, SubscriptionStatus, User, Workspace
 
 Base.metadata.create_all(bind=engine)
 client = TestClient(app)
@@ -350,6 +351,51 @@ def test_registration_persists_allowlisted_purchase_intent_without_granting_paid
     assert invalid.status_code == 422
 
 
+def test_billing_workspace_is_explicit_authorized_and_never_first_membership():
+    email, _, token = _register_user()
+    headers = {"Authorization": f"Bearer {token}"}
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.email == email))
+        owner_membership = db.scalar(select(Membership).where(Membership.user_id == user.id))
+        owner_workspace_id = owner_membership.workspace_id
+        other_workspace = Workspace(name="Analyst billing workspace")
+        db.add(other_workspace)
+        db.flush()
+        # Insert the non-owner membership last so database/default ordering cannot
+        # accidentally select a privileged workspace.
+        db.add(Membership(user_id=user.id, workspace_id=other_workspace.id, role=MembershipRole.analyst))
+        db.add(Subscription(workspace_id=other_workspace.id, plan_code="trial", status=SubscriptionStatus.trial))
+        db.add(PurchaseIntent(workspace_id=other_workspace.id, created_by_user_id=user.id, requested_plan="business"))
+        user.email_verified = True
+        db.commit()
+        analyst_workspace_id = other_workspace.id
+
+    for path in ("/api/v1/billing/subscription", "/api/v1/billing/purchase-intent", "/api/v1/billing/activation"):
+        assert client.get(path, headers=headers).status_code == 409
+
+    owner = client.get(f"/api/v1/billing/subscription?workspace_id={owner_workspace_id}", headers=headers)
+    assert owner.status_code == 200
+    assert owner.json()["workspace_id"] == owner_workspace_id
+    analyst = client.get(f"/api/v1/billing/activation?workspace_id={analyst_workspace_id}", headers=headers)
+    assert analyst.status_code == 200
+    assert analyst.json()["workspace_id"] == analyst_workspace_id
+    for path in ("/api/v1/billing/subscription", "/api/v1/billing/purchase-intent", "/api/v1/billing/activation"):
+        assert client.get(f"{path}?workspace_id={uuid.uuid4()}", headers=headers).status_code == 404
+    forbidden = client.post("/api/v1/billing/checkout", headers=headers, json={
+        "workspace_id": analyst_workspace_id, "plan_code": "pro", "accepted_terms": True,
+    })
+    assert forbidden.status_code == 403
+    assert client.post("/api/v1/billing/checkout", headers=headers, json={
+        "workspace_id": str(uuid.uuid4()), "plan_code": "pro", "accepted_terms": True,
+    }).status_code == 404
+    # An authorized owner selection reaches only the deliberately unavailable
+    # provider adapter; client workspace input itself never grants access.
+    owner_checkout = client.post("/api/v1/billing/checkout", headers=headers, json={
+        "workspace_id": owner_workspace_id, "plan_code": "pro", "accepted_terms": True,
+    })
+    assert owner_checkout.status_code == 503
+
+
 def test_activation_router_enforces_email_payment_and_mfa_order():
     email = f"activation-{uuid.uuid4().hex}@example.com"
     register = client.post("/api/v1/auth/register", json={
@@ -370,7 +416,7 @@ def test_activation_router_enforces_email_payment_and_mfa_order():
     assert client.post("/api/v1/auth/email-verification/confirm", json={"token": verification["development_token"]}).status_code == 200
     second = client.get("/api/v1/billing/activation", headers=headers)
     assert second.json()["stage"] == "checkout"
-    assert second.json()["href"] == "/checkout?plan=pro"
+    assert second.json()["href"].startswith("/checkout?plan=pro&workspace_id=")
 
 
 def test_mfa_setup_login_recovery_and_single_use_challenge():

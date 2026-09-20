@@ -34,9 +34,9 @@ export default function ProfitCenterWorkspace(){
       setData(payload)
       const allowed=payload.operating_profile?.allowed_sku_models||[]
       setCostDrafts(Object.fromEntries((payload.products||[]).map(item=>{
-        const saved=item.cost_profile
+        const saved=item.current_cost_profile||item.cost_profile
         const model=saved?.operating_model&&saved.operating_model!=='legacy_total'?saved.operating_model:(allowed[0]||'')
-        return [item.nm_id,{model,components:saved?.operating_model==='legacy_total'?{}:(saved?.components_rub||{}),sources:saved?.source_references||{},confirmed:false}]
+        return [item.nm_id,{model,components:saved?.operating_model==='legacy_total'?{}:(saved?.components_rub||{}),sources:saved?.source_references||{},effectiveOn:'',confirmed:false}]
       })))
       setTaxBasis(payload.tax?.basis||'gross_sales')
       setTaxRate(payload.tax?.rate_percent||'')
@@ -63,10 +63,10 @@ export default function ProfitCenterWorkspace(){
     if(!draft?.confirmed){setNotice('Подтвердите, что все суммы взяты из ваших документов.');return}
     setSaving(String(nmId)); setNotice('')
     try{
-      const response=await fetch(`/api/profit-center/costs/${nmId}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({store_id:storeId,operating_model:draft.model,components_rub:draft.components,source_references:draft.sources,confirmed:true})})
+      const response=await fetch(`/api/profit-center/costs/${nmId}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({store_id:storeId,operating_model:draft.model,components_rub:draft.components,source_references:draft.sources,effective_on:draft.effectiveOn||null,confirmed:true})})
       const payload=await response.json()
       if(!response.ok)throw new Error(payload.error||'Не удалось сохранить себестоимость.')
-      setNotice(`Себестоимость товара ${nmId} рассчитана и сохранена: ${rubles(payload.cogs_rub)}.`)
+      setNotice(`Версия себестоимости товара ${nmId} сохранена${payload.cost_version?.effective_on?` с ${payload.cost_version.effective_on}`:''}: ${rubles(payload.cogs_rub)}.`)
       await load()
     }catch(error){setNotice(error.message)}finally{setSaving('')}
   }
@@ -122,11 +122,12 @@ export default function ProfitCenterWorkspace(){
           const catalog=data.operating_profile?.component_catalog||{}
           const fields=catalog[draft.model]||{}
           const draftTotal=Object.values(draft.components||{}).reduce((sum,value)=>sum+(Number(value)||0),0)
-          return <article key={item.nm_id} className="skuProfitCard"><div className="skuProfitTop"><div className="profitIdentity"><strong>{item.title}</strong><span>{item.vendor_code||'без артикула'} · nmId {item.nm_id}</span></div><div><span>WB к перечислению</span><b>{rubles(item.amounts.payout)}</b></div><div><span>Шт.</span><b>{item.amounts.net_units}</b></div><div><span>Себестоимость / шт.</span><b>{rubles(item.cogs_per_unit)}</b></div><div className="contribution"><span>Реклама {rubles(item.advertising_spend)} · налог {rubles(item.tax_reserve)}</span><b>{item.final_profit===null?`До рекламы и налога ${rubles(item.contribution_before_tax_ads)}`:`Прибыль ${rubles(item.final_profit)}`}</b></div></div>
-            {data.operating_profile&&<details className="costBreakdown"><summary>{item.cost_profile?'Изменить подтверждённый расчёт':'Заполнить себестоимость'}<span>{item.cost_profile?.calculation_sha256?`Контроль ${item.cost_profile.calculation_sha256.slice(0,8)}`:'Источники обязательны'}</span></summary><div className="costEditor">
+          return <article key={item.nm_id} className="skuProfitCard"><div className="skuProfitTop"><div className="profitIdentity"><strong>{item.title}</strong><span>{item.vendor_code||'без артикула'} · nmId {item.nm_id}</span></div><div><span>WB к перечислению</span><b>{rubles(item.amounts.payout)}</b></div><div><span>Шт.</span><b>{item.amounts.net_units}</b></div><div><span>Себестоимость / шт.</span><b>{item.cost_status==='mixed_versions'?'Несколько версий':rubles(item.cogs_per_unit)}</b></div><div className="contribution"><span>Реклама {rubles(item.advertising_spend)} · налог {rubles(item.tax_reserve)}</span><b>{item.final_profit===null?`До рекламы и налога ${rubles(item.contribution_before_tax_ads)}`:`Прибыль ${rubles(item.final_profit)}`}</b></div></div>
+            {item.cost_status==='mixed_versions'&&<small>В периоде применены версии: {(item.applied_cost_versions||[]).map(version=>`${version.effective_on}: ${rubles(Object.values(version.components_rub||{}).reduce((sum,value)=>sum+Number(value),0))}`).join(' · ')}</small>}
+            {data.operating_profile&&<details className="costBreakdown"><summary>{item.current_cost_profile?'Добавить версию себестоимости':'Заполнить себестоимость'}<span>{item.current_cost_profile?.calculation_sha256?`Контроль ${item.current_cost_profile.calculation_sha256.slice(0,8)}`:'Источники обязательны'}</span></summary><div className="costEditor">
               {data.operating_profile.allowed_sku_models.length>1&&<label>Модель SKU<select value={draft.model||''} onChange={event=>changeCostModel(item.nm_id,event.target.value)}>{data.operating_profile.allowed_sku_models.map(model=><option key={model} value={model}>{model==='reseller'?'Реселлер':model==='manufacturer'?'Производство':'Дистрибьютор'}</option>)}</select></label>}
               <div className="costComponents">{Object.entries(fields).map(([key,label])=><div className="costComponent" key={key}><label>{label}, ₽<input type="number" min="0" max="100000000" step="0.01" value={draft.components?.[key]??''} onChange={event=>changeComponent(item.nm_id,'components',key,event.target.value)} placeholder="0.00"/></label><label>Источник<input value={draft.sources?.[key]??''} maxLength={300} onChange={event=>changeComponent(item.nm_id,'sources',key,event.target.value)} placeholder="Накладная, техкарта, тариф…"/></label></div>)}</div>
-              <div className="costEditorFooter"><strong>Итого: {rubles(draftTotal)}</strong><label className="costConfirm"><input type="checkbox" checked={Boolean(draft.confirmed)} onChange={event=>changeCost(item.nm_id,'confirmed',event.target.checked)}/><span>Все суммы и источники проверены</span></label><button className="costSave" onClick={()=>saveCost(item.nm_id)} disabled={saving===String(item.nm_id)||draftTotal<=0}><Save size={15}/>{saving===String(item.nm_id)?'Сохраняем':'Подтвердить расчёт'}</button></div>
+              <div className="costEditorFooter"><strong>Итого: {rubles(draftTotal)}</strong><label>Дата действия<input type="date" value={draft.effectiveOn||''} onChange={event=>changeCost(item.nm_id,'effectiveOn',event.target.value)}/></label><label className="costConfirm"><input type="checkbox" checked={Boolean(draft.confirmed)} onChange={event=>changeCost(item.nm_id,'confirmed',event.target.checked)}/><span>Все суммы и источники проверены</span></label><button className="costSave" onClick={()=>saveCost(item.nm_id)} disabled={saving===String(item.nm_id)||draftTotal<=0}><Save size={15}/>{saving===String(item.nm_id)?'Сохраняем':'Подтвердить расчёт'}</button></div>
             </div></details>}
           </article>})}</div>:<div className="profitEmpty">Финансовых строк за период пока нет. Нажмите «Получить отчёт WB».</div>}
       </section>

@@ -393,6 +393,7 @@ def test_billing_workspace_is_explicit_authorized_and_never_first_membership():
     })
     assert owner_checkout.status_code == 503
 
+
 def test_activation_router_enforces_email_payment_and_mfa_order():
     email = f"activation-{uuid.uuid4().hex}@example.com"
     register = client.post("/api/v1/auth/register", json={

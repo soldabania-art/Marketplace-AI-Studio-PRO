@@ -8,7 +8,8 @@ from app.db import Base, SessionLocal, engine
 from app.main import app
 from app.config import get_settings
 from app.mfa_service import totp_code
-from app.models import BackgroundJob, BusinessOperatingProfile, JobStatus, MarketplaceConnection, MarketplaceSnapshot, Membership, MembershipRole, OperationalAuditEvent, ProductCostProfile, ProductCostVersion, Store
+from app.models import BackgroundJob, BusinessOperatingProfile, JobStatus, MarketplaceAdvertisingLine, MarketplaceConnection, MarketplaceSnapshot, Membership, MembershipRole, OperationalAuditEvent, ProductCostProfile, ProductCostVersion, Store, StoreTaxProfile
+from app.profit_center_router import _period
 
 Base.metadata.create_all(bind=engine)
 client = TestClient(app)
@@ -287,6 +288,31 @@ def test_onboarding_is_store_scoped_and_business_profile_requires_admin_confirma
 def test_profit_formula_provenance():
     payload = client.get("/api/v1/profit").json()
     assert payload["formula"] == "payout - cogs - sku_ad_spend"
+
+
+def test_profit_center_keeps_advertising_only_sku_and_store_final_reconciled():
+    _, _, token = _register_user()
+    headers = {"Authorization": f"Bearer {token}"}
+    user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+    store_id = client.get("/api/v1/stores", headers=headers).json()["stores"][0]["id"]
+    date_from, date_to = _period(30)
+    complete = {"date_from": date_from, "date_to": date_to, "complete": True, "schema_state": "valid", "rejected_count": 0}
+    with SessionLocal() as db:
+        db.add(MarketplaceConnection(user_id=user_id, store_id=store_id, marketplace="wildberries", encrypted_token="test", enabled=True))
+        db.add_all([
+            MarketplaceSnapshot(store_id=store_id, marketplace="wildberries", snapshot_type="finance_realization_sync", payload=complete),
+            MarketplaceSnapshot(store_id=store_id, marketplace="wildberries", snapshot_type="advertising_sync", payload=complete),
+            MarketplaceAdvertisingLine(store_id=store_id, marketplace="wildberries", source_line_id=f"ads-only-{uuid.uuid4().hex}", campaign_id=1, nm_id=777, event_date=date_to, spend_kopecks=1_250, attributed_revenue_kopecks=0, source_sha256="a" * 64),
+            StoreTaxProfile(store_id=store_id, marketplace="wildberries", basis="gross_sales", rate_bps=600, note="fixture", confirmed_by_user_id=user_id),
+        ])
+        db.commit()
+    result = client.get(f"/api/v1/profit-center?store_id={store_id}&period_days=30", headers=headers)
+    assert result.status_code == 200
+    payload = result.json()
+    assert payload["profit_status"] == "complete"
+    assert payload["final_profit"] == "-12.50"
+    assert [(item["nm_id"], item["amounts"]["net_units"], item["final_profit"]) for item in payload["products"]] == [(777, 0, "-12.50")]
+    assert payload["reconciliation"]["unallocated"]["final_profit"] == "0.00"
 
 
 def test_billing_plans_are_public_and_provider_is_not_fake():

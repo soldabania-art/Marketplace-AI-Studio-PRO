@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 from fastapi import HTTPException
 
-from app.profit_center_router import ProductCostRequest, TaxProfileRequest, _cost_for_event_date, _cost_for_lines, _financial_risks, _public_amounts, _public_import_summary, _sync_is_complete, _tax_kopecks, _totals, _validated_import_mapping, _verified_cost, save_tax_profile
+from app.profit_center_router import ProductCostRequest, TaxProfileRequest, _cost_for_event_date, _cost_for_lines, _final_profit_bridge, _financial_risks, _profit_nm_ids, _public_amounts, _public_import_summary, _reconciliation_bridge, _sync_is_complete, _tax_kopecks, _totals, _unallocated_cogs_unknown, _validated_import_mapping, _verified_cost, save_tax_profile
 
 
 def line(**values):
@@ -139,6 +139,34 @@ def test_mixed_version_return_is_unknown_until_return_cost_attribution_is_confir
     assert cogs is None
     assert applied == [old, new]
     assert status == 'return_attribution_unknown'
+
+
+def test_advertising_only_sku_is_reconciled_even_without_financial_sales():
+    assert _profit_nm_ids({101: [line(nm_id=101)]}, {202: [SimpleNamespace(nm_id=202)]}) == [101, 202]
+
+
+def test_unallocated_bridge_makes_final_total_equal_skus_plus_unallocated():
+    # A financial ad deduction can arrive without the matching SKU ad spend.
+    # Keep that cross-scope netting explicit instead of inventing an allocation.
+    bridge = _final_profit_bridge(wb_net_residual=0, advertising_netting_residual=-10_000, tax_residual=0)
+    assert bridge == 10_000
+    assert _reconciliation_bridge(total_final_profit=0, sku_final_profits=[-10_000], unallocated_direct_final_profit=bridge) == 0
+
+
+def test_tax_rounding_residual_stays_in_the_unallocated_bridge():
+    assert _final_profit_bridge(wb_net_residual=0, advertising_netting_residual=0, tax_residual=1) == -1
+
+
+def test_combined_sku_and_unallocated_advertising_identity_is_exact_in_kopecks():
+    sku_final = -500
+    bridge = _final_profit_bridge(wb_net_residual=0, advertising_netting_residual=500, tax_residual=0)
+    assert bridge == -500
+    assert _reconciliation_bridge(total_final_profit=-1_000, sku_final_profits=[sku_final], unallocated_direct_final_profit=bridge) == 0
+
+
+def test_unallocated_financial_quantity_keeps_cogs_unknown_but_correction_does_not():
+    assert _unallocated_cogs_unknown([line(quantity=-1, payout_kopecks=-10_000)]) is True
+    assert _unallocated_cogs_unknown([line(quantity=0, deduction_kopecks=1_000)]) is False
 
 
 def test_import_mapping_is_allowlisted_and_normalized():

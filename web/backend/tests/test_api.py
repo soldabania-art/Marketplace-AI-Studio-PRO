@@ -8,7 +8,7 @@ from app.db import Base, SessionLocal, engine
 from app.main import app
 from app.config import get_settings
 from app.mfa_service import totp_code
-from app.models import BackgroundJob, BusinessOperatingProfile, JobStatus, MarketplaceAdvertisingLine, MarketplaceConnection, MarketplaceSnapshot, Membership, MembershipRole, OperationalAuditEvent, ProductCostProfile, ProductCostVersion, Store, StoreTaxProfile
+from app.models import BackgroundJob, BusinessOperatingProfile, JobStatus, MarketplaceAdvertisingLine, MarketplaceConnection, MarketplaceFinancialLine, MarketplaceSnapshot, Membership, MembershipRole, OperationalAuditEvent, ProductCostProfile, ProductCostVersion, Store, StoreTaxProfile
 from app.profit_center_router import _period
 
 Base.metadata.create_all(bind=engine)
@@ -313,6 +313,53 @@ def test_profit_center_keeps_advertising_only_sku_and_store_final_reconciled():
     assert payload["final_profit"] == "-12.50"
     assert [(item["nm_id"], item["amounts"]["net_units"], item["final_profit"]) for item in payload["products"]] == [(777, 0, "-12.50")]
     assert payload["reconciliation"]["unallocated"]["final_profit"] == "0.00"
+
+
+def test_profit_center_filters_period_in_sql_and_paginates_products_without_changing_store_total():
+    _, _, token = _register_user()
+    headers = {"Authorization": f"Bearer {token}"}
+    user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+    store_id = client.get("/api/v1/stores", headers=headers).json()["stores"][0]["id"]
+    date_from, date_to = _period(30)
+    complete = {"date_from": date_from, "date_to": date_to, "complete": True, "schema_state": "valid", "rejected_count": 0}
+    with SessionLocal() as db:
+        db.add(MarketplaceConnection(user_id=user_id, store_id=store_id, marketplace="wildberries", encrypted_token="test", enabled=True))
+        db.add_all([
+            MarketplaceSnapshot(store_id=store_id, marketplace="wildberries", snapshot_type="finance_realization_sync", payload=complete),
+            MarketplaceSnapshot(store_id=store_id, marketplace="wildberries", snapshot_type="advertising_sync", payload=complete),
+            MarketplaceAdvertisingLine(store_id=store_id, marketplace="wildberries", source_line_id=f"page-a-{uuid.uuid4().hex}", campaign_id=1, nm_id=777, event_date=date_to, spend_kopecks=1_250, source_sha256="a" * 64),
+            MarketplaceAdvertisingLine(store_id=store_id, marketplace="wildberries", source_line_id=f"page-b-{uuid.uuid4().hex}", campaign_id=2, nm_id=888, event_date=date_to, spend_kopecks=250, source_sha256="b" * 64),
+            MarketplaceAdvertisingLine(store_id=store_id, marketplace="wildberries", source_line_id=f"outside-{uuid.uuid4().hex}", campaign_id=3, nm_id=999, event_date="1970-01-01", spend_kopecks=999_999, source_sha256="c" * 64),
+            StoreTaxProfile(store_id=store_id, marketplace="wildberries", basis="gross_sales", rate_bps=600, note="fixture", confirmed_by_user_id=user_id),
+        ])
+        db.commit()
+    first = client.get(f"/api/v1/profit-center?store_id={store_id}&period_days=30&page=1&page_size=1", headers=headers).json()
+    second = client.get(f"/api/v1/profit-center?store_id={store_id}&period_days=30&page=2&page_size=1", headers=headers).json()
+    assert first["pagination"] == {"page": 1, "page_size": 1, "total_items": 2, "total_pages": 2, "has_next": True}
+    assert second["pagination"] == {"page": 2, "page_size": 1, "total_items": 2, "total_pages": 2, "has_next": False}
+    assert [first["products"][0]["nm_id"], second["products"][0]["nm_id"]] == [777, 888]
+    assert first["final_profit"] == second["final_profit"] == "-15.00"
+    assert first["advertising_line_count"] == 2
+
+
+def test_profit_center_rejects_a_period_above_the_explicit_source_line_cap(monkeypatch):
+    import app.profit_center_router as profit_router
+    _, _, token = _register_user()
+    headers = {"Authorization": f"Bearer {token}"}
+    user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+    store_id = client.get("/api/v1/stores", headers=headers).json()["stores"][0]["id"]
+    _, date_to = _period(30)
+    with SessionLocal() as db:
+        db.add(MarketplaceConnection(user_id=user_id, store_id=store_id, marketplace="wildberries", encrypted_token="test", enabled=True))
+        db.add_all([
+            MarketplaceFinancialLine(store_id=store_id, marketplace="wildberries", source_line_id=f"bounded-{index}-{uuid.uuid4().hex}", event_date=date_to, source_sha256=str(index) * 64)
+            for index in (1, 2)
+        ])
+        db.commit()
+    monkeypatch.setattr(profit_router, "MAX_PERIOD_FINANCIAL_LINES", 1)
+    response = client.get(f"/api/v1/profit-center?store_id={store_id}&period_days=30", headers=headers)
+    assert response.status_code == 409
+    assert "меньший период" in response.json()["detail"]
 
 
 def test_billing_plans_are_public_and_provider_is_not_fake():

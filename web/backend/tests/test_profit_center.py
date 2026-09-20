@@ -3,7 +3,9 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import text
 
+from app.db import engine
 from app.profit_center_router import ProductCostRequest, TaxProfileRequest, _cost_for_event_date, _cost_for_lines, _final_profit_bridge, _financial_risks, _profit_nm_ids, _public_amounts, _public_import_summary, _reconciliation_bridge, _sync_is_complete, _tax_kopecks, _totals, _unallocated_cogs_unknown, _validated_import_mapping, _verified_cost, save_tax_profile
 
 
@@ -205,3 +207,30 @@ def test_financial_risks_exclude_advertising_and_source_payload():
         {'kind':'penalty','label':'Штраф','count':1,'amount':'25.00'},
         {'kind':'deduction','label':'Удержание','count':1,'amount':'12.00'},
     ]
+
+
+@pytest.mark.skipif(engine.dialect.name != 'postgresql', reason='PostgreSQL EXPLAIN is the production query-plan gate')
+def test_profit_period_and_cost_lookup_use_composite_indexes_on_postgresql():
+    statements = {
+        'ix_financial_store_marketplace_event_nm': """
+            SELECT nm_id FROM marketplace_financial_lines
+            WHERE store_id = 'plan-store' AND marketplace = 'wildberries'
+              AND event_date >= '2026-08-01' AND event_date < '2026-09-01'
+        """,
+        'ix_advertising_store_marketplace_event_nm': """
+            SELECT nm_id FROM marketplace_advertising_lines
+            WHERE store_id = 'plan-store' AND marketplace = 'wildberries'
+              AND event_date >= '2026-08-01' AND event_date <= '2026-08-31'
+        """,
+        'ix_cost_version_store_marketplace_nm_effective': """
+            SELECT id FROM product_cost_versions
+            WHERE store_id = 'plan-store' AND marketplace = 'wildberries' AND nm_id = 42
+              AND effective_on <= DATE '2026-08-31'
+            ORDER BY effective_on DESC LIMIT 1
+        """,
+    }
+    with engine.begin() as connection:
+        connection.execute(text('SET LOCAL enable_seqscan = off'))
+        for index_name, statement in statements.items():
+            plan = '\n'.join(row[0] for row in connection.execute(text(f'EXPLAIN {statement}')))
+            assert index_name in plan, plan

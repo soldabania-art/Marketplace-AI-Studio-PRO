@@ -57,7 +57,7 @@ def test_verifier_accepts_schema_produced_by_real_alembic_chain(tmp_path):
     engine = create_engine(database_url)
     with engine.connect() as connection:
         verify_ctrl01_schema(connection)
-        assert verify_current_revision(connection) == "20260920_0032"
+        assert verify_current_revision(connection) == "20260920_0033"
     engine.dispose()
 
 

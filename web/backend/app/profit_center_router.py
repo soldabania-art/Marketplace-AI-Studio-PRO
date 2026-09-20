@@ -6,6 +6,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, model_validator
 from typing import Literal
+from sqlalchemy import case, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -18,6 +19,10 @@ from .store_access import require_store_admin, resolve_store
 from .sync_scheduler import enqueue_sync_job
 
 router = APIRouter(prefix='/profit-center', tags=['profit-center'])
+
+MAX_PERIOD_FINANCIAL_LINES = 100_000
+MAX_PERIOD_PRODUCT_GROUPS = 10_000
+MAX_PERIOD_COST_VERSIONS = 50_000
 
 
 class ProfitSyncRequest(BaseModel):
@@ -298,9 +303,82 @@ def _refresh_cost_projection(db: Session, *, store, user: User, nm_id: int, now:
         calculation_sha256=current.calculation_sha256, source=current.source, now=now)
 
 
-def _line_in_period(row: MarketplaceFinancialLine, date_from: str, date_to: str) -> bool:
-    value = str(row.event_date or '')[:10]
-    return bool(value and date_from <= value <= date_to)
+def _period_financial_query(db: Session, *, store_id: str, date_from: str, date_to: str):
+    next_day = (date.fromisoformat(date_to) + timedelta(days=1)).isoformat()
+    return db.query(MarketplaceFinancialLine).filter(
+        MarketplaceFinancialLine.store_id == store_id,
+        MarketplaceFinancialLine.marketplace == 'wildberries',
+        MarketplaceFinancialLine.event_date >= date_from,
+        MarketplaceFinancialLine.event_date < next_day,
+    )
+
+
+def _bounded_financial_lines(db: Session, *, store_id: str, date_from: str, date_to: str) -> list[MarketplaceFinancialLine]:
+    rows = _period_financial_query(db, store_id=store_id, date_from=date_from, date_to=date_to).limit(MAX_PERIOD_FINANCIAL_LINES + 1).all()
+    if len(rows) > MAX_PERIOD_FINANCIAL_LINES:
+        raise HTTPException(409, 'Период содержит слишком много финансовых строк. Выберите меньший период.')
+    return rows
+
+
+def _financial_aggregates(db: Session, *, store_id: str, date_from: str, date_to: str) -> dict[int | None, dict]:
+    keys = ('gross_kopecks', 'payout_kopecks', 'commission_kopecks', 'logistics_kopecks',
+            'acquiring_kopecks', 'storage_kopecks', 'acceptance_kopecks', 'penalty_kopecks',
+            'deduction_kopecks', 'additional_payment_kopecks')
+    advertising_marker = or_(
+        func.lower(MarketplaceFinancialLine.operation).like('%реклам%'),
+        func.lower(MarketplaceFinancialLine.operation).like('%продвиж%'),
+        func.lower(MarketplaceFinancialLine.operation).like('%advert%'),
+        func.lower(MarketplaceFinancialLine.document_type).like('%реклам%'),
+        func.lower(MarketplaceFinancialLine.document_type).like('%продвиж%'),
+        func.lower(MarketplaceFinancialLine.document_type).like('%advert%'),
+    )
+    columns = [func.coalesce(func.sum(getattr(MarketplaceFinancialLine, key)), 0).label(key) for key in keys]
+    query = _period_financial_query(db, store_id=store_id, date_from=date_from, date_to=date_to).with_entities(
+        MarketplaceFinancialLine.nm_id,
+        *columns,
+        func.coalesce(func.sum(MarketplaceFinancialLine.quantity), 0).label('net_units'),
+        func.coalesce(func.sum(case((advertising_marker, MarketplaceFinancialLine.deduction_kopecks), else_=0)), 0).label('advertising_deduction_kopecks'),
+    ).group_by(MarketplaceFinancialLine.nm_id)
+    result = {}
+    rows = query.limit(MAX_PERIOD_PRODUCT_GROUPS + 1).all()
+    if len(rows) > MAX_PERIOD_PRODUCT_GROUPS:
+        raise HTTPException(409, 'Период содержит слишком много SKU. Выберите меньший период.')
+    for row in rows:
+        totals = {key: int(getattr(row, key) or 0) for key in keys}
+        totals['net_units'] = int(row.net_units or 0)
+        totals['advertising_deduction_kopecks'] = int(row.advertising_deduction_kopecks or 0)
+        totals['wb_net_kopecks'] = (totals['payout_kopecks'] - totals['logistics_kopecks']
+            - totals['acquiring_kopecks'] - totals['storage_kopecks'] - totals['acceptance_kopecks']
+            - totals['penalty_kopecks'] - totals['deduction_kopecks'] + totals['additional_payment_kopecks'])
+        result[int(row.nm_id) if row.nm_id is not None else None] = totals
+    return result
+
+
+def _advertising_aggregates(db: Session, *, store_id: str, date_from: str, date_to: str) -> dict[int | None, dict]:
+    rows = db.query(
+        MarketplaceAdvertisingLine.nm_id,
+        func.count(MarketplaceAdvertisingLine.id).label('line_count'),
+        func.coalesce(func.sum(MarketplaceAdvertisingLine.spend_kopecks), 0).label('spend_kopecks'),
+        func.coalesce(func.sum(MarketplaceAdvertisingLine.attributed_revenue_kopecks), 0).label('attributed_revenue_kopecks'),
+    ).filter(
+        MarketplaceAdvertisingLine.store_id == store_id,
+        MarketplaceAdvertisingLine.marketplace == 'wildberries',
+        MarketplaceAdvertisingLine.event_date >= date_from,
+        MarketplaceAdvertisingLine.event_date <= date_to,
+    ).group_by(MarketplaceAdvertisingLine.nm_id).limit(MAX_PERIOD_PRODUCT_GROUPS + 1).all()
+    if len(rows) > MAX_PERIOD_PRODUCT_GROUPS:
+        raise HTTPException(409, 'Период содержит слишком много рекламируемых SKU. Выберите меньший период.')
+    return {int(row.nm_id) if row.nm_id is not None else None: {
+        'line_count': int(row.line_count or 0), 'spend_kopecks': int(row.spend_kopecks or 0),
+        'attributed_revenue_kopecks': int(row.attributed_revenue_kopecks or 0),
+    } for row in rows}
+
+
+def _combine_totals(groups: dict[int | None, dict]) -> dict:
+    if not groups:
+        return _totals([])
+    keys = next(iter(groups.values())).keys()
+    return {key: sum(int(values[key]) for values in groups.values()) for key in keys}
 
 
 def _sync_is_complete(coverage_matches: bool, payload: dict) -> bool:
@@ -664,7 +742,10 @@ def save_tax_profile(payload: TaxProfileRequest, user: User = Depends(get_curren
 
 
 @router.get('')
-def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def profit_center(store_id: str, period_days: int = 30,
+                  page: int = Query(default=1, ge=1, le=10_000),
+                  page_size: int = Query(default=50, ge=1, le=100),
+                  user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     store = resolve_store(db, user, store_id)
     _connection(db, store.id)
     days = max(7, min(90, int(period_days)))
@@ -675,28 +756,44 @@ def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get
     advertising_sync = latest_snapshot(db, store_id=store.id, marketplace='wildberries', snapshot_type='advertising_sync')
     advertising_payload = dict(advertising_sync.payload or {}) if advertising_sync else {}
     advertising_matches = advertising_payload.get('date_from') == date_from and advertising_payload.get('date_to') == date_to
-    all_lines = db.query(MarketplaceFinancialLine).filter(
-        MarketplaceFinancialLine.store_id == store.id,
-        MarketplaceFinancialLine.marketplace == 'wildberries',
-    ).all()
-    lines = [row for row in all_lines if _line_in_period(row, date_from, date_to)]
-    advertising_lines = db.query(MarketplaceAdvertisingLine).filter(
-        MarketplaceAdvertisingLine.store_id == store.id,
-        MarketplaceAdvertisingLine.marketplace == 'wildberries',
-    ).all()
-    advertising_lines = [row for row in advertising_lines if date_from <= str(row.event_date or '')[:10] <= date_to]
-    cost_versions = db.query(ProductCostVersion).filter(
-        ProductCostVersion.store_id == store.id,
-        ProductCostVersion.marketplace == 'wildberries',
-        ProductCostVersion.currency == 'RUB',
-    ).order_by(ProductCostVersion.nm_id.asc(), ProductCostVersion.effective_on.asc()).all()
+    lines = _bounded_financial_lines(db, store_id=store.id, date_from=date_from, date_to=date_to)
+    financial_groups = _financial_aggregates(db, store_id=store.id, date_from=date_from, date_to=date_to)
+    advertising_groups = _advertising_aggregates(db, store_id=store.id, date_from=date_from, date_to=date_to)
+    product_nm_ids = sorted(({nm_id for nm_id in financial_groups if nm_id is not None}
+                             | {nm_id for nm_id in advertising_groups if nm_id is not None}))
+    if product_nm_ids:
+        from_day, to_day = date.fromisoformat(date_from), date.fromisoformat(date_to)
+        cost_base = (
+            ProductCostVersion.store_id == store.id,
+            ProductCostVersion.marketplace == 'wildberries',
+            ProductCostVersion.currency == 'RUB',
+            ProductCostVersion.nm_id.in_(product_nm_ids),
+        )
+        period_versions = db.query(ProductCostVersion).filter(
+            *cost_base, ProductCostVersion.effective_on >= from_day, ProductCostVersion.effective_on <= to_day,
+        ).limit(MAX_PERIOD_COST_VERSIONS + 1).all()
+        prior_dates = db.query(
+            ProductCostVersion.nm_id.label('nm_id'),
+            func.max(ProductCostVersion.effective_on).label('effective_on'),
+        ).filter(*cost_base, ProductCostVersion.effective_on < from_day).group_by(ProductCostVersion.nm_id).subquery()
+        prior_versions = db.query(ProductCostVersion).join(
+            prior_dates,
+            (ProductCostVersion.nm_id == prior_dates.c.nm_id)
+            & (ProductCostVersion.effective_on == prior_dates.c.effective_on),
+        ).filter(*cost_base).all()
+        cost_versions = sorted(period_versions + prior_versions, key=lambda row: (row.nm_id, row.effective_on))
+        if len(cost_versions) > MAX_PERIOD_COST_VERSIONS:
+            raise HTTPException(409, 'Для периода найдено слишком много версий себестоимости. Выберите меньший период.')
+    else:
+        cost_versions = []
     versions_by_nm: dict[int, list[ProductCostVersion]] = {}
     for version in cost_versions:
         versions_by_nm.setdefault(version.nm_id, []).append(version)
-    current_profiles = db.query(ProductCostProfile).filter(
+    profile_query = db.query(ProductCostProfile).filter(
         ProductCostProfile.store_id == store.id,
         ProductCostProfile.marketplace == 'wildberries',
-    ).all()
+    )
+    current_profiles = profile_query.filter(ProductCostProfile.nm_id.in_(product_nm_ids)).all() if product_nm_ids else []
     current_profile_by_nm = {row.nm_id: row for row in current_profiles}
     tax_profile = db.query(StoreTaxProfile).filter(
         StoreTaxProfile.store_id == store.id,
@@ -716,23 +813,19 @@ def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get
             by_nm.setdefault(int(row.nm_id), []).append(row)
         else:
             unallocated.append(row)
-    ads_by_nm: dict[int, list[MarketplaceAdvertisingLine]] = {}
-    unallocated_ads=[]
-    for row in advertising_lines:
-        if row.nm_id: ads_by_nm.setdefault(int(row.nm_id),[]).append(row)
-        else: unallocated_ads.append(row)
+    ads_by_nm = {nm_id: values for nm_id, values in advertising_groups.items() if nm_id is not None}
+    unallocated_ads = advertising_groups.get(None, {'line_count': 0, 'spend_kopecks': 0, 'attributed_revenue_kopecks': 0})
     finance_complete=_sync_is_complete(finance_matches,finance_payload)
     advertising_complete=_sync_is_complete(advertising_matches,advertising_payload)
     products = []
     product_final_profits: list[int] = []
     product_advertising_adjustments: list[int] = []
     product_tax_reserves: list[int] = []
-    product_nm_ids = _profit_nm_ids(by_nm, ads_by_nm)
     all_costs_known = bool(product_nm_ids) and not _unallocated_cogs_unknown(unallocated)
     total_cogs = 0
     for nm_id in product_nm_ids:
         product_lines = by_nm.get(nm_id, [])
-        values = _totals(product_lines)
+        values = financial_groups.get(nm_id, _totals([]))
         if product_lines:
             cogs_total, applied_versions, cost_status = _cost_for_lines(versions_by_nm.get(nm_id, []), product_lines)
         else:
@@ -741,7 +834,7 @@ def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get
         if product_lines and cogs_total is None:
             all_costs_known = False
         contribution = values['wb_net_kopecks'] - cogs_total if cogs_total is not None else None
-        product_ads=sum(int(row.spend_kopecks or 0) for row in ads_by_nm.get(nm_id,[]))
+        product_ads=int(ads_by_nm.get(nm_id, {}).get('spend_kopecks') or 0)
         ads_adjustment=max(0,product_ads-values['advertising_deduction_kopecks'])
         product_tax=_tax_kopecks(values,tax_profile)
         final_profit=(contribution-ads_adjustment-product_tax) if contribution is not None and finance_complete and advertising_complete and product_tax is not None else None
@@ -773,17 +866,20 @@ def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get
             'cost_status': cost_status,
         })
     products.sort(key=lambda item: (item['final_profit'] is None, Decimal(item['final_profit'] or item['contribution_before_tax_ads'] or '0'), item['nm_id']))
-    totals = _totals(lines)
-    unallocated_totals = _totals(unallocated)
+    total_product_count = len(products)
+    page_start = (page - 1) * page_size
+    paged_products = products[page_start:page_start + page_size]
+    totals = _combine_totals(financial_groups)
+    unallocated_totals = financial_groups.get(None, _totals([]))
     contribution = totals['wb_net_kopecks'] - total_cogs if all_costs_known else None
-    advertising_spend=sum(int(row.spend_kopecks or 0) for row in advertising_lines)
-    advertising_revenue=sum(int(row.attributed_revenue_kopecks or 0) for row in advertising_lines)
+    advertising_spend=sum(int(group['spend_kopecks']) for group in advertising_groups.values())
+    advertising_revenue=sum(int(group['attributed_revenue_kopecks']) for group in advertising_groups.values())
     advertising_adjustment=max(0,advertising_spend-totals['advertising_deduction_kopecks'])
     tax_reserve=_tax_kopecks(totals,tax_profile)
     complete=finance_complete and all_costs_known and advertising_complete and tax_profile is not None
     final_profit=(contribution-advertising_adjustment-tax_reserve) if complete else None
-    unallocated_advertising_spend=sum(int(row.spend_kopecks or 0) for row in unallocated_ads)
-    unallocated_advertising_revenue=sum(int(row.attributed_revenue_kopecks or 0) for row in unallocated_ads)
+    unallocated_advertising_spend=int(unallocated_ads['spend_kopecks'])
+    unallocated_advertising_revenue=int(unallocated_ads['attributed_revenue_kopecks'])
     unallocated_contribution = unallocated_totals['wb_net_kopecks'] if not _unallocated_cogs_unknown(unallocated) else None
     unallocated_tax_reserve=_tax_kopecks(unallocated_totals,tax_profile)
     advertising_netting_residual=advertising_adjustment-sum(product_advertising_adjustments) if advertising_complete else None
@@ -812,17 +908,17 @@ def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get
             'advertising':{'started':bool(advertising_sync),'coverage_matches':advertising_matches,'complete':advertising_complete,'schema_state':advertising_payload.get('schema_state'),'rejected_count':advertising_payload.get('rejected_count'),'evidence':advertising_payload.get('evidence') or [],'page_number':advertising_payload.get('page_number'),'last_snapshot_at':advertising_sync.created_at if advertising_sync else None,'campaign_count':advertising_payload.get('campaign_count')},
         },
         'source_line_count': len(lines),
-        'advertising_line_count':len(advertising_lines),
+        'advertising_line_count':sum(int(group['line_count']) for group in advertising_groups.values()),
         'amounts': _public_amounts(totals),
         'cogs_total': _rubles(total_cogs) if all_costs_known else None,
         'contribution_before_tax_ads': _rubles(contribution) if contribution is not None else None,
         'advertising':{'spend':_rubles(advertising_spend) if advertising_complete else None,'attributed_revenue':_rubles(advertising_revenue) if advertising_complete else None,'already_in_finance_deductions':_rubles(totals['advertising_deduction_kopecks']),'additional_adjustment':_rubles(advertising_adjustment) if advertising_complete else None},
         'reconciliation': {
-            'sku_count': len(products),
+            'sku_count': total_product_count,
             'reconciled': reconciliation_delta == 0,
             'unallocated': {
                 'financial_line_count': len(unallocated),
-                'advertising_line_count': len(unallocated_ads),
+                'advertising_line_count': int(unallocated_ads['line_count']),
                 'amounts': _public_amounts(unallocated_totals),
                 'cogs_status': 'unknown' if _unallocated_cogs_unknown(unallocated) else 'not_applicable',
                 'wb_net_residual': _rubles(unallocated_contribution) if unallocated_contribution is not None else None,
@@ -852,9 +948,14 @@ def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get
             'advertising': advertising_complete,
             'tax': tax_profile is not None,
             'unallocated_financial_lines': len(unallocated),
-            'unallocated_advertising_lines':len(unallocated_ads),
+            'unallocated_advertising_lines':int(unallocated_ads['line_count']),
         },
         'formula': 'WB к перечислению − расходы WB − подтверждённая себестоимость − реклама (без двойного списания удержаний) − подтверждённый налоговый резерв',
         'warning': 'Управленческий расчёт по подключённым источникам. Он не заменяет бухгалтерский и налоговый учёт.' if complete else 'Расчёт неполный: отсутствующие источники не заменяются прогнозами AI.',
-        'products': products,
+        'pagination': {
+            'page': page, 'page_size': page_size, 'total_items': total_product_count,
+            'total_pages': (total_product_count + page_size - 1) // page_size,
+            'has_next': page_start + page_size < total_product_count,
+        },
+        'products': paged_products,
     }

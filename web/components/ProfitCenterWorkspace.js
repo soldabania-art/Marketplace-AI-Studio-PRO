@@ -12,6 +12,7 @@ const sourceLabels={wb_finance:'Финансовый отчёт WB',cogs:'Себ
 export default function ProfitCenterWorkspace(){
   const {storeId,storeName,loading:storeLoading,error:storeError}=useActiveStore()
   const [periodDays,setPeriodDays]=useState('30')
+  const [productPage,setProductPage]=useState(1)
   const [data,setData]=useState(null)
   const [busy,setBusy]=useState(false)
   const [syncing,setSyncing]=useState(false)
@@ -28,7 +29,7 @@ export default function ProfitCenterWorkspace(){
     if(!storeId){setData(null);return}
     setBusy(true); setNotice('')
     try{
-      const response=await fetch(`/api/profit-center?store_id=${encodeURIComponent(storeId)}&period_days=${periodDays}`,{cache:'no-store'})
+      const response=await fetch(`/api/profit-center?store_id=${encodeURIComponent(storeId)}&period_days=${periodDays}&page=${productPage}&page_size=50`,{cache:'no-store'})
       const payload=await response.json()
       if(!response.ok)throw new Error(payload.error||'Не удалось загрузить финансовые данные.')
       setData(payload)
@@ -42,7 +43,7 @@ export default function ProfitCenterWorkspace(){
       setTaxRate(payload.tax?.rate_percent||'')
       setTaxNote(payload.tax?.note||'')
     }catch(error){setData(null);setNotice(error.message)}finally{setBusy(false)}
-  },[storeId,periodDays])
+  },[storeId,periodDays,productPage])
 
   useEffect(()=>{load()},[load])
 
@@ -107,7 +108,7 @@ export default function ProfitCenterWorkspace(){
   return <main className="workPage profitCenterPage">
     <div className="workHead"><Link href="/" className="ghostBtn"><ArrowLeft size={16}/> На главную</Link><Link href="/profitability" className="ghostBtn">Калькулятор</Link></div>
     <section className="workHero"><span className="eyebrow">ФИНАНСЫ · РЕАЛЬНЫЕ ИСТОЧНИКИ</span><h1>Profit Center</h1><p>Финансовые строки и реклама Wildberries, подтверждённая себестоимость и налоговый резерв по каждому SKU. Неполный расчёт всегда явно помечен.</p></section>
-    <section className="workPanel profitToolbar"><div><b>{storeLoading?'Загружаем магазин…':storeName||'Магазин не выбран'}</b><span>{data?.period?`${data.period.date_from} — ${data.period.date_to}`:'Выберите подключённый магазин'}</span></div><label>Период<select value={periodDays} onChange={event=>setPeriodDays(event.target.value)}><option value="7">7 дней</option><option value="30">30 дней</option><option value="90">90 дней</option></select></label><button className="ghostBtn" onClick={load} disabled={busy||!storeId}><RefreshCw size={16}/>{busy?' Загружаем…':' Обновить экран'}</button><button className="primaryBtn" onClick={sync} disabled={syncing||!storeId}><RefreshCw size={16}/>{syncing?' В очереди…':' Получить отчёт WB'}</button></section>
+    <section className="workPanel profitToolbar"><div><b>{storeLoading?'Загружаем магазин…':storeName||'Магазин не выбран'}</b><span>{data?.period?`${data.period.date_from} — ${data.period.date_to}`:'Выберите подключённый магазин'}</span></div><label>Период<select value={periodDays} onChange={event=>{setProductPage(1);setPeriodDays(event.target.value)}}><option value="7">7 дней</option><option value="30">30 дней</option><option value="90">90 дней</option></select></label><button className="ghostBtn" onClick={load} disabled={busy||!storeId}><RefreshCw size={16}/>{busy?' Загружаем…':' Обновить экран'}</button><button className="primaryBtn" onClick={sync} disabled={syncing||!storeId}><RefreshCw size={16}/>{syncing?' В очереди…':' Получить отчёт WB'}</button></section>
     {(storeError||notice)&&<div className="sectionNotice"><CircleAlert size={17}/>{storeError||notice}</div>}
     {data&&<>
       <section className="profitMetrics">{metrics.map(([label,value])=><article className="workPanel" key={label}><span>{label}</span><strong>{rubles(value)}</strong></article>)}</section>
@@ -117,7 +118,7 @@ export default function ProfitCenterWorkspace(){
       <CostImportWorkspace storeId={storeId} profile={data.operating_profile} onCommitted={load} onNotice={setNotice}/>
       <section className="workPanel productProfit"><div className="profitTableHead"><div><h2>P&amp;L по SKU</h2><p>Итоговая себестоимость складывается на сервере только из подтверждённых компонентов. AI не оценивает и не дополняет суммы.</p></div><span>{data.source_line_count} строк источника</span></div>
         {!data.operating_profile&&<div className="costProfileWarning"><CircleAlert size={18}/><span>Сначала подтвердите модель бизнеса, чтобы состав компонентов соответствовал вашим процессам.</span><Link href="/onboarding#business-profile" className="ghostBtn">Открыть настройку</Link></div>}
-        {(data.products||[]).length?<div className="profitRows">{data.products.map(item=>{
+        {(data.products||[]).length?<><div className="profitRows">{data.products.map(item=>{
           const draft=costDrafts[item.nm_id]||{}
           const catalog=data.operating_profile?.component_catalog||{}
           const fields=catalog[draft.model]||{}
@@ -129,7 +130,7 @@ export default function ProfitCenterWorkspace(){
               <div className="costComponents">{Object.entries(fields).map(([key,label])=><div className="costComponent" key={key}><label>{label}, ₽<input type="number" min="0" max="100000000" step="0.01" value={draft.components?.[key]??''} onChange={event=>changeComponent(item.nm_id,'components',key,event.target.value)} placeholder="0.00"/></label><label>Источник<input value={draft.sources?.[key]??''} maxLength={300} onChange={event=>changeComponent(item.nm_id,'sources',key,event.target.value)} placeholder="Накладная, техкарта, тариф…"/></label></div>)}</div>
               <div className="costEditorFooter"><strong>Итого: {rubles(draftTotal)}</strong><label>Дата действия<input type="date" value={draft.effectiveOn||''} onChange={event=>changeCost(item.nm_id,'effectiveOn',event.target.value)}/></label><label className="costConfirm"><input type="checkbox" checked={Boolean(draft.confirmed)} onChange={event=>changeCost(item.nm_id,'confirmed',event.target.checked)}/><span>Все суммы и источники проверены</span></label><button className="costSave" onClick={()=>saveCost(item.nm_id)} disabled={saving===String(item.nm_id)||draftTotal<=0}><Save size={15}/>{saving===String(item.nm_id)?'Сохраняем':'Подтвердить расчёт'}</button></div>
             </div></details>}
-          </article>})}</div>:<div className="profitEmpty">Финансовых строк за период пока нет. Нажмите «Получить отчёт WB».</div>}
+          </article>})}</div>{data.pagination?.total_pages>1&&<nav className="paginationControls" aria-label="Страницы P&amp;L по SKU"><button className="ghostBtn" onClick={()=>setProductPage(page=>Math.max(1,page-1))} disabled={busy||data.pagination.page<=1}>Назад</button><span>Страница {data.pagination.page} из {data.pagination.total_pages} · {data.pagination.total_items} SKU</span><button className="ghostBtn" onClick={()=>setProductPage(page=>page+1)} disabled={busy||!data.pagination.has_next}>Далее</button></nav>}</>:<div className="profitEmpty">Финансовых строк за период пока нет. Нажмите «Получить отчёт WB».</div>}
       </section>
     </>}
   </main>

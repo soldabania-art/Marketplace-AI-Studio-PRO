@@ -369,8 +369,10 @@ def test_billing_workspace_is_explicit_authorized_and_never_first_membership():
         user.email_verified = True
         db.commit()
         analyst_workspace_id = other_workspace.id
+
     for path in ("/api/v1/billing/subscription", "/api/v1/billing/purchase-intent", "/api/v1/billing/activation"):
         assert client.get(path, headers=headers).status_code == 409
+
     owner = client.get(f"/api/v1/billing/subscription?workspace_id={owner_workspace_id}", headers=headers)
     assert owner.status_code == 200
     assert owner.json()["workspace_id"] == owner_workspace_id

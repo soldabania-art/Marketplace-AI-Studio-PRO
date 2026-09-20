@@ -67,6 +67,24 @@ from .platform_access import get_effective_platform_role, platform_capabilities
 router = APIRouter()
 
 
+def _billing_membership(db: Session, user: User, workspace_id: str | None) -> Membership:
+    """Resolve billing scope from an authorized, explicit workspace selection."""
+    if workspace_id:
+        membership = db.scalar(select(Membership).where(
+            Membership.user_id == user.id,
+            Membership.workspace_id == workspace_id,
+        ))
+        if membership is None:
+            raise HTTPException(status_code=404, detail="Рабочее пространство не найдено или у вас нет к нему доступа.")
+        return membership
+    memberships = list(db.scalars(select(Membership).where(Membership.user_id == user.id)).all())
+    if len(memberships) == 1:
+        return memberships[0]
+    if not memberships:
+        raise HTTPException(status_code=409, detail="Workspace membership is missing")
+    raise HTTPException(status_code=409, detail="Выберите рабочее пространство для биллинга.")
+
+
 def _token_hash(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
@@ -250,10 +268,8 @@ def plans():
 
 
 @router.get("/billing/subscription")
-def billing_subscription(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    membership = db.scalar(select(Membership).where(Membership.user_id == current_user.id))
-    if membership is None:
-        raise HTTPException(status_code=409, detail="Workspace membership is missing")
+def billing_subscription(workspace_id: str | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    membership = _billing_membership(db, current_user, workspace_id)
     subscription = latest_subscription(db, membership.workspace_id)
     settings = get_settings()
     return {
@@ -265,14 +281,12 @@ def billing_subscription(current_user: User = Depends(get_current_user), db: Ses
 
 
 @router.get("/billing/purchase-intent")
-def billing_purchase_intent(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    membership = db.scalar(select(Membership).where(Membership.user_id == current_user.id))
-    if membership is None:
-        raise HTTPException(status_code=409, detail="Workspace membership is missing")
+def billing_purchase_intent(workspace_id: str | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    membership = _billing_membership(db, current_user, workspace_id)
     intent = db.scalar(select(PurchaseIntent).where(PurchaseIntent.workspace_id == membership.workspace_id))
     if intent is None:
-        return {"intent": None}
-    return {"intent": {
+        return {"workspace_id": membership.workspace_id, "intent": None}
+    return {"workspace_id": membership.workspace_id, "intent": {
         "requested_plan": intent.requested_plan,
         "active_channel": intent.active_channel,
         "marketplace_interest": intent.marketplace_interest,
@@ -285,38 +299,38 @@ def billing_purchase_intent(current_user: User = Depends(get_current_user), db: 
 
 @router.get("/billing/activation")
 def billing_activation(
+    workspace_id: str | None = None,
     current_user: User = Depends(get_current_user),
     current_session: UserSession = Depends(get_current_session),
     db: Session = Depends(get_db),
 ):
-    membership = db.scalar(select(Membership).where(Membership.user_id == current_user.id))
-    if membership is None:
-        raise HTTPException(status_code=409, detail="Workspace membership is missing")
+    membership = _billing_membership(db, current_user, workspace_id)
     subscription = latest_subscription(db, membership.workspace_id)
     billing = entitlement_snapshot(subscription)
     intent = db.scalar(select(PurchaseIntent).where(PurchaseIntent.workspace_id == membership.workspace_id))
     requested_plan = intent.requested_plan if intent else "trial"
     if requested_plan != "trial" and not current_user.email_verified:
-        return {"stage": "verify_email", "href": "/account?verify=email", "message": "Подтвердите email перед оплатой.", "ready": False}
+        return {"workspace_id": membership.workspace_id, "stage": "verify_email", "href": "/account?verify=email", "message": "Подтвердите email перед оплатой.", "ready": False}
     if requested_plan != "trial" and (billing["read_only"] or billing["plan"] != requested_plan):
-        return {"stage": "checkout", "href": f"/checkout?plan={requested_plan}", "message": "Оплатите выбранный тариф на защищённой странице провайдера.", "ready": False}
+        return {"workspace_id": membership.workspace_id, "stage": "checkout", "href": f"/checkout?plan={requested_plan}&workspace_id={membership.workspace_id}", "message": "Оплатите выбранный тариф на защищённой странице провайдера.", "ready": False}
     mfa = db.get(UserMfa, current_user.id)
     if mfa is None or not mfa.enabled:
-        return {"stage": "setup_mfa", "href": "/account?setup=mfa", "message": "Включите MFA перед подключением магазина.", "ready": False}
+        return {"workspace_id": membership.workspace_id, "stage": "setup_mfa", "href": "/account?setup=mfa", "message": "Включите MFA перед подключением магазина.", "ready": False}
     if current_session.mfa_verified_at is None:
-        return {"stage": "verify_mfa", "href": "/login", "message": "Войдите заново и подтвердите текущую сессию кодом MFA.", "ready": False}
+        return {"workspace_id": membership.workspace_id, "stage": "verify_mfa", "href": "/login", "message": "Войдите заново и подтвердите текущую сессию кодом MFA.", "ready": False}
     connection = db.scalar(select(MarketplaceConnection.id).join(Store).where(
         Store.workspace_id == membership.workspace_id,
         MarketplaceConnection.marketplace == "wildberries",
         MarketplaceConnection.enabled.is_(True),
     ))
     if connection is None:
-        return {"stage": "connect_store", "href": "/account?connect=wb", "message": "Подключите Wildberries в защищённом разделе аккаунта.", "ready": False}
+        return {"workspace_id": membership.workspace_id, "stage": "connect_store", "href": "/account?connect=wb", "message": "Подключите Wildberries в защищённом разделе аккаунта.", "ready": False}
     destination = "/onboarding"
-    return {"stage": "ready", "href": destination, "message": "Защищённая настройка завершена.", "ready": True}
+    return {"workspace_id": membership.workspace_id, "stage": "ready", "href": destination, "message": "Защищённая настройка завершена.", "ready": True}
 
 
 class CheckoutRequest(BaseModel):
+    workspace_id: str | None = None
     plan_code: str
     accepted_terms: bool = False
 
@@ -329,9 +343,7 @@ def create_billing_checkout(payload: CheckoutRequest, current_user: User = Depen
         raise HTTPException(status_code=422, detail="Подтвердите условия подписки и автоматического продления.")
     if not current_user.email_verified:
         raise HTTPException(status_code=403, detail="Подтвердите email перед оплатой подписки.")
-    membership = db.scalar(select(Membership).where(Membership.user_id == current_user.id))
-    if membership is None:
-        raise HTTPException(status_code=409, detail="Workspace membership is missing")
+    membership = _billing_membership(db, current_user, payload.workspace_id)
     if membership.role != MembershipRole.owner:
         raise HTTPException(status_code=403, detail="Оформить подписку может только владелец рабочего пространства.")
     settings = get_settings()

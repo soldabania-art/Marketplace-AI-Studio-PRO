@@ -1,5 +1,3 @@
-from urllib.parse import urlparse
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -7,6 +5,7 @@ from sqlalchemy.orm import Session
 from .config import get_settings
 from .db import get_db
 from .models import FboWatch, PushSubscription, User
+from .push_delivery import require_safe_push_endpoint
 from .security import get_current_user
 from .store_access import resolve_store
 
@@ -32,9 +31,7 @@ class WatchBody(BaseModel):
 
 
 def _validate_endpoint(endpoint: str) -> None:
-    parsed = urlparse(endpoint)
-    if parsed.scheme != 'https' or not parsed.netloc:
-        raise HTTPException(400, 'Некорректный PUSH endpoint.')
+    require_safe_push_endpoint(endpoint)
 
 
 @router.get('/push/config')

@@ -2,11 +2,12 @@ import hashlib
 import json
 from datetime import datetime, timezone
 
-from pywebpush import WebPushException, webpush
+from pywebpush import WebPushException
 from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .models import FboWatch, PushSubscription
+from .push_delivery import send_web_push
 
 
 def slot_fingerprint(slots: list[dict]) -> str:
@@ -24,8 +25,12 @@ def send_slot_push(db: Session, watch: FboWatch, slots: list[dict]) -> int:
     subscriptions = db.query(PushSubscription).filter(PushSubscription.user_id == watch.user_id).all()
     for sub in subscriptions:
         try:
-            webpush(subscription_info={'endpoint':sub.endpoint,'keys':{'p256dh':sub.p256dh,'auth':sub.auth}}, data=payload, vapid_private_key=settings.vapid_private_key, vapid_claims={'sub':settings.vapid_subject}, ttl=300)
+            send_web_push(endpoint=sub.endpoint, keys={'p256dh': sub.p256dh, 'auth': sub.auth}, data=payload,
+                vapid_private_key=settings.vapid_private_key, vapid_subject=settings.vapid_subject, ttl=300)
             sent += 1
+        except ValueError:
+            # A previously stored endpoint can become unsafe after a DNS change.
+            continue
         except WebPushException as exc:
             if getattr(exc.response, 'status_code', None) in {404, 410}:
                 db.delete(sub)

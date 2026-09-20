@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     vapid_public_key: str = ""
     vapid_private_key: str = ""
     vapid_subject: str = ""
+    push_endpoint_hosts: str = ""
+    push_request_timeout_seconds: float = 10.0
     marketplace_token_key: str = ""
     marketplace_secret_provider: str = "fernet"
     marketplace_default_min_interval_seconds: float = 2.0
@@ -156,6 +158,14 @@ class Settings(BaseSettings):
         return {
             host.strip().lower().rstrip(".")
             for host in self.asset_blob_hosts.split(",")
+            if host.strip()
+        }
+
+    @property
+    def push_endpoint_host_set(self) -> set[str]:
+        return {
+            host.strip().lower().rstrip(".")
+            for host in self.push_endpoint_hosts.split(",")
             if host.strip()
         }
 

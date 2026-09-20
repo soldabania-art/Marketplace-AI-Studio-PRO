@@ -2,11 +2,12 @@ import hashlib
 import json
 from datetime import datetime, timezone
 
-from pywebpush import WebPushException, webpush
+from pywebpush import WebPushException
 from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .models import DataHealthIncident, Membership, MembershipRole, PushSubscription
+from .push_delivery import send_web_push
 
 
 def _fingerprint(store_id: str, source_key: str, opened_at: datetime) -> str:
@@ -33,14 +34,12 @@ def _send_push(db: Session, workspace_id: str, incident: DataHealthIncident) -> 
     sent = 0
     for subscription in subscriptions:
         try:
-            webpush(
-                subscription_info={'endpoint': subscription.endpoint, 'keys': {'p256dh': subscription.p256dh, 'auth': subscription.auth}},
-                data=payload,
-                vapid_private_key=settings.vapid_private_key,
-                vapid_claims={'sub': settings.vapid_subject},
-                ttl=900,
-            )
+            send_web_push(endpoint=subscription.endpoint, keys={'p256dh': subscription.p256dh, 'auth': subscription.auth},
+                data=payload, vapid_private_key=settings.vapid_private_key, vapid_subject=settings.vapid_subject, ttl=900)
             sent += 1
+        except ValueError:
+            # Do not let a legacy subscription become an internal request.
+            continue
         except WebPushException as exc:
             if getattr(exc.response, 'status_code', None) in {404, 410}:
                 db.delete(subscription)

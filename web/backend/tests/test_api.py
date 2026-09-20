@@ -361,6 +361,8 @@ def test_billing_workspace_is_explicit_authorized_and_never_first_membership():
         other_workspace = Workspace(name="Analyst billing workspace")
         db.add(other_workspace)
         db.flush()
+        # Insert the non-owner membership last so database/default ordering cannot
+        # accidentally select a privileged workspace.
         db.add(Membership(user_id=user.id, workspace_id=other_workspace.id, role=MembershipRole.analyst))
         db.add(Subscription(workspace_id=other_workspace.id, plan_code="trial", status=SubscriptionStatus.trial))
         db.add(PurchaseIntent(workspace_id=other_workspace.id, created_by_user_id=user.id, requested_plan="business"))
@@ -377,9 +379,18 @@ def test_billing_workspace_is_explicit_authorized_and_never_first_membership():
     assert analyst.json()["workspace_id"] == analyst_workspace_id
     for path in ("/api/v1/billing/subscription", "/api/v1/billing/purchase-intent", "/api/v1/billing/activation"):
         assert client.get(f"{path}?workspace_id={uuid.uuid4()}", headers=headers).status_code == 404
-    assert client.post("/api/v1/billing/checkout", headers=headers, json={"workspace_id": analyst_workspace_id, "plan_code": "pro", "accepted_terms": True}).status_code == 403
-    assert client.post("/api/v1/billing/checkout", headers=headers, json={"workspace_id": str(uuid.uuid4()), "plan_code": "pro", "accepted_terms": True}).status_code == 404
-    owner_checkout = client.post("/api/v1/billing/checkout", headers=headers, json={"workspace_id": owner_workspace_id, "plan_code": "pro", "accepted_terms": True})
+    forbidden = client.post("/api/v1/billing/checkout", headers=headers, json={
+        "workspace_id": analyst_workspace_id, "plan_code": "pro", "accepted_terms": True,
+    })
+    assert forbidden.status_code == 403
+    assert client.post("/api/v1/billing/checkout", headers=headers, json={
+        "workspace_id": str(uuid.uuid4()), "plan_code": "pro", "accepted_terms": True,
+    }).status_code == 404
+    # An authorized owner selection reaches only the deliberately unavailable
+    # provider adapter; client workspace input itself never grants access.
+    owner_checkout = client.post("/api/v1/billing/checkout", headers=headers, json={
+        "workspace_id": owner_workspace_id, "plan_code": "pro", "accepted_terms": True,
+    })
     assert owner_checkout.status_code == 503
 
 def test_activation_router_enforces_email_payment_and_mfa_order():

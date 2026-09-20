@@ -1,10 +1,10 @@
 from types import SimpleNamespace
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from fastapi import HTTPException
 
-from app.profit_center_router import ProductCostRequest, TaxProfileRequest, _financial_risks, _public_amounts, _public_import_summary, _sync_is_complete, _tax_kopecks, _totals, _validated_import_mapping, _verified_cost, save_tax_profile
+from app.profit_center_router import ProductCostRequest, TaxProfileRequest, _cost_for_event_date, _cost_for_lines, _financial_risks, _public_amounts, _public_import_summary, _sync_is_complete, _tax_kopecks, _totals, _validated_import_mapping, _verified_cost, save_tax_profile
 
 
 def line(**values):
@@ -113,6 +113,32 @@ def test_legacy_confirmed_total_remains_supported():
     payload=ProductCostRequest(store_id='store-1',cogs_rub='123.45',confirmed=True)
     total,model,components,sources,_=_verified_cost(payload,None)
     assert (total,model,components,sources)==(12345,'legacy_total',{'legacy_total':12345},{})
+
+
+def test_cost_version_selection_uses_financial_event_date_not_current_profile():
+    """A later COGS confirmation must not rewrite a previously reported fact."""
+    previous = SimpleNamespace(effective_on=date(1970, 1, 1), cogs_kopecks=12_500, currency='RUB')
+    changed_today = SimpleNamespace(effective_on=date(2026, 9, 20), cogs_kopecks=19_900, currency='RUB')
+    assert _cost_for_event_date([previous, changed_today], '2026-08-31T23:59:59') is previous
+    assert _cost_for_event_date([previous, changed_today], '2026-09-20') is changed_today
+    assert _cost_for_event_date([previous, changed_today], 'not-a-date') is None
+
+
+def test_single_version_refund_only_preserves_legacy_zero_cogs_semantics():
+    version = SimpleNamespace(id='cost-1', effective_on=date(1970, 1, 1), cogs_kopecks=12_500, currency='RUB')
+    cogs, applied, status = _cost_for_lines([version], [line(quantity=-1, event_date='2026-09-01')])
+    assert (cogs, applied, status) == (0, [version], 'single_version')
+
+
+def test_mixed_version_return_is_unknown_until_return_cost_attribution_is_confirmed():
+    old = SimpleNamespace(id='cost-old', effective_on=date(1970, 1, 1), cogs_kopecks=12_500, currency='RUB')
+    new = SimpleNamespace(id='cost-new', effective_on=date(2026, 9, 20), cogs_kopecks=19_900, currency='RUB')
+    cogs, applied, status = _cost_for_lines([old, new], [
+        line(quantity=1, event_date='2026-09-01'), line(quantity=-1, event_date='2026-09-21'),
+    ])
+    assert cogs is None
+    assert applied == [old, new]
+    assert status == 'return_attribution_unknown'
 
 
 def test_import_mapping_is_allowlisted_and_normalized():

@@ -1,5 +1,6 @@
 import base64
 import uuid
+from datetime import date
 
 from fastapi.testclient import TestClient
 
@@ -7,7 +8,7 @@ from app.db import Base, SessionLocal, engine
 from app.main import app
 from app.config import get_settings
 from app.mfa_service import totp_code
-from app.models import BackgroundJob, BusinessOperatingProfile, JobStatus, MarketplaceConnection, MarketplaceSnapshot, Membership, MembershipRole, OperationalAuditEvent, ProductCostProfile, Store
+from app.models import BackgroundJob, BusinessOperatingProfile, JobStatus, MarketplaceConnection, MarketplaceSnapshot, Membership, MembershipRole, OperationalAuditEvent, ProductCostProfile, ProductCostVersion, Store
 
 Base.metadata.create_all(bind=engine)
 client = TestClient(app)
@@ -210,6 +211,8 @@ def test_onboarding_is_store_scoped_and_business_profile_requires_admin_confirma
     assert cost_saved.status_code == 200
     assert cost_saved.json()["cogs_rub"] == "600.00"
     assert cost_saved.json()["cost_profile"]["operating_model"] == "manufacturer"
+    assert cost_saved.json()["cost_version"]["effective_on"] == date.today().isoformat()
+    assert cost_saved.json()["cost_version"]["currency"] == "RUB"
     with SessionLocal() as db:
         cost = db.query(ProductCostProfile).filter(ProductCostProfile.store_id == store_id, ProductCostProfile.nm_id == 123456).one()
         assert cost.components == {"materials": 45025, "direct_labor": 14975}
@@ -222,6 +225,7 @@ def test_onboarding_is_store_scoped_and_business_profile_requires_admin_confirma
         "store_id": store_id,
         "source_system": "1c",
         "source_document_reference": "1C: документ расчёта себестоимости №42",
+        "effective_on": "2099-01-01",
         "rows": [
             {"nm_id": 123456, "operating_model": "manufacturer", "components_rub": {"materials": "500"}, "source_references": {"materials": "Техкарта №42"}},
             {"nm_id": 654321, "operating_model": "manufacturer", "components_rub": {"materials": "300", "packaging": "50"}, "source_references": {"materials": "Техкарта №43", "packaging": "Спецификация №8"}},
@@ -248,7 +252,11 @@ def test_onboarding_is_store_scoped_and_business_profile_requires_admin_confirma
     assert committed.json()["status"] == "committed"
     with SessionLocal() as db:
         imported = db.query(ProductCostProfile).filter(ProductCostProfile.store_id == store_id).all()
-        assert {row.nm_id: row.cogs_kopecks for row in imported} == {123456: 50000, 654321: 35000}
+        assert {row.nm_id: row.cogs_kopecks for row in imported} == {123456: 60000}
+        versions = db.query(ProductCostVersion).filter(ProductCostVersion.store_id == store_id).all()
+        assert {(row.nm_id, row.effective_on.isoformat(), row.currency) for row in versions} == {
+            (123456, date.today().isoformat(), 'RUB'), (123456, '2099-01-01', 'RUB'), (654321, '2099-01-01', 'RUB'),
+        }
         assert db.query(OperationalAuditEvent).filter(
             OperationalAuditEvent.store_id == store_id,
             OperationalAuditEvent.event_type == "profit.cost_import.committed",

@@ -6,12 +6,13 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, model_validator
 from typing import Literal
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .data_health import expected_coverage
 from .db import get_db
 from .marketplace_sync import latest_snapshot
-from .models import BusinessOperatingProfile, CostImportBatch, CostImportMapping, MarketplaceAdvertisingLine, MarketplaceConnection, MarketplaceFinancialLine, OperationalAuditEvent, ProductCostProfile, StoreTaxProfile, User
+from .models import BusinessOperatingProfile, CostImportBatch, CostImportMapping, MarketplaceAdvertisingLine, MarketplaceConnection, MarketplaceFinancialLine, OperationalAuditEvent, ProductCostProfile, ProductCostVersion, StoreTaxProfile, User
 from .security import get_current_user
 from .store_access import require_store_admin, resolve_store
 from .sync_scheduler import enqueue_sync_job
@@ -55,6 +56,7 @@ class ProductCostRequest(BaseModel):
     operating_model: CostingModel | None = None
     components_rub: dict[str, Decimal] = Field(default_factory=dict)
     source_references: dict[str, str] = Field(default_factory=dict)
+    effective_on: date | None = None
     confirmed: bool
 
     @model_validator(mode='after')
@@ -81,6 +83,7 @@ class CostImportPreviewRequest(BaseModel):
     source_system: Literal['csv', '1c', 'moysklad', 'saby', 'kontur', 'partner_api']
     source_document_reference: str = Field(min_length=2, max_length=300)
     rows: list[CostImportRow] = Field(min_length=1, max_length=500)
+    effective_on: date | None = None
 
 
 class CostImportCommitRequest(BaseModel):
@@ -189,10 +192,10 @@ def _verified_cost(payload: ProductCostRequest, profile: BusinessOperatingProfil
     return total, model, components, sources, digest
 
 
-def _public_cost(row: ProductCostProfile | None) -> dict | None:
+def _public_cost(row: ProductCostProfile | ProductCostVersion | None) -> dict | None:
     if row is None:
         return None
-    return {
+    result = {
         'operating_model': row.operating_model,
         'components_rub': {key: _rubles(int(value)) for key, value in dict(row.components or {}).items()},
         'source_references': dict(row.source_references or {}),
@@ -200,6 +203,35 @@ def _public_cost(row: ProductCostProfile | None) -> dict | None:
         'source': row.source,
         'confirmed_at': row.confirmed_at,
     }
+    if isinstance(row, ProductCostVersion) or hasattr(row, 'effective_on'):
+        result.update({'effective_on': row.effective_on, 'currency': row.currency, 'validity': row.validity})
+    return result
+
+
+def _cost_for_event_date(versions: list[ProductCostVersion], event_date: str) -> ProductCostVersion | None:
+    try:
+        event_day = date.fromisoformat(str(event_date or '')[:10])
+    except ValueError:
+        return None
+    eligible = [version for version in versions if version.currency == 'RUB' and version.effective_on <= event_day]
+    return max(eligible, key=lambda version: version.effective_on) if eligible else None
+
+
+def _cost_for_lines(versions: list[ProductCostVersion], lines: list[MarketplaceFinancialLine]) -> tuple[int | None, list[ProductCostVersion], str]:
+    applied: dict[str, ProductCostVersion] = {}
+    assignments: list[tuple[MarketplaceFinancialLine, ProductCostVersion]] = []
+    for row in lines:
+        cost = _cost_for_event_date(versions, row.event_date)
+        if cost is None:
+            return None, [], 'unknown'
+        applied[cost.id] = cost
+        assignments.append((row, cost))
+    applied_versions = sorted(applied.values(), key=lambda version: version.effective_on)
+    if len(applied_versions) == 1:
+        return max(0, _totals(lines)['net_units']) * int(applied_versions[0].cogs_kopecks), applied_versions, 'single_version'
+    if any(int(row.quantity or 0) < 0 for row, _ in assignments):
+        return None, applied_versions, 'return_attribution_unknown'
+    return sum(int(row.quantity or 0) * int(cost.cogs_kopecks) for row, cost in assignments), applied_versions, 'mixed_versions'
 
 
 def _catalog_nm_ids(db: Session, store_id: str) -> set[int]:
@@ -209,7 +241,26 @@ def _catalog_nm_ids(db: Session, store_id: str) -> set[int]:
     return {int(item['nm_id']) for item in ((catalog.payload or {}).get('items') or []) if item.get('nm_id')}
 
 
-def _upsert_cost(db: Session, *, store, user: User, nm_id: int, kopecks: int, operating_model: str,
+def _record_cost_version(db: Session, *, store, user: User, nm_id: int, kopecks: int, operating_model: str,
+    components: dict, source_references: dict, calculation_sha256: str, source: str, effective_on: date, now: datetime) -> ProductCostVersion:
+    row = ProductCostVersion(store_id=store.id, marketplace='wildberries', nm_id=nm_id,
+        effective_on=effective_on, cogs_kopecks=kopecks, currency='RUB', operating_model=operating_model,
+        components=components, source_references=source_references, calculation_sha256=calculation_sha256,
+        confirmed_by_user_id=user.id, source=source, validity='confirmed', confirmed_at=now)
+    try:
+        with db.begin_nested():
+            db.add(row)
+            db.flush()
+    except IntegrityError as exc:
+        constraint = getattr(getattr(exc.orig, 'diag', None), 'constraint_name', '')
+        sqlite_unique = 'UNIQUE constraint failed: product_cost_versions.store_id, product_cost_versions.marketplace, product_cost_versions.nm_id, product_cost_versions.effective_on' in str(exc.orig)
+        if constraint == 'uq_product_cost_version_effective' or sqlite_unique:
+            raise HTTPException(409, 'Для этого товара уже есть подтверждённая версия себестоимости на указанную дату. Исправление требует отдельной корректирующей версии.') from exc
+        raise
+    return row
+
+
+def _upsert_cost_projection(db: Session, *, store, user: User, nm_id: int, kopecks: int, operating_model: str,
     components: dict, source_references: dict, calculation_sha256: str, source: str, now: datetime) -> ProductCostProfile:
     row = db.query(ProductCostProfile).filter(
         ProductCostProfile.store_id == store.id,
@@ -230,6 +281,21 @@ def _upsert_cost(db: Session, *, store, user: User, nm_id: int, kopecks: int, op
     row.confirmed_at = now
     db.flush()
     return row
+
+
+def _refresh_cost_projection(db: Session, *, store, user: User, nm_id: int, now: datetime) -> ProductCostProfile | None:
+    current = db.query(ProductCostVersion).filter(
+        ProductCostVersion.store_id == store.id,
+        ProductCostVersion.marketplace == 'wildberries',
+        ProductCostVersion.nm_id == nm_id,
+        ProductCostVersion.effective_on <= now.date(),
+    ).order_by(ProductCostVersion.effective_on.desc(), ProductCostVersion.created_at.desc()).first()
+    if current is None:
+        return db.query(ProductCostProfile).filter(ProductCostProfile.store_id == store.id, ProductCostProfile.marketplace == 'wildberries', ProductCostProfile.nm_id == nm_id).first()
+    return _upsert_cost_projection(db, store=store, user=user, nm_id=nm_id,
+        kopecks=current.cogs_kopecks, operating_model=current.operating_model,
+        components=current.components, source_references=current.source_references,
+        calculation_sha256=current.calculation_sha256, source=current.source, now=now)
 
 
 def _line_in_period(row: MarketplaceFinancialLine, date_from: str, date_to: str) -> bool:
@@ -361,19 +427,24 @@ def save_product_cost(nm_id: int, payload: ProductCostRequest, user: User = Depe
     except InvalidOperation as exc:
         raise HTTPException(422, 'Некорректная себестоимость.') from exc
     now = datetime.now(timezone.utc)
-    row = _upsert_cost(db, store=store, user=user, nm_id=nm_id, kopecks=kopecks,
+    effective_on = payload.effective_on or now.date()
+    source = 'manual_breakdown' if operating_model != 'legacy_total' else 'manual_legacy'
+    version = _record_cost_version(db, store=store, user=user, nm_id=nm_id, kopecks=kopecks,
         operating_model=operating_model, components=components, source_references=source_references,
-        calculation_sha256=calculation_sha256,
-        source='manual_breakdown' if operating_model != 'legacy_total' else 'manual_legacy', now=now)
+        calculation_sha256=calculation_sha256, source=source, effective_on=effective_on, now=now)
+    projection = _refresh_cost_projection(db, store=store, user=user, nm_id=nm_id, now=now)
     db.add(OperationalAuditEvent(
         workspace_id=store.workspace_id, store_id=store.id, user_id=user.id,
-        event_type='profit.cost.confirmed', entity_type='product_cost', entity_id=row.id,
+        event_type='profit.cost.confirmed', entity_type='product_cost_version', entity_id=version.id,
         payload={'marketplace': 'wildberries', 'nm_id': nm_id, 'operating_model': operating_model,
-            'component_keys': sorted(components), 'cogs_kopecks': kopecks, 'calculation_sha256': calculation_sha256},
+            'component_keys': sorted(components), 'cogs_kopecks': kopecks, 'currency': 'RUB',
+            'effective_on': effective_on.isoformat(), 'cost_version_id': version.id, 'calculation_sha256': calculation_sha256},
     ))
     db.commit()
-    db.refresh(row)
-    return {'nm_id': row.nm_id, 'cogs_rub': _rubles(row.cogs_kopecks), 'cost_profile': _public_cost(row)}
+    db.refresh(version)
+    if projection is not None:
+        db.refresh(projection)
+    return {'nm_id': nm_id, 'cogs_rub': _rubles(version.cogs_kopecks), 'cost_profile': _public_cost(projection), 'cost_version': _public_cost(version)}
 
 
 def _public_import_batch(batch: CostImportBatch) -> dict:
@@ -386,9 +457,11 @@ def _public_import_batch(batch: CostImportBatch) -> dict:
         'expires_at': batch.expires_at,
         'committed_at': batch.committed_at,
         'row_count': len(batch.rows or []),
+        'effective_on': (batch.rows or [{}])[0].get('effective_on'),
         'rows': [
             {'nm_id': item['nm_id'], 'operating_model': item['operating_model'],
-             'cogs_rub': _rubles(int(item['cogs_kopecks'])), 'calculation_sha256': item['calculation_sha256']}
+             'cogs_rub': _rubles(int(item['cogs_kopecks'])), 'effective_on': item.get('effective_on'),
+             'calculation_sha256': item['calculation_sha256']}
             for item in (batch.rows or [])
         ],
     }
@@ -401,7 +474,7 @@ def _public_import_summary(batch: CostImportBatch, now: datetime | None = None) 
     status = 'expired' if batch.status == 'preview' and expires_at <= current else batch.status
     return {'id': batch.id, 'source_system': batch.source_system,
             'source_document_reference': batch.source_document_reference, 'preview_sha256': batch.payload_sha256,
-            'status': status, 'row_count': len(batch.rows or []), 'created_at': batch.created_at,
+            'status': status, 'row_count': len(batch.rows or []), 'effective_on': (batch.rows or [{}])[0].get('effective_on'), 'created_at': batch.created_at,
             'expires_at': batch.expires_at, 'committed_at': batch.committed_at}
 
 
@@ -486,9 +559,12 @@ def preview_cost_import(payload: CostImportPreviewRequest, user: User = Depends(
             'components': components, 'source_references': sources, 'calculation_sha256': digest})
     if row_errors:
         raise HTTPException(422, {'message': 'Исправьте строки импорта.', 'row_errors': row_errors})
+    effective_on = payload.effective_on or datetime.now(timezone.utc).date()
+    for item in normalized:
+        item['effective_on'] = effective_on.isoformat()
     normalized.sort(key=lambda item: item['nm_id'])
     canonical = {'store_id': store.id, 'marketplace': 'wildberries', 'source_system': payload.source_system,
-        'source_document_reference': payload.source_document_reference.strip(), 'rows': normalized}
+        'source_document_reference': payload.source_document_reference.strip(), 'effective_on': effective_on.isoformat(), 'rows': normalized}
     preview_sha256 = hashlib.sha256(json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     batch = db.query(CostImportBatch).filter(
         CostImportBatch.store_id == store.id,
@@ -533,10 +609,13 @@ def commit_cost_import(batch_id: str, payload: CostImportCommitRequest, user: Us
         raise HTTPException(409, 'Каталог изменился: один или несколько товаров больше не доступны.')
     now = datetime.now(timezone.utc)
     for item in batch.rows or []:
-        _upsert_cost(db, store=store, user=user, nm_id=int(item['nm_id']), kopecks=int(item['cogs_kopecks']),
+        effective_on = date.fromisoformat(str(item.get('effective_on') or now.date().isoformat()))
+        source = f'import_{batch.source_system}'
+        _record_cost_version(db, store=store, user=user, nm_id=int(item['nm_id']), kopecks=int(item['cogs_kopecks']),
             operating_model=item['operating_model'], components=dict(item['components']),
             source_references=dict(item['source_references']), calculation_sha256=item['calculation_sha256'],
-            source=f'import_{batch.source_system}', now=now)
+            source=source, effective_on=effective_on, now=now)
+        _refresh_cost_projection(db, store=store, user=user, nm_id=int(item['nm_id']), now=now)
     batch.status = 'committed'; batch.committed_at = now
     db.add(OperationalAuditEvent(workspace_id=store.workspace_id, store_id=store.id, user_id=user.id,
         event_type='profit.cost_import.committed', entity_type='cost_import', entity_id=batch.id,
@@ -587,11 +666,19 @@ def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get
         MarketplaceAdvertisingLine.marketplace == 'wildberries',
     ).all()
     advertising_lines = [row for row in advertising_lines if date_from <= str(row.event_date or '')[:10] <= date_to]
-    costs = db.query(ProductCostProfile).filter(
+    cost_versions = db.query(ProductCostVersion).filter(
+        ProductCostVersion.store_id == store.id,
+        ProductCostVersion.marketplace == 'wildberries',
+        ProductCostVersion.currency == 'RUB',
+    ).order_by(ProductCostVersion.nm_id.asc(), ProductCostVersion.effective_on.asc()).all()
+    versions_by_nm: dict[int, list[ProductCostVersion]] = {}
+    for version in cost_versions:
+        versions_by_nm.setdefault(version.nm_id, []).append(version)
+    current_profiles = db.query(ProductCostProfile).filter(
         ProductCostProfile.store_id == store.id,
         ProductCostProfile.marketplace == 'wildberries',
     ).all()
-    cost_by_nm = {row.nm_id: row for row in costs}
+    current_profile_by_nm = {row.nm_id: row for row in current_profiles}
     tax_profile = db.query(StoreTaxProfile).filter(
         StoreTaxProfile.store_id == store.id,
         StoreTaxProfile.marketplace == 'wildberries',
@@ -618,39 +705,42 @@ def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get
     finance_complete=_sync_is_complete(finance_matches,finance_payload)
     advertising_complete=_sync_is_complete(advertising_matches,advertising_payload)
     products = []
-    confirmed_products = 0
+    all_costs_known = bool(by_nm)
+    total_cogs = 0
     for nm_id, product_lines in by_nm.items():
         values = _totals(product_lines)
-        cost = cost_by_nm.get(nm_id)
-        net_units = max(0, int(values['net_units']))
-        cogs_total = int(cost.cogs_kopecks) * net_units if cost else None
+        cogs_total, applied_versions, cost_status = _cost_for_lines(versions_by_nm.get(nm_id, []), product_lines)
+        if cogs_total is None:
+            all_costs_known = False
         contribution = values['wb_net_kopecks'] - cogs_total if cogs_total is not None else None
         product_ads=sum(int(row.spend_kopecks or 0) for row in ads_by_nm.get(nm_id,[]))
         ads_adjustment=max(0,product_ads-values['advertising_deduction_kopecks'])
         product_tax=_tax_kopecks(values,tax_profile)
         final_profit=(contribution-ads_adjustment-product_tax) if contribution is not None and finance_complete and advertising_complete and product_tax is not None else None
-        if cost:
-            confirmed_products += 1
+        if cogs_total is not None:
+            total_cogs += cogs_total
+        singular_cost = applied_versions[0] if len(applied_versions) == 1 else None
         card = cards.get(nm_id) or {}
         products.append({
             'nm_id': nm_id,
             'vendor_code': card.get('vendor_code') or product_lines[0].vendor_code,
             'title': card.get('title') or product_lines[0].title or f'WB товар {nm_id}',
             'amounts': _public_amounts(values),
-            'cogs_per_unit': _rubles(cost.cogs_kopecks) if cost else None,
+            'cogs_per_unit': _rubles(singular_cost.cogs_kopecks) if singular_cost else None,
             'cogs_total': _rubles(cogs_total) if cogs_total is not None else None,
             'contribution_before_tax_ads': _rubles(contribution) if contribution is not None else None,
             'advertising_spend':_rubles(product_ads) if advertising_complete else None,
             'advertising_already_in_finance':_rubles(values['advertising_deduction_kopecks']),
             'tax_reserve':_rubles(product_tax) if product_tax is not None else None,
             'final_profit':_rubles(final_profit) if final_profit is not None else None,
-            'cost_confirmed_at': cost.confirmed_at if cost else None,
-            'cost_profile': _public_cost(cost),
+            'cost_confirmed_at': singular_cost.confirmed_at if singular_cost else None,
+            'cost_profile': _public_cost(singular_cost),
+            'current_cost_profile': _public_cost(current_profile_by_nm.get(nm_id)),
+            'applied_cost_versions': [_public_cost(version) for version in applied_versions],
+            'cost_status': cost_status,
         })
     products.sort(key=lambda item: (item['final_profit'] is None, Decimal(item['final_profit'] or item['contribution_before_tax_ads'] or '0'), item['nm_id']))
     totals = _totals(lines)
-    total_cogs = sum(int(cost_by_nm[nm_id].cogs_kopecks) * max(0, _totals(rows)['net_units']) for nm_id, rows in by_nm.items() if nm_id in cost_by_nm)
-    all_costs_known = bool(by_nm) and confirmed_products == len(by_nm)
     contribution = totals['wb_net_kopecks'] - total_cogs if all_costs_known else None
     advertising_spend=sum(int(row.spend_kopecks or 0) for row in advertising_lines)
     advertising_revenue=sum(int(row.attributed_revenue_kopecks or 0) for row in advertising_lines)
@@ -696,4 +786,3 @@ def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get
         'warning': 'Управленческий расчёт по подключённым источникам. Он не заменяет бухгалтерский и налоговый учёт.' if complete else 'Расчёт неполный: отсутствующие источники не заменяются прогнозами AI.',
         'products': products,
     }
-

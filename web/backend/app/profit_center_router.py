@@ -339,6 +339,25 @@ def _totals(rows: list[MarketplaceFinancialLine]) -> dict:
     return result
 
 
+def _profit_nm_ids(financial_by_nm: dict[int, list[MarketplaceFinancialLine]], advertising_by_nm: dict[int, list[MarketplaceAdvertisingLine]]) -> list[int]:
+    """Keep an advertised SKU visible even when its finance report has no sale."""
+    return sorted(set(financial_by_nm) | set(advertising_by_nm))
+
+
+def _reconciliation_bridge(*, total_final_profit: int, sku_final_profits: list[int], unallocated_direct_final_profit: int) -> int:
+    """Expose cross-scope netting rather than assigning it to an arbitrary SKU."""
+    return total_final_profit - sum(sku_final_profits) - unallocated_direct_final_profit
+
+
+def _final_profit_bridge(*, wb_net_residual: int, advertising_netting_residual: int, tax_residual: int) -> int:
+    return wb_net_residual - advertising_netting_residual - tax_residual
+
+
+def _unallocated_cogs_unknown(rows: list[MarketplaceFinancialLine]) -> bool:
+    """A quantity without an SKU has no defensible COGS attribution."""
+    return any(int(row.quantity or 0) != 0 for row in rows)
+
+
 def _financial_risks(rows: list[MarketplaceFinancialLine], limit: int = 50) -> dict:
     events = []
     category_totals: dict[tuple[str, str], dict] = {}
@@ -705,26 +724,40 @@ def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get
     finance_complete=_sync_is_complete(finance_matches,finance_payload)
     advertising_complete=_sync_is_complete(advertising_matches,advertising_payload)
     products = []
-    all_costs_known = bool(by_nm)
+    product_final_profits: list[int] = []
+    product_advertising_adjustments: list[int] = []
+    product_tax_reserves: list[int] = []
+    product_nm_ids = _profit_nm_ids(by_nm, ads_by_nm)
+    all_costs_known = bool(product_nm_ids) and not _unallocated_cogs_unknown(unallocated)
     total_cogs = 0
-    for nm_id, product_lines in by_nm.items():
+    for nm_id in product_nm_ids:
+        product_lines = by_nm.get(nm_id, [])
         values = _totals(product_lines)
-        cogs_total, applied_versions, cost_status = _cost_for_lines(versions_by_nm.get(nm_id, []), product_lines)
-        if cogs_total is None:
+        if product_lines:
+            cogs_total, applied_versions, cost_status = _cost_for_lines(versions_by_nm.get(nm_id, []), product_lines)
+        else:
+            # No sale or return occurred, therefore no COGS is inferred from advertising.
+            cogs_total, applied_versions, cost_status = 0, [], 'not_applicable'
+        if product_lines and cogs_total is None:
             all_costs_known = False
         contribution = values['wb_net_kopecks'] - cogs_total if cogs_total is not None else None
         product_ads=sum(int(row.spend_kopecks or 0) for row in ads_by_nm.get(nm_id,[]))
         ads_adjustment=max(0,product_ads-values['advertising_deduction_kopecks'])
         product_tax=_tax_kopecks(values,tax_profile)
         final_profit=(contribution-ads_adjustment-product_tax) if contribution is not None and finance_complete and advertising_complete and product_tax is not None else None
+        if final_profit is not None:
+            product_final_profits.append(final_profit)
+            product_advertising_adjustments.append(ads_adjustment)
+            product_tax_reserves.append(product_tax)
         if cogs_total is not None:
             total_cogs += cogs_total
         singular_cost = applied_versions[0] if len(applied_versions) == 1 else None
         card = cards.get(nm_id) or {}
+        first_financial_line = product_lines[0] if product_lines else None
         products.append({
             'nm_id': nm_id,
-            'vendor_code': card.get('vendor_code') or product_lines[0].vendor_code,
-            'title': card.get('title') or product_lines[0].title or f'WB товар {nm_id}',
+            'vendor_code': card.get('vendor_code') or (first_financial_line.vendor_code if first_financial_line else ''),
+            'title': card.get('title') or (first_financial_line.title if first_financial_line else '') or f'WB товар {nm_id}',
             'amounts': _public_amounts(values),
             'cogs_per_unit': _rubles(singular_cost.cogs_kopecks) if singular_cost else None,
             'cogs_total': _rubles(cogs_total) if cogs_total is not None else None,
@@ -741,6 +774,7 @@ def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get
         })
     products.sort(key=lambda item: (item['final_profit'] is None, Decimal(item['final_profit'] or item['contribution_before_tax_ads'] or '0'), item['nm_id']))
     totals = _totals(lines)
+    unallocated_totals = _totals(unallocated)
     contribution = totals['wb_net_kopecks'] - total_cogs if all_costs_known else None
     advertising_spend=sum(int(row.spend_kopecks or 0) for row in advertising_lines)
     advertising_revenue=sum(int(row.attributed_revenue_kopecks or 0) for row in advertising_lines)
@@ -748,6 +782,25 @@ def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get
     tax_reserve=_tax_kopecks(totals,tax_profile)
     complete=finance_complete and all_costs_known and advertising_complete and tax_profile is not None
     final_profit=(contribution-advertising_adjustment-tax_reserve) if complete else None
+    unallocated_advertising_spend=sum(int(row.spend_kopecks or 0) for row in unallocated_ads)
+    unallocated_advertising_revenue=sum(int(row.attributed_revenue_kopecks or 0) for row in unallocated_ads)
+    unallocated_contribution = unallocated_totals['wb_net_kopecks'] if not _unallocated_cogs_unknown(unallocated) else None
+    unallocated_tax_reserve=_tax_kopecks(unallocated_totals,tax_profile)
+    advertising_netting_residual=advertising_adjustment-sum(product_advertising_adjustments) if advertising_complete else None
+    tax_residual=(tax_reserve-sum(product_tax_reserves)) if tax_reserve is not None else None
+    final_profit_bridge=(
+        _final_profit_bridge(wb_net_residual=unallocated_contribution,
+            advertising_netting_residual=advertising_netting_residual, tax_residual=tax_residual)
+        if final_profit is not None and len(product_final_profits) == len(products)
+        and unallocated_contribution is not None and advertising_netting_residual is not None and tax_residual is not None else None
+    )
+    reconciliation_delta=(
+        _reconciliation_bridge(total_final_profit=final_profit, sku_final_profits=product_final_profits,
+            unallocated_direct_final_profit=final_profit_bridge)
+        if final_profit_bridge is not None else None
+    )
+    if reconciliation_delta != 0:
+        final_profit_bridge = None
     financial_risks=_financial_risks(lines)
     return {
         'store_id': store.id,
@@ -764,6 +817,25 @@ def profit_center(store_id: str, period_days: int = 30, user: User = Depends(get
         'cogs_total': _rubles(total_cogs) if all_costs_known else None,
         'contribution_before_tax_ads': _rubles(contribution) if contribution is not None else None,
         'advertising':{'spend':_rubles(advertising_spend) if advertising_complete else None,'attributed_revenue':_rubles(advertising_revenue) if advertising_complete else None,'already_in_finance_deductions':_rubles(totals['advertising_deduction_kopecks']),'additional_adjustment':_rubles(advertising_adjustment) if advertising_complete else None},
+        'reconciliation': {
+            'sku_count': len(products),
+            'reconciled': reconciliation_delta == 0,
+            'unallocated': {
+                'financial_line_count': len(unallocated),
+                'advertising_line_count': len(unallocated_ads),
+                'amounts': _public_amounts(unallocated_totals),
+                'cogs_status': 'unknown' if _unallocated_cogs_unknown(unallocated) else 'not_applicable',
+                'wb_net_residual': _rubles(unallocated_contribution) if unallocated_contribution is not None else None,
+                'advertising': {
+                    'spend': _rubles(unallocated_advertising_spend) if advertising_complete else None,
+                    'attributed_revenue': _rubles(unallocated_advertising_revenue) if advertising_complete else None,
+                    'already_in_finance_deductions': _rubles(unallocated_totals['advertising_deduction_kopecks']),
+                    'netting_residual': _rubles(advertising_netting_residual) if advertising_netting_residual is not None else None,
+                },
+                'tax_residual': _rubles(tax_residual) if tax_residual is not None else None,
+                'final_profit': _rubles(final_profit_bridge) if final_profit_bridge is not None else None,
+            },
+        },
         'financial_risks': financial_risks,
         'tax':{'basis':tax_profile.basis if tax_profile else None,'rate_percent':f'{Decimal(tax_profile.rate_bps)/100:.2f}' if tax_profile else None,'reserve':_rubles(tax_reserve) if tax_reserve is not None else None,'note':tax_profile.note if tax_profile else '','confirmed_at':tax_profile.confirmed_at if tax_profile else None},
         'operating_profile': ({
